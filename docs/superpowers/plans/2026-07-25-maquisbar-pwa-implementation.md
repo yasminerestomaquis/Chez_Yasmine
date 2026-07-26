@@ -475,10 +475,11 @@ describe('validatePayments', () => {
     expect(() => validatePayments(payments, 5000)).toThrow('montant invalide')
   })
 
-  it('requires a customer for credit payments', () => {
+  it('requires a customer for credit payments, whether or not a context object is passed', () => {
     const payments: Payment[] = [{ method: 'credit', amount: 5000 }]
-    expect(() => validatePayments(payments, 5000)).not.toThrow()
+    expect(() => validatePayments(payments, 5000)).toThrow('client requis')
     expect(() => validatePayments(payments, 5000, { customerId: undefined })).toThrow('client requis')
+    expect(() => validatePayments(payments, 5000, { customerId: 'c1' })).not.toThrow()
   })
 })
 ```
@@ -513,7 +514,7 @@ export function validatePayments(payments: Payment[], total: number, context?: P
   }
 
   const hasCredit = payments.some((p) => p.method === 'credit')
-  if (hasCredit && context && !context.customerId) {
+  if (hasCredit && !context?.customerId) {
     throw new Error('client requis pour une vente à crédit')
   }
 
