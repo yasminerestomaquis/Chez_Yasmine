@@ -3319,6 +3319,30 @@ describe('finalizeSale', () => {
     expect(await db.sales.count()).toBe(0)
   })
 
+  it('rolls back an earlier item\'s already-applied stock decrement when a later item in the same cart fails', async () => {
+    const category = await categoriesRepo.create({ name: 'Boissons' })
+    const bière = await productsRepo.create({ name: 'Bière', categoryId: category.id, price: 1000, photoDataUrl: null, stockQuantity: 10, alertThreshold: 2, createdAt: '' })
+    const eau = await productsRepo.create({ name: 'Eau', categoryId: category.id, price: 300, photoDataUrl: null, stockQuantity: 1, alertThreshold: 1, createdAt: '' })
+
+    await expect(
+      finalizeSale({
+        items: [
+          { productId: bière.id, name: bière.name, unitPrice: bière.price, quantity: 2 },
+          { productId: eau.id, name: eau.name, unitPrice: eau.price, quantity: 5 },
+        ],
+        discount: { type: 'amount', value: 0 },
+        payments: [{ method: 'cash', amount: 3500 }],
+        source: 'pos',
+        tableId: null,
+      })
+    ).rejects.toThrow('stock insuffisant')
+
+    const unchangedBière = await productsRepo.get(bière.id)
+    expect(unchangedBière?.stockQuantity).toBe(10)
+    expect(await db.stockMovements.count()).toBe(0)
+    expect(await db.sales.count()).toBe(0)
+  })
+
   it('increases the customer credit balance for a credit sale', async () => {
     const category = await categoriesRepo.create({ name: 'Boissons' })
     const product = await productsRepo.create({ name: 'Bière', categoryId: category.id, price: 1000, photoDataUrl: null, stockQuantity: 10, alertThreshold: 2, createdAt: '' })
@@ -3473,7 +3497,7 @@ export async function finalizeSale(input: FinalizeSaleInput): Promise<SaleRecord
 - [ ] **Step 4: Run the test and confirm it passes**
 
 Run: `npm run test -- sales/checkout`
-Expected: PASS, 5 tests.
+Expected: PASS, 6 tests.
 
 - [ ] **Step 5: Commit**
 
@@ -3497,7 +3521,7 @@ Create `app/src/features/sales/PaymentModal.test.tsx`:
 
 ```tsx
 import { describe, it, expect, vi } from 'vitest'
-import { render, screen } from '@testing-library/react'
+import { render, screen, waitFor } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { PaymentModal } from './PaymentModal'
 import type { CustomerRecord } from '../../db/schema'
@@ -3570,7 +3594,9 @@ import type { CustomerRecord } from '../../db/schema'
 interface PaymentModalProps {
   total: number
   customers: CustomerRecord[]
-  onConfirm: (payments: Payment[], customerId?: string) => void
+  // May be async (e.g. it calls finalizeSale) — the modal awaits it and
+  // disables the confirm button for the duration, so the type says so.
+  onConfirm: (payments: Payment[], customerId?: string) => void | Promise<void>
   onCancel: () => void
 }
 
@@ -3585,6 +3611,7 @@ export function PaymentModal({ total, customers, onConfirm, onCancel }: PaymentM
   const [payments, setPayments] = useState<Payment[]>([{ method: 'cash', amount: total }])
   const [customerId, setCustomerId] = useState('')
   const [error, setError] = useState<string | null>(null)
+  const [submitting, setSubmitting] = useState(false)
 
   const hasCredit = payments.some((p) => p.method === 'credit')
 
@@ -3601,13 +3628,21 @@ export function PaymentModal({ total, customers, onConfirm, onCancel }: PaymentM
     setPayments((prev) => prev.filter((_, i) => i !== index))
   }
 
-  function handleConfirm() {
+  async function handleConfirm() {
+    // Guards against a fast double-click finalizing the same sale twice
+    // (duplicate stock decrement, duplicate credit billing) — the disabled
+    // button attribute below is the first line of defense, this is the
+    // second in case a click still lands before the re-render commits.
+    if (submitting) return
     try {
       validatePayments(payments, total, { customerId: hasCredit ? customerId || undefined : undefined })
       setError(null)
-      onConfirm(payments, hasCredit ? customerId : undefined)
+      setSubmitting(true)
+      await onConfirm(payments, hasCredit ? customerId : undefined)
     } catch (err) {
       setError((err as Error).message)
+    } finally {
+      setSubmitting(false)
     }
   }
 
@@ -3623,6 +3658,7 @@ export function PaymentModal({ total, customers, onConfirm, onCancel }: PaymentM
               value={payment.method}
               onChange={(e) => updatePayment(index, { method: e.target.value as PaymentMethod })}
               className="rounded border px-1 py-1 text-sm"
+              disabled={submitting}
             >
               {Object.entries(METHOD_LABELS).map(([value, label]) => (
                 <option key={value} value={value}>
@@ -3636,16 +3672,17 @@ export function PaymentModal({ total, customers, onConfirm, onCancel }: PaymentM
               className="w-24 rounded border px-1 py-1 text-sm"
               value={payment.amount}
               onChange={(e) => updatePayment(index, { amount: Number(e.target.value) })}
+              disabled={submitting}
             />
             {payments.length > 1 && (
-              <button aria-label={`Retirer le paiement ${index + 1}`} onClick={() => removeLine(index)}>
+              <button aria-label={`Retirer le paiement ${index + 1}`} onClick={() => removeLine(index)} disabled={submitting}>
                 ×
               </button>
             )}
           </div>
         ))}
 
-        <button className="mb-2 text-sm text-blue-600" onClick={addLine}>
+        <button className="mb-2 text-sm text-blue-600" onClick={addLine} disabled={submitting}>
           + Ajouter un mode de paiement
         </button>
 
@@ -3659,6 +3696,7 @@ export function PaymentModal({ total, customers, onConfirm, onCancel }: PaymentM
               className="w-full rounded border px-2 py-1"
               value={customerId}
               onChange={(e) => setCustomerId(e.target.value)}
+              disabled={submitting}
             >
               <option value="">— Sélectionner —</option>
               {customers.map((customer) => (
@@ -3673,11 +3711,15 @@ export function PaymentModal({ total, customers, onConfirm, onCancel }: PaymentM
         {error && <p className="mb-2 text-sm text-red-600">{error}</p>}
 
         <div className="flex justify-end gap-2">
-          <button className="rounded px-3 py-1 text-sm text-slate-600" onClick={onCancel}>
+          <button className="rounded px-3 py-1 text-sm text-slate-600" onClick={onCancel} disabled={submitting}>
             Annuler
           </button>
-          <button className="rounded bg-blue-600 px-3 py-1 text-sm text-white" onClick={handleConfirm}>
-            Valider le paiement
+          <button
+            className="rounded bg-blue-600 px-3 py-1 text-sm text-white disabled:opacity-50"
+            onClick={handleConfirm}
+            disabled={submitting}
+          >
+            {submitting ? 'Validation…' : 'Valider le paiement'}
           </button>
         </div>
       </div>
@@ -3686,10 +3728,32 @@ export function PaymentModal({ total, customers, onConfirm, onCancel }: PaymentM
 }
 ```
 
+Add this test to the `describe('PaymentModal', ...)` block, after the existing "calls onCancel" test — it proves the guard actually prevents a second `finalizeSale`-style call while the first is still pending, not just that the button happens to be disabled:
+
+```tsx
+  it('disables the confirm button and does not call onConfirm twice while a slow confirmation is pending', async () => {
+    const user = userEvent.setup()
+    let resolveConfirm: () => void = () => {}
+    const onConfirm = vi.fn(() => new Promise<void>((resolve) => { resolveConfirm = resolve }))
+    render(<PaymentModal total={3000} customers={customers} onConfirm={onConfirm} onCancel={() => {}} />)
+
+    await user.click(screen.getByText('Valider le paiement'))
+    expect(screen.getByText('Validation…')).toBeDisabled()
+    await user.click(screen.getByText('Validation…'))
+
+    resolveConfirm()
+    await waitFor(() => expect(screen.getByText('Valider le paiement')).not.toBeDisabled())
+
+    expect(onConfirm).toHaveBeenCalledTimes(1)
+  })
+```
+
+This needs `waitFor` added to the `@testing-library/react` import at the top of the test file (alongside `render`, `screen`).
+
 - [ ] **Step 4: Run the test and confirm it passes**
 
 Run: `npm run test -- sales/PaymentModal`
-Expected: PASS, 4 tests.
+Expected: PASS, 5 tests.
 
 - [ ] **Step 5: Commit**
 
