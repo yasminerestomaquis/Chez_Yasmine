@@ -1498,6 +1498,12 @@ describe('seedDemoData', () => {
     const secondCount = await db.products.count()
     expect(secondCount).toBe(firstCount)
   })
+
+  it('is idempotent even when two calls race concurrently (React StrictMode double-invokes effects)', async () => {
+    await Promise.all([seedDemoData(), seedDemoData()])
+    expect(await db.categories.count()).toBe(2)
+    expect(await db.products.count()).toBe(5)
+  })
 })
 ```
 
@@ -1514,41 +1520,50 @@ Create `app/src/db/seed.ts`:
 import { db } from './schema'
 
 export async function seedDemoData(): Promise<void> {
-  const existingCategories = await db.categories.count()
-  if (existingCategories > 0) return
+  // The count-check and inserts must be atomic: React 18 StrictMode
+  // double-invokes effects in development, so two overlapping calls to
+  // seedDemoData() can otherwise both see an empty categories table and
+  // both proceed to insert, duplicating every demo record. Wrapping the
+  // whole function in a single Dexie 'rw' transaction serializes concurrent
+  // calls on these tables, so the second call's count-check runs only after
+  // the first call's inserts have committed.
+  await db.transaction('rw', [db.categories, db.products, db.restaurantTables, db.customers], async () => {
+    const existingCategories = await db.categories.count()
+    if (existingCategories > 0) return
 
-  const now = new Date().toISOString()
+    const now = new Date().toISOString()
 
-  const boissons = { id: crypto.randomUUID(), name: 'Boissons' }
-  const grillades = { id: crypto.randomUUID(), name: 'Grillades' }
-  await db.categories.bulkAdd([boissons, grillades])
+    const boissons = { id: crypto.randomUUID(), name: 'Boissons' }
+    const grillades = { id: crypto.randomUUID(), name: 'Grillades' }
+    await db.categories.bulkAdd([boissons, grillades])
 
-  await db.products.bulkAdd([
-    { id: crypto.randomUUID(), name: 'Bière 65cl', categoryId: boissons.id, price: 1000, photoDataUrl: null, stockQuantity: 48, alertThreshold: 12, createdAt: now },
-    { id: crypto.randomUUID(), name: 'Eau minérale', categoryId: boissons.id, price: 300, photoDataUrl: null, stockQuantity: 60, alertThreshold: 12, createdAt: now },
-    { id: crypto.randomUUID(), name: 'Soda', categoryId: boissons.id, price: 500, photoDataUrl: null, stockQuantity: 36, alertThreshold: 12, createdAt: now },
-    { id: crypto.randomUUID(), name: 'Brochette de bœuf', categoryId: grillades.id, price: 1500, photoDataUrl: null, stockQuantity: 30, alertThreshold: 10, createdAt: now },
-    { id: crypto.randomUUID(), name: 'Poisson braisé', categoryId: grillades.id, price: 3000, photoDataUrl: null, stockQuantity: 15, alertThreshold: 5, createdAt: now },
-  ])
+    await db.products.bulkAdd([
+      { id: crypto.randomUUID(), name: 'Bière 65cl', categoryId: boissons.id, price: 1000, photoDataUrl: null, stockQuantity: 48, alertThreshold: 12, createdAt: now },
+      { id: crypto.randomUUID(), name: 'Eau minérale', categoryId: boissons.id, price: 300, photoDataUrl: null, stockQuantity: 60, alertThreshold: 12, createdAt: now },
+      { id: crypto.randomUUID(), name: 'Soda', categoryId: boissons.id, price: 500, photoDataUrl: null, stockQuantity: 36, alertThreshold: 12, createdAt: now },
+      { id: crypto.randomUUID(), name: 'Brochette de bœuf', categoryId: grillades.id, price: 1500, photoDataUrl: null, stockQuantity: 30, alertThreshold: 10, createdAt: now },
+      { id: crypto.randomUUID(), name: 'Poisson braisé', categoryId: grillades.id, price: 3000, photoDataUrl: null, stockQuantity: 15, alertThreshold: 5, createdAt: now },
+    ])
 
-  await db.restaurantTables.bulkAdd([
-    { id: crypto.randomUUID(), name: 'T1', zone: 'Terrasse', status: 'free' },
-    { id: crypto.randomUUID(), name: 'T2', zone: 'Terrasse', status: 'free' },
-    { id: crypto.randomUUID(), name: 'T3', zone: 'Salle', status: 'free' },
-    { id: crypto.randomUUID(), name: 'T4', zone: 'Salle', status: 'free' },
-  ])
+    await db.restaurantTables.bulkAdd([
+      { id: crypto.randomUUID(), name: 'T1', zone: 'Terrasse', status: 'free' },
+      { id: crypto.randomUUID(), name: 'T2', zone: 'Terrasse', status: 'free' },
+      { id: crypto.randomUUID(), name: 'T3', zone: 'Salle', status: 'free' },
+      { id: crypto.randomUUID(), name: 'T4', zone: 'Salle', status: 'free' },
+    ])
 
-  await db.customers.bulkAdd([
-    { id: crypto.randomUUID(), name: 'Client comptant', phone: '', address: '', creditBalance: 0, creditLimit: 0 },
-    { id: crypto.randomUUID(), name: 'Kouassi Jean', phone: '0700000001', address: 'Yopougon', creditBalance: 0, creditLimit: 20000 },
-  ])
+    await db.customers.bulkAdd([
+      { id: crypto.randomUUID(), name: 'Client comptant', phone: '', address: '', creditBalance: 0, creditLimit: 0 },
+      { id: crypto.randomUUID(), name: 'Kouassi Jean', phone: '0700000001', address: 'Yopougon', creditBalance: 0, creditLimit: 20000 },
+    ])
+  })
 }
 ```
 
 - [ ] **Step 4: Run the test and confirm it passes**
 
 Run: `npm run test -- db/seed`
-Expected: PASS, 2 tests.
+Expected: PASS, 3 tests.
 
 - [ ] **Step 5: Commit**
 
@@ -1984,6 +1999,25 @@ function TestConsumer() {
   )
 }
 
+function TestDoubleConsumer() {
+  const requirePin = usePinGate()
+  const [results, setResults] = useState<string[]>([])
+  return (
+    <>
+      <button
+        onClick={() => {
+          const first = requirePin()
+          const second = requirePin()
+          Promise.all([first, second]).then(([a, b]) => setResults([a ? 'granted' : 'denied', b ? 'granted' : 'denied']))
+        }}
+      >
+        Demander deux fois
+      </button>
+      <div data-testid="results">{results.join(',')}</div>
+    </>
+  )
+}
+
 describe('PinGate', () => {
   beforeEach(async () => {
     await db.delete()
@@ -2035,6 +2069,23 @@ describe('PinGate', () => {
 
     expect(await screen.findByTestId('result')).toHaveTextContent('denied')
   })
+
+  it('resolves a stale prompt as denied when requirePin() is called again before it settles', async () => {
+    const user = userEvent.setup()
+    render(
+      <PinGateProvider>
+        <TestDoubleConsumer />
+      </PinGateProvider>
+    )
+
+    await user.click(screen.getByText('Demander deux fois'))
+    // Only the second (still-open) modal can be answered; the first call's
+    // promise must already have resolved to false rather than hanging.
+    await user.type(screen.getByLabelText('Code PIN'), '1234')
+    await user.click(screen.getByText('Confirmer'))
+
+    expect(await screen.findByTestId('results')).toHaveTextContent('denied,granted')
+  })
 })
 ```
 
@@ -2068,6 +2119,13 @@ export function PinGateProvider({ children }: { children: ReactNode }) {
   const resolveRef = useRef<((granted: boolean) => void) | null>(null)
 
   const requirePin = useCallback<RequirePin>(() => {
+    // If a previous requirePin() call is still awaiting input, its promise
+    // would otherwise be silently overwritten below and never resolve,
+    // leaving that caller hung forever. Deny the stale prompt first.
+    if (resolveRef.current) {
+      resolveRef.current(false)
+      resolveRef.current = null
+    }
     setIsOpen(true)
     setPinValue('')
     setError(null)
@@ -2128,7 +2186,7 @@ export function PinGateProvider({ children }: { children: ReactNode }) {
 - [ ] **Step 4: Run the test and confirm it passes**
 
 Run: `npm run test -- app/PinGate`
-Expected: PASS, 3 tests.
+Expected: PASS, 4 tests.
 
 - [ ] **Step 5: Wrap the app with the provider**
 
