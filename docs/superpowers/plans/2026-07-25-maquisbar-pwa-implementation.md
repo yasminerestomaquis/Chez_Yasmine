@@ -1049,7 +1049,11 @@ export class MaquisBarDatabase extends Dexie {
   stockMovements!: Table<StockMovementRecord, string>
   customers!: Table<CustomerRecord, string>
   creditMovements!: Table<CreditMovementRecord, string>
-  tables!: Table<TableRecord, string>
+  // Named `restaurantTables`, not `tables` — Dexie's own base class reserves
+  // the `tables` property (its internal list of all tables), so a store
+  // literally named `tables` fails to bind (both at the type level and at
+  // runtime). The exported `tablesRepo` name is unaffected.
+  restaurantTables!: Table<TableRecord, string>
   additions!: Table<AdditionRecord, string>
   sales!: Table<SaleRecord, string>
   expenses!: Table<ExpenseRecord, string>
@@ -1064,7 +1068,7 @@ export class MaquisBarDatabase extends Dexie {
       stockMovements: 'id, productId, createdAt',
       customers: 'id, name',
       creditMovements: 'id, customerId, createdAt',
-      tables: 'id, zone, status',
+      restaurantTables: 'id, zone, status',
       additions: 'id, tableId, status, openedAt',
       sales: 'id, tableId, customerId, createdAt',
       expenses: 'id, date',
@@ -1203,7 +1207,10 @@ export function createRepository<T extends { id: string }>(table: Table<T, strin
       return record
     },
     async update(id, changes) {
-      await table.update(id, changes as Partial<T>)
+      // Dexie 4.x's Table.update() expects UpdateSpec<T> (a keypath-based
+      // mapped type), not a plain Partial<T> — the double cast below keeps
+      // the public Repository<T>.update signature as Partial<Omit<T,'id'>>.
+      await table.update(id, changes as unknown as import('dexie').UpdateSpec<T>)
     },
     async remove(id) {
       await table.delete(id)
@@ -1320,7 +1327,7 @@ export const productsRepo = createRepository(db.products)
 export const stockMovementsRepo = createRepository(db.stockMovements)
 export const customersRepo = createRepository(db.customers)
 export const creditMovementsRepo = createRepository(db.creditMovements)
-export const tablesRepo = createRepository(db.tables)
+export const tablesRepo = createRepository(db.restaurantTables)
 export const additionsRepo = createRepository(db.additions)
 export const salesRepo = createRepository(db.sales)
 export const expensesRepo = createRepository(db.expenses)
@@ -1480,7 +1487,7 @@ describe('seedDemoData', () => {
     await seedDemoData()
     expect((await db.categories.count())).toBeGreaterThan(0)
     expect((await db.products.count())).toBeGreaterThan(0)
-    expect((await db.tables.count())).toBeGreaterThan(0)
+    expect((await db.restaurantTables.count())).toBeGreaterThan(0)
     expect((await db.customers.count())).toBeGreaterThan(0)
   })
 
@@ -1524,7 +1531,7 @@ export async function seedDemoData(): Promise<void> {
     { id: crypto.randomUUID(), name: 'Poisson braisé', categoryId: grillades.id, price: 3000, photoDataUrl: null, stockQuantity: 15, alertThreshold: 5, createdAt: now },
   ])
 
-  await db.tables.bulkAdd([
+  await db.restaurantTables.bulkAdd([
     { id: crypto.randomUUID(), name: 'T1', zone: 'Terrasse', status: 'free' },
     { id: crypto.randomUUID(), name: 'T2', zone: 'Terrasse', status: 'free' },
     { id: crypto.randomUUID(), name: 'T3', zone: 'Salle', status: 'free' },
@@ -1625,7 +1632,7 @@ const TABLE_NAMES = [
   'stockMovements',
   'customers',
   'creditMovements',
-  'tables',
+  'restaurantTables',
   'additions',
   'sales',
   'expenses',
