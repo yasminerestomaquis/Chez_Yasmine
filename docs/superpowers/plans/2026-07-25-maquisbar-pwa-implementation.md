@@ -3338,6 +3338,30 @@ describe('finalizeSale', () => {
     expect(await db.creditMovements.count()).toBe(1)
   })
 
+  it('only bills the credit portion of a split cash+credit payment to the customer account', async () => {
+    const category = await categoriesRepo.create({ name: 'Boissons' })
+    const product = await productsRepo.create({ name: 'Bière', categoryId: category.id, price: 1000, photoDataUrl: null, stockQuantity: 10, alertThreshold: 2, createdAt: '' })
+    const customer = await customersRepo.create({ name: 'Client A', phone: '', address: '', creditBalance: 0, creditLimit: 5000 })
+
+    await finalizeSale({
+      items: [{ productId: product.id, name: product.name, unitPrice: product.price, quantity: 3 }],
+      discount: { type: 'amount', value: 0 },
+      payments: [
+        { method: 'cash', amount: 2000 },
+        { method: 'credit', amount: 1000 },
+      ],
+      customerId: customer.id,
+      source: 'pos',
+      tableId: null,
+    })
+
+    const updatedCustomer = await customersRepo.get(customer.id)
+    expect(updatedCustomer?.creditBalance).toBe(1000)
+    const creditMovements = await db.creditMovements.toArray()
+    expect(creditMovements).toHaveLength(1)
+    expect(creditMovements[0].amount).toBe(1000)
+  })
+
   it('rejects a credit sale with no customer', async () => {
     const category = await categoriesRepo.create({ name: 'Boissons' })
     const product = await productsRepo.create({ name: 'Bière', categoryId: category.id, price: 1000, photoDataUrl: null, stockQuantity: 10, alertThreshold: 2, createdAt: '' })
@@ -3408,14 +3432,18 @@ export async function finalizeSale(input: FinalizeSaleInput): Promise<SaleRecord
     }
 
     if (hasCredit && input.customerId) {
+      // Only the portion of the total actually paid via the "credit" method
+      // goes on the customer's account — a split payment (e.g. cash + credit)
+      // must not bill the customer for the whole sale.
+      const creditAmount = input.payments.filter((p) => p.method === 'credit').reduce((sum, p) => sum + p.amount, 0)
       const customer = await customersRepo.get(input.customerId)
       if (!customer) throw new Error('client introuvable')
-      const nextBalance = applyCreditSale({ balance: customer.creditBalance, limit: customer.creditLimit }, totals.total)
+      const nextBalance = applyCreditSale({ balance: customer.creditBalance, limit: customer.creditLimit }, creditAmount)
       await customersRepo.update(input.customerId, { creditBalance: nextBalance })
       await creditMovementsRepo.create({
         customerId: input.customerId,
         type: 'credit',
-        amount: totals.total,
+        amount: creditAmount,
         note: 'Vente à crédit',
         createdAt: new Date().toISOString(),
       })
@@ -3445,7 +3473,7 @@ export async function finalizeSale(input: FinalizeSaleInput): Promise<SaleRecord
 - [ ] **Step 4: Run the test and confirm it passes**
 
 Run: `npm run test -- sales/checkout`
-Expected: PASS, 4 tests.
+Expected: PASS, 5 tests.
 
 - [ ] **Step 5: Commit**
 
@@ -3780,7 +3808,11 @@ export function Receipt({ sale, onClose }: ReceiptProps) {
             {sale.items.map((item) => (
               <li key={item.productId} className="flex justify-between">
                 <span>
-                  {item.name} × {item.quantity}
+                  {/* item.name in its own nested span: Testing Library's
+                      getByText only concatenates an element's direct
+                      text-node children, so a bare "Bière" query wouldn't
+                      match a sibling-text-node "Bière × 2" otherwise. */}
+                  <span>{item.name}</span> × {item.quantity}
                 </span>
                 <span>{item.unitPrice * item.quantity} FCFA</span>
               </li>
