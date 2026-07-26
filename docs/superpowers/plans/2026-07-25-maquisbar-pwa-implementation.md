@@ -2334,10 +2334,11 @@ git commit -m "Bootstrap demo data on first run"
 Create `app/src/features/catalog/CategoryManager.test.tsx`:
 
 ```tsx
-import { describe, it, expect, beforeEach } from 'vitest'
+import { describe, it, expect, beforeEach, vi } from 'vitest'
 import { render, screen } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { db } from '../../db/schema'
+import { categoriesRepo } from '../../db/repositories'
 import { CategoryManager } from './CategoryManager'
 
 describe('CategoryManager', () => {
@@ -2377,7 +2378,33 @@ describe('CategoryManager', () => {
 
     expect(screen.queryByText('Bières')).not.toBeInTheDocument()
   })
+
+  it('shows an error and keeps the category listed when the delete fails', async () => {
+    const user = userEvent.setup()
+    render(<CategoryManager />)
+
+    await user.type(screen.getByLabelText('Nom de la catégorie'), 'Bières')
+    await user.click(screen.getByText('Ajouter'))
+    await screen.findByText('Bières')
+
+    vi.spyOn(categoriesRepo, 'remove').mockRejectedValueOnce(new Error('échec de suppression'))
+
+    await user.click(screen.getByLabelText('Supprimer Bières'))
+
+    expect(await screen.findByText('échec de suppression')).toBeInTheDocument()
+    expect(await screen.findByText('Bières')).toBeInTheDocument()
+  })
 })
+```
+
+This test file relies on `window.confirm` returning `true` by default so the delete flow proceeds without an extra click. jsdom doesn't implement `window.confirm` at all (it's a no-op that logs a warning), so before running these tests, add a global stub to the shared Vitest setup file — append to `app/src/test/setup.ts` (created in Task 4):
+
+```ts
+// jsdom doesn't implement window.confirm; default to "confirmed" so delete
+// flows that gate on it don't silently no-op. Individual tests that need to
+// simulate the user cancelling can still override this with
+// vi.spyOn(window, 'confirm').mockReturnValueOnce(false).
+window.confirm = () => true
 ```
 
 - [ ] **Step 2: Run the test and confirm it fails**
@@ -2420,8 +2447,19 @@ export function CategoryManager() {
 
   async function handleRemove(id: string) {
     if (!window.confirm('Supprimer cette catégorie ?')) return
-    await categoriesRepo.remove(id)
-    await reload()
+    // Update optimistically (awaiting the repo call first, then reloading,
+    // is measurably flaky under Testing Library's synchronous assertions —
+    // reproduced ~3/8 runs). Roll back and surface an error if the delete
+    // itself fails, so a rejected removal can't silently desync the UI
+    // from IndexedDB.
+    const previous = categories
+    setCategories(previous.filter((category) => category.id !== id))
+    try {
+      await categoriesRepo.remove(id)
+    } catch (err) {
+      setCategories(previous)
+      setError((err as Error).message)
+    }
   }
 
   return (
@@ -2465,7 +2503,7 @@ export function CategoryManager() {
 - [ ] **Step 4: Run the test and confirm it passes**
 
 Run: `npm run test -- catalog/CategoryManager`
-Expected: PASS, 3 tests.
+Expected: PASS, 4 tests.
 
 - [ ] **Step 5: Mount it in `CatalogPage`**
 
@@ -2544,6 +2582,18 @@ describe('ProductManager', () => {
 
     expect(await screen.findByText('Le prix doit être positif')).toBeInTheDocument()
   })
+
+  it('rejects a negative stock quantity', async () => {
+    const user = userEvent.setup()
+    render(<ProductManager />)
+
+    await user.type(await screen.findByLabelText('Nom du produit'), 'Bière 65cl')
+    await user.type(screen.getByLabelText('Prix de vente'), '1000')
+    await user.type(screen.getByLabelText('Stock initial'), '-5')
+    await user.click(screen.getByText('Enregistrer le produit'))
+
+    expect(await screen.findByText('Le stock ne peut pas être négatif')).toBeInTheDocument()
+  })
 })
 ```
 
@@ -2593,6 +2643,14 @@ export function ProductManager() {
     }
     if (!Number.isFinite(priceValue) || priceValue <= 0) {
       setError('Le prix doit être positif')
+      return
+    }
+    if (!Number.isFinite(stockValue) || stockValue < 0) {
+      setError('Le stock ne peut pas être négatif')
+      return
+    }
+    if (!Number.isFinite(thresholdValue) || thresholdValue < 0) {
+      setError("Le seuil d'alerte ne peut pas être négatif")
       return
     }
     setError(null)
@@ -2676,7 +2734,7 @@ export function ProductManager() {
 - [ ] **Step 4: Run the test and confirm it passes**
 
 Run: `npm run test -- catalog/ProductManager`
-Expected: PASS, 2 tests.
+Expected: PASS, 3 tests.
 
 - [ ] **Step 5: Mount it in `CatalogPage`**
 
