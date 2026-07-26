@@ -1609,6 +1609,12 @@ describe('backup', () => {
   it('rejects JSON that is missing the expected structure', async () => {
     await expect(importBackup(JSON.stringify({ hello: 'world' }))).rejects.toThrow('fichier de sauvegarde invalide')
   })
+
+  it('rejects a backup whose tables object is missing the expected keys, without wiping existing data', async () => {
+    await categoriesRepo.create({ name: 'Boissons' })
+    await expect(importBackup(JSON.stringify({ version: 1, tables: {} }))).rejects.toThrow('fichier de sauvegarde invalide')
+    expect(await db.categories.count()).toBe(1)
+  })
 })
 ```
 
@@ -1656,7 +1662,14 @@ interface ParsedBackup {
 function isValidBackup(value: unknown): value is ParsedBackup {
   if (typeof value !== 'object' || value === null) return false
   const candidate = value as Record<string, unknown>
-  return typeof candidate.version === 'number' && typeof candidate.tables === 'object' && candidate.tables !== null
+  if (typeof candidate.version !== 'number' || typeof candidate.tables !== 'object' || candidate.tables === null) {
+    return false
+  }
+  // Every expected table key must be present as an array (an empty array is
+  // fine — a table can legitimately have no rows) so a truncated or
+  // hand-edited file can't silently wipe every table with nothing restored.
+  const tables = candidate.tables as Record<string, unknown>
+  return TABLE_NAMES.every((name) => Array.isArray(tables[name]))
 }
 
 export async function importBackup(json: string): Promise<void> {
@@ -1686,7 +1699,7 @@ export async function importBackup(json: string): Promise<void> {
 - [ ] **Step 4: Run the test and confirm it passes**
 
 Run: `npm run test -- db/backup`
-Expected: PASS, 4 tests.
+Expected: PASS, 5 tests.
 
 - [ ] **Step 5: Run the full `db` test suite**
 
