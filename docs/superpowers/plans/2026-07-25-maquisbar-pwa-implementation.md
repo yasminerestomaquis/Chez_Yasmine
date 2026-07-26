@@ -4546,6 +4546,10 @@ describe('AdditionDetail', () => {
     await user.click(screen.getByText('Encaisser'))
     await user.click(await screen.findByText('Valider le paiement'))
 
+    // checkoutAddition makes several sequential DB round-trips; wait for the
+    // receipt (the visible result of a successful checkout) before asserting,
+    // rather than asserting immediately after the click resolves.
+    await screen.findByText('Reçu')
     expect(onClosed).toHaveBeenCalled()
   })
 })
@@ -4723,7 +4727,20 @@ export function AdditionDetail({ additionId, onClosed, onBack }: AdditionDetailP
         />
       )}
 
-      {lastSale && <Receipt sale={lastSale} onClose={() => setLastSale(null)} />}
+      {lastSale && (
+        <Receipt
+          sale={lastSale}
+          onClose={() => {
+            // The addition is closed and the table is free once checkout
+            // succeeds — there is nothing left to do on this screen, so
+            // dismissing the receipt returns to the floor plan. This also
+            // avoids leaving the tile grid / cart interactive against a
+            // now-closed addition (addItemToAddition etc. would reject).
+            setLastSale(null)
+            onBack()
+          }}
+        />
+      )}
     </div>
   )
 }
@@ -4833,11 +4850,20 @@ export function TablesPage() {
     setRefreshToken((t) => t + 1)
   }
 
+  function handleClosed() {
+    // Checkout just succeeded: AdditionDetail is showing the receipt as an
+    // overlay. Don't navigate away yet (that would unmount AdditionDetail —
+    // and the receipt with it — before the cashier ever sees it); just
+    // refresh the floor-plan data in the background so it's current once
+    // they do navigate back (via onBack, wired below).
+    setRefreshToken((t) => t + 1)
+  }
+
   return (
     <div>
       <h1 className="mb-4 text-2xl font-semibold">Tables</h1>
       {selectedAdditionId ? (
-        <AdditionDetail additionId={selectedAdditionId} onClosed={handleBack} onBack={handleBack} />
+        <AdditionDetail additionId={selectedAdditionId} onClosed={handleClosed} onBack={handleBack} />
       ) : (
         <FloorPlan onSelectTable={handleSelectTable} refreshToken={refreshToken} />
       )}
