@@ -1,0 +1,53 @@
+# Dependencies
+node_modules/
+.pnp
+.pnp.js
+
+# Build outputs
+dist/
+build/
+out/
+*.tsbuildinfo
+
+# NestJS
+apps/api/nestjs/dist/
+
+# Flutter / Dart
+apps/web/flutter/.dart_tool/
+apps/web/flutter/.flutter-plugins
+apps/web/flutter/.flutter-plugins-dependencies
+apps/web/flutter/.packages
+apps/web/flutter/build/
+apps/web/flutter/web/manifest.json.bak
+**/*.g.dart
+**/*.freezed.dart
+
+# Env / secrets
+.env
+.env.local
+.env.production
+.env.*.local
+*.pem
+*.key
+
+# Supabase local
+supabase/.temp/
+supabase/.branches/
+
+# Logs
+*.log
+npm-debug.log*
+logs/
+
+# OS / editor
+.DS_Store
+Thumbs.db
+.vscode/*
+!.vscode/extensions.json
+.idea/
+
+# Test / coverage
+coverage/
+
+# Claude Code local state (worktrees, session settings) — not part of the main tree
+.claude/

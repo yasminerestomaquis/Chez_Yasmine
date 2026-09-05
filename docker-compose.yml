@@ -1,0 +1,9 @@
+services:
+  api:
+    build:
+      context: .
+      dockerfile: docker/Dockerfile.nestjs
+    env_file:
+      - .env
+    ports:
+      - "3000:3000"
