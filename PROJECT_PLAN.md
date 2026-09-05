@@ -137,7 +137,17 @@ Détail complet dans `docs/api/customers.md`.
 
 Restant avant `DONE` : vérification bout en bout une fois l'API déployée.
 
-### Phase 12 — Dépenses / Pertes / Comptabilité — `TODO`
+### Phase 12 — Dépenses / Pertes / Comptabilité — `TESTING`
+Détail complet dans `docs/api/accounting.md`.
+- [x] `ExpensesService`/`ExpensesController` : CRUD dépenses (`expenses.manage`), filtre par période. Testé (Prisma mocké), 5 tests.
+- [x] `LossesService`/`LossesController` : enregistrement d'une perte (`losses.manage`) — décrémente le stock, écrit le mouvement `loss` et un enregistrement `Loss` valorisé (`quantity * purchasePrice`) dans une transaction, idempotent. **Changement rétroactif** : `'loss'` n'est plus accepté sur l'endpoint générique de mouvement de stock (Phase 6) — seul ce module l'écrit désormais, pour qu'une perte laisse toujours une trace comptable. Testé (Prisma mocké), 6 tests.
+- [x] `CashService`/`CashController` : clôture de caisse (`cash.manage`) — crée paresseusement un point de vente/caisse par défaut (aucune UI multi-caisse n'existait), calcule le montant attendu (paiements espèces − dépenses de la période) et l'écart avec le comptage. Testé (Prisma mocké), 5 tests.
+- [x] **Correction transverse** : `DecimalTransformInterceptor` (`src/common/`), enregistré globalement — corrige un défaut présent depuis la Phase 5 (Prisma sérialise `Decimal` en chaîne JSON, incompatible avec le cast `as num` de tous les modèles Flutter), resté invisible faute de round-trip HTTP réel jusqu'ici. 8 tests (sans mock).
+- [x] UI Flutter (`lib/expenses/`, `lib/losses/`, `lib/cash/`) : listes, formulaires, repli défensif sur échec réseau. `flutter analyze`/`test`/`build web` ✅.
+- [ ] **Non vérifié en conditions réelles** : round-trip HTTP complet — même limitation `DATABASE_URL` que les phases précédentes.
+
+Restant avant `DONE` : vérification bout en bout une fois l'API déployée.
+
 ### Phase 13 — Rapports — `TODO`
 ### Phase 14 — Notifications — `TODO`
 ### Phase 15 — PWA avancée — `TODO`
@@ -155,10 +165,11 @@ Restant avant `DONE` : vérification bout en bout une fois l'API déployée.
 - Offline-first pour ventes et mouvements de stock : idempotence, moteur de synchronisation par lot, file locale, indicateur de connexion (Phase 9) — vérifié en conditions réelles pour la persistance locale, mocké pour le backend.
 - Fournisseurs, achats, réception avec incrémentation automatique du stock (Phase 10) — service testé (Prisma mocké), UI testée (analyse/build).
 - Clients, crédits, remboursements, et activation du paiement à crédit en caisse (Phase 11) — service testé (Prisma mocké), UI testée.
+- Dépenses, pertes valorisées, clôture de caisse, et correction transverse de la sérialisation des `Decimal` (Phase 12) — services testés (Prisma mocké), UI testée.
 
 ## Prochaines étapes immédiates
 
 1. Résoudre l'accès en écriture au dépôt GitHub distant (`yasminerestomaquis/Chez_Yasmine`) avant tout `git push`.
 2. Premier commit + push, puis vérifier que le pipeline CI GitHub Actions passe.
 3. Renseigner le mot de passe de connexion Postgres réel dans `.env` pour vérifier tous les modules en conditions réelles et pouvoir lancer l'API NestJS localement.
-4. Démarrer la Phase 12 (Dépenses / Pertes / Comptabilité).
+4. Démarrer la Phase 13 (Rapports).

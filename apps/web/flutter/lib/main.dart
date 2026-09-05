@@ -4,9 +4,12 @@ import 'package:supabase_flutter/supabase_flutter.dart';
 import 'api/api_client.dart';
 import 'auth/auth_gate.dart';
 import 'auth/me_repository.dart';
+import 'cash/cash_page.dart';
 import 'catalog/catalog_page.dart';
 import 'config/supabase_config.dart';
 import 'customers/customers_page.dart';
+import 'expenses/expenses_page.dart';
+import 'losses/losses_page.dart';
 import 'pos/pos_page.dart';
 import 'purchasing/purchases_page.dart';
 import 'stock/stock_page.dart';
@@ -165,6 +168,27 @@ class _HomePageState extends State<HomePage> {
                               label: const Text('Catalogue'),
                               onPressed: () => Navigator.of(context).push(
                                 MaterialPageRoute(builder: (_) => CatalogPage(establishmentId: establishment.id)),
+                              ),
+                            ),
+                            TextButton.icon(
+                              icon: const Icon(Icons.receipt_long_outlined),
+                              label: const Text('Dépenses'),
+                              onPressed: () => Navigator.of(context).push(
+                                MaterialPageRoute(builder: (_) => ExpensesPage(establishmentId: establishment.id)),
+                              ),
+                            ),
+                            TextButton.icon(
+                              icon: const Icon(Icons.report_gmailerrorred_outlined),
+                              label: const Text('Pertes'),
+                              onPressed: () => Navigator.of(context).push(
+                                MaterialPageRoute(builder: (_) => LossesPage(establishmentId: establishment.id)),
+                              ),
+                            ),
+                            TextButton.icon(
+                              icon: const Icon(Icons.savings_outlined),
+                              label: const Text('Caisse'),
+                              onPressed: () => Navigator.of(context).push(
+                                MaterialPageRoute(builder: (_) => CashPage(establishmentId: establishment.id)),
                               ),
                             ),
                           ],

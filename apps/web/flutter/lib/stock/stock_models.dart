@@ -32,9 +32,19 @@ class StockAlert {
       );
 }
 
+/// Tous les types, pour l'affichage de l'historique — 'loss' y figure encore
+/// car les mouvements de type perte existent toujours (écrits par le module
+/// Pertes, Phase 12), seule leur *saisie* manuelle a été retirée.
 const stockMovementTypeLabels = {
   'in': 'Entrée',
   'out': 'Sortie',
   'adjustment': 'Correction',
   'loss': 'Perte',
+};
+
+/// Types acceptés par le dialogue de saisie manuelle — 'loss' est exclu (voir ci-dessus).
+const manualStockMovementTypeLabels = {
+  'in': 'Entrée',
+  'out': 'Sortie',
+  'adjustment': 'Correction',
 };

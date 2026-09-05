@@ -7,7 +7,8 @@ export class CreateStockMovementDto {
   @IsUUID()
   id?: string;
 
-  @IsIn(['in', 'out', 'adjustment', 'loss'])
+  /** 'loss' is deliberately not accepted here since Phase 12 — see src/losses/ — so that every stock loss carries a Loss accounting record, not just a StockMovement. */
+  @IsIn(['in', 'out', 'adjustment'])
   type!: ManualStockMovementType;
 
   @IsNumber()

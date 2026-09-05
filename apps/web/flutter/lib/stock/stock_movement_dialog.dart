@@ -94,7 +94,10 @@ class _StockMovementDialogState extends State<_StockMovementDialog> {
             DropdownButtonFormField<String>(
               initialValue: _type,
               decoration: const InputDecoration(labelText: 'Type'),
-              items: stockMovementTypeLabels.entries
+              // 'loss' est volontairement exclu ici depuis la Phase 12 : une perte
+              // passe désormais par l'écran « Pertes » (losses/), qui écrit à la
+              // fois le mouvement de stock et l'enregistrement comptable.
+              items: manualStockMovementTypeLabels.entries
                   .map((e) => DropdownMenuItem(value: e.key, child: Text(e.value)))
                   .toList(),
               onChanged: (value) => setState(() => _type = value!),

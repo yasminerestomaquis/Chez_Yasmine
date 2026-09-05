@@ -36,6 +36,9 @@
 - Gestion des clients, historique et remboursement de crédit (`apps/api/nestjs/src/customers/`) ; UI Flutter correspondante (`apps/web/flutter/lib/customers/`).
 - Paiement à crédit activé en caisse (sélecteur de client dans `PaymentDialog`), après avoir été volontairement laissé de côté en Phases 7/8.
 - `docs/api/customers.md` documentant la logique clients/crédits.
+- Dépenses (CRUD), pertes de stock valorisées (`quantity * purchasePrice`, remplace la saisie manuelle de type « perte »), clôture de caisse avec calcul du montant attendu et de l'écart (`apps/api/nestjs/src/{expenses,losses,cash}/`) ; UI Flutter correspondante (`apps/web/flutter/lib/{expenses,losses,cash}/`).
+- `DecimalTransformInterceptor` global (`apps/api/nestjs/src/common/`) : corrige la sérialisation des `Decimal` Prisma (chaîne JSON, incompatible avec les modèles Flutter) sur toute réponse de l'API — défaut présent depuis la Phase 5, découvert en Phase 12.
+- `docs/api/accounting.md` documentant dépenses/pertes/caisse et la correction de sérialisation.
 
 ### Décisions
 - Adoption de l'architecture v5 (Flutter + NestJS + Supabase) en remplacement du prototype v1 local (React/Vite/Dexie), conservé comme référence.
@@ -44,3 +47,5 @@
 - `@nestjs/mau` désinstallé (non utilisé, source de 5 des 9 vulnérabilités `npm audit` initiales).
 - Auto-inscription du propriétaire gérée par un trigger Postgres plutôt qu'un endpoint NestJS ; l'invitation d'utilisateurs supplémentaires est un flux distinct, reporté.
 - Upload des photos vers Supabase Storage avec le jeton de l'utilisateur authentifié plutôt qu'une clé `service_role` (RLS Storage suffit, pas de nouveau secret introduit).
+- Les pertes de stock ne s'écrivent plus que via le module Pertes (Phase 12), jamais via la saisie manuelle générique, pour garantir une trace comptable systématique.
+- Un point de vente/caisse par défaut est créé paresseusement à la première clôture plutôt que d'ajouter un CRUD dédié, en l'absence de besoin multi-caisse actuel.

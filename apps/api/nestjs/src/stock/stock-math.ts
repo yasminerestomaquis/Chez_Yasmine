@@ -1,4 +1,4 @@
-/** Manual movement types exposed through the API. 'sale' is written only by the POS flow (Phase 7); 'transfer' awaits multi-establishment support. */
+/** 'sale' is written only by the POS flow (Phase 7); 'loss' only by the Losses flow (Phase 12, `src/losses/`); 'transfer' awaits multi-establishment support. 'loss' stays a case of this shared type/arithmetic even though it's no longer accepted on the manual stock-movement endpoint (see CreateStockMovementDto) — LossesService reuses the same math. */
 export type ManualStockMovementType = 'in' | 'out' | 'adjustment' | 'loss';
 
 export interface StockMovementInput {
