@@ -1,8 +1,11 @@
 import 'package:flutter/material.dart';
 
 import '../api/api_client.dart';
+import '../catalog/catalog_cache.dart';
 import '../catalog/catalog_repository.dart';
 import '../catalog/models.dart';
+import '../sync/sync_queue_service.dart';
+import '../sync/sync_status_bar.dart';
 import 'product_stock_history_page.dart';
 import 'stock_models.dart';
 import 'stock_movement_dialog.dart';
@@ -20,12 +23,20 @@ class StockPage extends StatefulWidget {
 class _StockPageState extends State<StockPage> {
   late final CatalogRepository _catalog = CatalogRepository(ApiClient(), widget.establishmentId);
   late final StockRepository _stock = StockRepository(ApiClient(), widget.establishmentId);
+  late final CatalogCache _cache = CatalogCache(widget.establishmentId);
+  late final SyncQueueService _syncQueue = SyncQueueService(ApiClient(), widget.establishmentId);
   late Future<(List<StockAlert>, List<Product>)> _future = _load();
 
   Future<(List<StockAlert>, List<Product>)> _load() async {
-    final alerts = await _stock.listAlerts();
-    final products = await _catalog.listProducts();
-    return (alerts, products);
+    try {
+      final alerts = await _stock.listAlerts();
+      final products = await _catalog.listProducts();
+      return (alerts, products);
+    } catch (error) {
+      final cached = await _cache.load();
+      if (cached != null) return (<StockAlert>[], cached.$2); // offline: stock levels shown may be stale, no alerts computed locally.
+      rethrow;
+    }
   }
 
   void _reload() => setState(() => _future = _load());
@@ -44,7 +55,10 @@ class _StockPageState extends State<StockPage> {
   Widget build(BuildContext context) {
     return Scaffold(
       appBar: AppBar(title: const Text('Stock')),
-      body: FutureBuilder<(List<StockAlert>, List<Product>)>(
+      body: Column(children: [
+        SyncStatusBar(syncQueue: _syncQueue),
+        Expanded(
+          child: FutureBuilder<(List<StockAlert>, List<Product>)>(
         future: _future,
         builder: (context, snapshot) {
           if (snapshot.connectionState != ConnectionState.done) {
@@ -125,7 +139,9 @@ class _StockPageState extends State<StockPage> {
             ),
           );
         },
-      ),
+          ),
+        ),
+      ]),
     );
   }
 }

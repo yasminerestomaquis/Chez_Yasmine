@@ -7,7 +7,7 @@ import { StockMovementsService } from './stock-movements.service.js';
 function makePrismaMock() {
   return {
     product: { findFirst: vi.fn(), update: vi.fn(), findMany: vi.fn() },
-    stockMovement: { create: vi.fn(), findMany: vi.fn() },
+    stockMovement: { create: vi.fn(), findMany: vi.fn(), findFirst: vi.fn() },
     $transaction: vi.fn(async (ops: unknown[]) => ops),
   };
 }
@@ -48,6 +48,17 @@ describe('StockMovementsService', () => {
       data: { productId: 'prod-1', type: 'in', quantity: 5, reason: 'Réception', createdBy: 'user-1' },
     });
     expect(prisma.$transaction).toHaveBeenCalledTimes(1);
+  });
+
+  it('replays an already-recorded movement idempotently, never touching the product again', async () => {
+    const alreadyRecorded = { id: 'mvt-1', productId: 'prod-1', type: 'in', quantity: new Decimal(5) };
+    prisma.stockMovement.findFirst.mockResolvedValue(alreadyRecorded);
+
+    const result = await service.create('est-1', 'prod-1', 'user-1', { id: 'mvt-1', type: 'in', quantity: 5 });
+
+    expect(result).toBe(alreadyRecorded);
+    expect(prisma.product.findFirst).not.toHaveBeenCalled();
+    expect(prisma.$transaction).not.toHaveBeenCalled();
   });
 
   it('listLowStockAlerts filters out products at/under their threshold and ignores products with no threshold', async () => {

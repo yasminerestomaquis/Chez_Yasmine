@@ -35,6 +35,21 @@ describe('SalesService.create', () => {
     service = new SalesService(prisma as unknown as PrismaService);
   });
 
+  it('replays an already-created sale idempotently, never touching products/stock again', async () => {
+    const alreadyCreated = { id: 'sale-1', items: [], payments: [] };
+    (prisma.sale as any).findFirst.mockResolvedValue(alreadyCreated);
+
+    const result = await service.create('est-1', 'user-1', {
+      id: 'sale-1',
+      items: [{ productId: 'p1', quantity: 1 }],
+      payments: [{ method: 'cash', amount: 1000 }],
+    } as any);
+
+    expect(result).toBe(alreadyCreated);
+    expect(prisma.product.findMany).not.toHaveBeenCalled();
+    expect(prisma.$transaction).not.toHaveBeenCalled();
+  });
+
   it('rejects a product that does not belong to the establishment', async () => {
     (prisma.product as any).findMany.mockResolvedValue([]);
     await expect(

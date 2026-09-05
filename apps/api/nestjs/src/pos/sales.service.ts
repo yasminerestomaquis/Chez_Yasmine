@@ -9,6 +9,17 @@ export class SalesService {
   constructor(private readonly prisma: PrismaService) {}
 
   async create(establishmentId: string, userId: string, dto: CreateSaleDto) {
+    // Idempotent replay: a client-supplied id lets the same offline sale be
+    // resubmitted safely (network retry, sync queue) without double-charging
+    // stock or creating a duplicate transaction.
+    if (dto.id) {
+      const existing = await this.prisma.sale.findFirst({
+        where: { id: dto.id, establishmentId },
+        include: { items: true, payments: true },
+      });
+      if (existing) return existing;
+    }
+
     const productIds = [...new Set(dto.items.map((i) => i.productId))];
     const products = await this.prisma.product.findMany({ where: { id: { in: productIds }, establishmentId } });
     if (products.length !== productIds.length) {
@@ -80,6 +91,7 @@ export class SalesService {
 
       const sale = await tx.sale.create({
         data: {
+          id: dto.id,
           establishmentId,
           source: dto.source ?? 'pos',
           tableId: dto.tableId,

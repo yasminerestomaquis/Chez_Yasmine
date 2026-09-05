@@ -7,5 +7,6 @@ import { StockMovementsService } from './stock-movements.service.js';
   imports: [AuthModule],
   controllers: [StockController],
   providers: [StockMovementsService],
+  exports: [StockMovementsService],
 })
 export class StockModule {}

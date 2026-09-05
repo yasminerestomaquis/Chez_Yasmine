@@ -107,7 +107,17 @@ Détail complet dans `docs/api/tables.md`.
 
 Restant avant `DONE` : UI fusion/division, vérification bout en bout une fois l'API déployée.
 
-### Phase 9 — Offline-first — `TODO`
+### Phase 9 — Offline-first — `TESTING`
+Détail complet dans `docs/api/sync.md`.
+- [x] Idempotence : `SalesService.create`/`StockMovementsService.create` acceptent un `id` client réutilisé comme id de l'entité — le rejeu d'une opération déjà connue ne touche plus jamais le stock ni la base. Testé.
+- [x] `SyncModule` (`POST /establishments/:id/sync`) : lot d'opérations (`sale`/`stock_movement`), permission vérifiée par opération (pas globale sur la route), journalisation dans `sync_operations` (PENDING/SYNCING/SYNCED/FAILED/CONFLICT), jamais de « dernier écrit gagne » sur un conflit métier. Testé (Prisma mocké), 6 tests.
+- [x] `SyncQueueService` Flutter (`lib/sync/`) : file locale persistée (`shared_preferences`), une par établissement. **Testée en conditions réelles**, sans mock réseau, 4 tests.
+- [x] `PosPage`/`StockMovementDialog` : distinction stricte rejet métier (jamais mis en file) / coupure réseau (mis en file avec UUID généré côté client). `CatalogCache` : dernier catalogue connu resservi hors ligne. `SyncStatusBar` : indicateur en ligne/hors ligne + synchronisation automatique/manuelle.
+- [ ] Ouverture de table et prise de commande non couvertes par la file offline (seules vente et mouvement de stock le sont) — l'architecture du dispatch par `entityType` permet de l'étendre sans refonte, reporté pour rester dans un temps raisonnable.
+- [ ] **Non vérifié en conditions réelles** : le round-trip complet coupure réseau → file → synchronisation contre un vrai backend déployé (même limitation `DATABASE_URL`), et la coupure réseau elle-même n'a pas pu être simulée dans cet environnement.
+
+Restant avant `DONE` : étendre la file aux opérations tables/additions, vérification bout en bout une fois l'API déployée.
+
 ### Phase 10 — Achats / Fournisseurs — `TODO`
 ### Phase 11 — Clients / Crédits — `TODO`
 ### Phase 12 — Dépenses / Pertes / Comptabilité — `TODO`
@@ -125,10 +135,11 @@ Restant avant `DONE` : UI fusion/division, vérification bout en bout une fois l
 - Mouvements de stock, alertes de seuil et historique (Phase 6) — logique pure vérifiée en conditions réelles, service testé (Prisma mocké), UI testée.
 - Caisse : vente, paiement mixte, décrémentation automatique du stock, remboursement (Phase 7) — logique pure vérifiée en conditions réelles, service testé (Prisma mocké), UI testée (un bug de dépassement visuel réel a été trouvé et corrigé).
 - Plan de salle, additions, transfert/fusion/division, clôture liée à la caisse (Phase 8) — service testé (Prisma mocké), UI testée (analyse/build) ; fusion/division pas encore dans l'UI.
+- Offline-first pour ventes et mouvements de stock : idempotence, moteur de synchronisation par lot, file locale, indicateur de connexion (Phase 9) — vérifié en conditions réelles pour la persistance locale, mocké pour le backend.
 
 ## Prochaines étapes immédiates
 
 1. Résoudre l'accès en écriture au dépôt GitHub distant (`yasminerestomaquis/Chez_Yasmine`) avant tout `git push`.
 2. Premier commit + push, puis vérifier que le pipeline CI GitHub Actions passe.
 3. Renseigner le mot de passe de connexion Postgres réel dans `.env` pour vérifier tous les modules en conditions réelles et pouvoir lancer l'API NestJS localement.
-4. Démarrer la Phase 9 (Offline-first) — stockage local, file d'attente de synchronisation, idempotence, résolution de conflits.
+4. Démarrer la Phase 10 (Achats / Fournisseurs).

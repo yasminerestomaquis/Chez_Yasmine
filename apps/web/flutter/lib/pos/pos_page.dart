@@ -1,8 +1,14 @@
 import 'package:flutter/material.dart';
+import 'package:uuid/uuid.dart';
 
 import '../api/api_client.dart';
+import '../catalog/catalog_cache.dart';
 import '../catalog/catalog_repository.dart';
 import '../catalog/models.dart';
+import '../sync/device_id.dart';
+import '../sync/pending_operation.dart';
+import '../sync/sync_queue_service.dart';
+import '../sync/sync_status_bar.dart';
 import 'payment_dialog.dart';
 import 'pos_models.dart';
 import 'pos_repository.dart';
@@ -20,6 +26,8 @@ class PosPage extends StatefulWidget {
 class _PosPageState extends State<PosPage> {
   late final CatalogRepository _catalog = CatalogRepository(ApiClient(), widget.establishmentId);
   late final PosRepository _pos = PosRepository(ApiClient(), widget.establishmentId);
+  late final CatalogCache _cache = CatalogCache(widget.establishmentId);
+  late final SyncQueueService _syncQueue = SyncQueueService(ApiClient(), widget.establishmentId);
   late Future<(List<Category>, List<Product>)> _future = _load();
 
   final List<CartLine> _cart = [];
@@ -28,9 +36,16 @@ class _PosPageState extends State<PosPage> {
   bool _isCharging = false;
 
   Future<(List<Category>, List<Product>)> _load() async {
-    final categories = await _catalog.listCategories();
-    final products = await _catalog.listProducts();
-    return (categories, products);
+    try {
+      final categories = await _catalog.listCategories();
+      final products = await _catalog.listProducts();
+      await _cache.save(categories, products);
+      return (categories, products);
+    } catch (error) {
+      final cached = await _cache.load();
+      if (cached != null) return cached; // offline: fall back to the last known catalog (prompt maître §25).
+      rethrow;
+    }
   }
 
   double get _subtotal => _cart.fold(0, (sum, line) => sum + line.lineTotal);
@@ -59,12 +74,13 @@ class _PosPageState extends State<PosPage> {
     final paymentLines = await showPaymentDialog(context, total: total);
     if (paymentLines == null) return;
 
+    final saleId = const Uuid().v4();
+    final items = _cart.map((l) => {'productId': l.product.id, 'quantity': l.quantity}).toList();
+    final payments = paymentLines.map((p) => {'method': p.method, 'amount': p.amount}).toList();
+
     setState(() => _isCharging = true);
     try {
-      final sale = await _pos.createSale(
-        items: _cart.map((l) => {'productId': l.product.id, 'quantity': l.quantity}).toList(),
-        payments: paymentLines.map((p) => {'method': p.method, 'amount': p.amount}).toList(),
-      );
+      final sale = await _pos.createSale(id: saleId, items: items, payments: payments);
       if (!mounted) return;
       setState(() {
         _cart.clear();
@@ -72,8 +88,26 @@ class _PosPageState extends State<PosPage> {
       });
       await Navigator.of(context).push(MaterialPageRoute(builder: (_) => ReceiptPage(sale: sale)));
     } on ApiException catch (e) {
+      // A real business rejection (bad request, insufficient stock, ...) —
+      // replaying it later wouldn't help, so it is never queued offline.
       if (!mounted) return;
       ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text(e.message)));
+    } catch (_) {
+      // No HTTP response at all reached us — treat as offline and queue the
+      // sale for later sync (prompt maître §25), using saleId as the
+      // idempotency key so a retry can never double-charge stock.
+      await _syncQueue.enqueue(PendingOperation(
+        id: saleId,
+        entityType: 'sale',
+        deviceId: await getDeviceId(),
+        payload: {'items': items, 'payments': payments},
+        createdAt: DateTime.now(),
+      ));
+      if (!mounted) return;
+      setState(() => _cart.clear());
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('Hors ligne : vente enregistrée localement, elle sera synchronisée automatiquement.')),
+      );
     } finally {
       if (mounted) setState(() => _isCharging = false);
     }
@@ -83,7 +117,11 @@ class _PosPageState extends State<PosPage> {
   Widget build(BuildContext context) {
     return Scaffold(
       appBar: AppBar(title: const Text('Caisse')),
-      body: FutureBuilder<(List<Category>, List<Product>)>(
+      body: Column(
+        children: [
+          SyncStatusBar(syncQueue: _syncQueue),
+          Expanded(
+            child: FutureBuilder<(List<Category>, List<Product>)>(
         future: _future,
         builder: (context, snapshot) {
           if (snapshot.connectionState != ConnectionState.done) {
@@ -218,6 +256,9 @@ class _PosPageState extends State<PosPage> {
             ],
           );
         },
+            ),
+          ),
+        ],
       ),
     );
   }

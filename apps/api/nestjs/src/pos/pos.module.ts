@@ -7,5 +7,6 @@ import { SalesService } from './sales.service.js';
   imports: [AuthModule],
   controllers: [SalesController],
   providers: [SalesService],
+  exports: [SalesService],
 })
 export class PosModule {}

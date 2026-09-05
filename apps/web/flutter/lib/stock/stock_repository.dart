@@ -18,10 +18,21 @@ class StockRepository {
     return json.map((e) => StockMovement.fromJson(e as Map<String, dynamic>)).toList();
   }
 
-  Future<void> createMovement(String productId, {required String type, required double quantity, String? reason}) {
+  Future<void> createMovement(
+    String productId, {
+    required String type,
+    required double quantity,
+    String? reason,
+    String? id,
+  }) {
     return _api.post(
       '/establishments/$establishmentId/products/$productId/stock-movements',
-      body: {'type': type, 'quantity': quantity, if (reason != null && reason.isNotEmpty) 'reason': reason},
+      body: {
+        'id': ?id,
+        'type': type,
+        'quantity': quantity,
+        if (reason != null && reason.isNotEmpty) 'reason': reason,
+      },
     );
   }
 }

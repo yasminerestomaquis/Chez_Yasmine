@@ -16,6 +16,12 @@ export class StockMovementsService {
   }
 
   async create(establishmentId: string, productId: string, userId: string, dto: CreateStockMovementDto) {
+    // Idempotent replay — see SalesService.create for the same pattern.
+    if (dto.id) {
+      const existing = await this.prisma.stockMovement.findFirst({ where: { id: dto.id, productId } });
+      if (existing) return existing;
+    }
+
     const product = await this.getProductOrThrow(establishmentId, productId);
 
     let nextQuantity: number;
@@ -28,7 +34,7 @@ export class StockMovementsService {
     const [, movement] = await this.prisma.$transaction([
       this.prisma.product.update({ where: { id: productId }, data: { stockQuantity: nextQuantity } }),
       this.prisma.stockMovement.create({
-        data: { productId, type: dto.type, quantity: dto.quantity, reason: dto.reason, createdBy: userId },
+        data: { id: dto.id, productId, type: dto.type, quantity: dto.quantity, reason: dto.reason, createdBy: userId },
       }),
     ]);
     return movement;

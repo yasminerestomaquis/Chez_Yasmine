@@ -16,8 +16,10 @@ class PosRepository {
     String? orderId,
     String? tableId,
     String? source,
+    String? id,
   }) async {
     final json = await _api.post('/establishments/$establishmentId/sales', body: {
+      'id': ?id,
       'items': items,
       'payments': payments,
       'discount': ?discount,

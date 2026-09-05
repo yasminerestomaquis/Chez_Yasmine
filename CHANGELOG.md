@@ -28,6 +28,9 @@
 - `docs/api/pos.md` documentant la logique de caisse.
 - Plan de salle, additions (ouverture/ajout/retrait d'article/transfert/fusion/division), clôture liée à la caisse (`apps/api/nestjs/src/tables/`) ; UI Flutter correspondante (`apps/web/flutter/lib/tables/`).
 - `docs/api/tables.md` documentant la logique tables/additions.
+- Idempotence des ventes et mouvements de stock (`id` client réutilisé comme id serveur), moteur de synchronisation par lot (`apps/api/nestjs/src/sync/`) avec vérification de permission par opération.
+- File de synchronisation locale, cache catalogue hors ligne, indicateur de connexion (`apps/web/flutter/lib/sync/`, `apps/web/flutter/lib/catalog/catalog_cache.dart`) intégrés à la caisse et au stock.
+- `docs/api/sync.md` documentant le mécanisme offline-first.
 
 ### Décisions
 - Adoption de l'architecture v5 (Flutter + NestJS + Supabase) en remplacement du prototype v1 local (React/Vite/Dexie), conservé comme référence.

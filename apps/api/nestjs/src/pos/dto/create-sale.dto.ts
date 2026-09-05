@@ -29,6 +29,11 @@ export class SaleDiscountDto {
 }
 
 export class CreateSaleDto {
+  /** Client-generated UUID — lets an offline sale be replayed safely (see Phase 9 / docs/api/sync.md) without double-charging stock. */
+  @IsOptional()
+  @IsUUID()
+  id?: string;
+
   @IsOptional()
   @IsIn(['pos', 'table'])
   source?: 'pos' | 'table';

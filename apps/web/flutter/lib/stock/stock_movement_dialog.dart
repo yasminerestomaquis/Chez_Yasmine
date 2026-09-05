@@ -1,6 +1,10 @@
 import 'package:flutter/material.dart';
+import 'package:uuid/uuid.dart';
 
 import '../api/api_client.dart';
+import '../sync/device_id.dart';
+import '../sync/pending_operation.dart';
+import '../sync/sync_queue_service.dart';
 import 'stock_models.dart';
 import 'stock_repository.dart';
 
@@ -44,19 +48,35 @@ class _StockMovementDialogState extends State<_StockMovementDialog> {
 
   Future<void> _submit() async {
     if (!_formKey.currentState!.validate()) return;
+    final quantity = double.parse(_quantityController.text.trim().replaceAll(',', '.'));
+    final reason = _reasonController.text.trim();
+    final movementId = const Uuid().v4();
+
     setState(() => _isSubmitting = true);
     try {
-      await widget.repository.createMovement(
-        widget.productId,
-        type: _type,
-        quantity: double.parse(_quantityController.text.trim().replaceAll(',', '.')),
-        reason: _reasonController.text.trim(),
-      );
+      await widget.repository.createMovement(widget.productId, type: _type, quantity: quantity, reason: reason, id: movementId);
       if (!mounted) return;
       Navigator.of(context).pop(true);
     } on ApiException catch (e) {
+      // A real business rejection (e.g. insufficient stock) — never queued offline.
       if (!mounted) return;
       ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text(e.message)));
+    } catch (_) {
+      // No HTTP response reached us at all — queue for later sync, keyed by
+      // movementId so a retry can never apply the same movement twice.
+      final syncQueue = SyncQueueService(ApiClient(), widget.repository.establishmentId);
+      await syncQueue.enqueue(PendingOperation(
+        id: movementId,
+        entityType: 'stock_movement',
+        deviceId: await getDeviceId(),
+        payload: {'productId': widget.productId, 'type': _type, 'quantity': quantity, if (reason.isNotEmpty) 'reason': reason},
+        createdAt: DateTime.now(),
+      ));
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('Hors ligne : mouvement enregistré localement, il sera synchronisé automatiquement.')),
+      );
+      Navigator.of(context).pop(true);
     } finally {
       if (mounted) setState(() => _isSubmitting = false);
     }
