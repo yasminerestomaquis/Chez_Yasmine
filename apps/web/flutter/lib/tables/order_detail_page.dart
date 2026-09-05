@@ -3,6 +3,7 @@ import 'package:flutter/material.dart';
 import '../api/api_client.dart';
 import '../catalog/catalog_repository.dart';
 import '../catalog/models.dart';
+import '../customers/customers_repository.dart';
 import '../pos/payment_dialog.dart';
 import '../pos/pos_repository.dart';
 import '../pos/receipt_page.dart';
@@ -23,6 +24,7 @@ class OrderDetailPage extends StatefulWidget {
 class _OrderDetailPageState extends State<OrderDetailPage> {
   late final CatalogRepository _catalog = CatalogRepository(ApiClient(), widget.establishmentId);
   late final PosRepository _pos = PosRepository(ApiClient(), widget.establishmentId);
+  late final CustomersRepository _customers = CustomersRepository(ApiClient(), widget.establishmentId);
   late Future<OrderDetail> _future = widget.repository.getOpenOrderForTable(widget.tableId);
   bool _isBusy = false;
 
@@ -74,17 +76,18 @@ class _OrderDetailPageState extends State<OrderDetailPage> {
 
   Future<void> _checkout(OrderDetail order) async {
     if (order.items.isEmpty) return;
-    final paymentLines = await showPaymentDialog(context, total: order.total);
-    if (paymentLines == null) return;
+    final outcome = await showPaymentDialog(context, total: order.total, customersRepository: _customers);
+    if (outcome == null) return;
 
     setState(() => _isBusy = true);
     try {
       final sale = await _pos.createSale(
         items: order.items.map((i) => {'productId': i.productId, 'quantity': i.quantity}).toList(),
-        payments: paymentLines.map((p) => {'method': p.method, 'amount': p.amount}).toList(),
+        payments: outcome.lines.map((p) => {'method': p.method, 'amount': p.amount}).toList(),
         orderId: order.id,
         tableId: widget.tableId,
         source: 'table',
+        customerId: outcome.customerId,
       );
       if (!mounted) return;
       await Navigator.of(context).pushReplacement(MaterialPageRoute(builder: (_) => ReceiptPage(sale: sale)));

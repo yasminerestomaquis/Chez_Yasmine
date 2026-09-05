@@ -6,6 +6,7 @@ import 'auth/auth_gate.dart';
 import 'auth/me_repository.dart';
 import 'catalog/catalog_page.dart';
 import 'config/supabase_config.dart';
+import 'customers/customers_page.dart';
 import 'pos/pos_page.dart';
 import 'purchasing/purchases_page.dart';
 import 'stock/stock_page.dart';
@@ -150,6 +151,13 @@ class _HomePageState extends State<HomePage> {
                               label: const Text('Achats'),
                               onPressed: () => Navigator.of(context).push(
                                 MaterialPageRoute(builder: (_) => PurchasesPage(establishmentId: establishment.id)),
+                              ),
+                            ),
+                            TextButton.icon(
+                              icon: const Icon(Icons.people_outline),
+                              label: const Text('Clients'),
+                              onPressed: () => Navigator.of(context).push(
+                                MaterialPageRoute(builder: (_) => CustomersPage(establishmentId: establishment.id)),
                               ),
                             ),
                             TextButton.icon(

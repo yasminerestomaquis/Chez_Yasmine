@@ -1,11 +1,10 @@
 import 'package:flutter/material.dart';
 
+import '../customers/customer_models.dart';
+import '../customers/customers_repository.dart';
 import 'pos_models.dart';
 
-/// Paiement espèces / Mobile Money / carte, y compris mixte (plusieurs lignes).
-/// Le crédit sera activé en Phase 11, une fois la gestion des clients en
-/// place — l'exposer ici sans sélecteur de client serait trompeur.
-const _availableMethods = ['cash', 'mobile_money', 'card'];
+const _availableMethods = ['cash', 'mobile_money', 'card', 'credit'];
 
 class PaymentLine {
   PaymentLine(this.method, this.amount);
@@ -13,14 +12,31 @@ class PaymentLine {
   final double amount;
 }
 
-/// Retourne les lignes de paiement saisies (somme == [total]), ou `null` si annulé.
-Future<List<PaymentLine>?> showPaymentDialog(BuildContext context, {required double total}) {
-  return showDialog<List<PaymentLine>>(context: context, builder: (_) => _PaymentDialog(total: total));
+/// A validated payment split, plus the customer to bill if any line is 'credit'.
+class PaymentOutcome {
+  PaymentOutcome(this.lines, this.customerId);
+  final List<PaymentLine> lines;
+  final String? customerId;
+}
+
+/// Retourne le résultat du paiement (lignes + client si crédit), ou `null` si annulé.
+/// [customersRepository] n'est requis que pour proposer le sélecteur de client
+/// une fois qu'une ligne « Crédit » est ajoutée.
+Future<PaymentOutcome?> showPaymentDialog(
+  BuildContext context, {
+  required double total,
+  required CustomersRepository customersRepository,
+}) {
+  return showDialog<PaymentOutcome>(
+    context: context,
+    builder: (_) => _PaymentDialog(total: total, customersRepository: customersRepository),
+  );
 }
 
 class _PaymentDialog extends StatefulWidget {
-  const _PaymentDialog({required this.total});
+  const _PaymentDialog({required this.total, required this.customersRepository});
   final double total;
+  final CustomersRepository customersRepository;
 
   @override
   State<_PaymentDialog> createState() => _PaymentDialogState();
@@ -30,9 +46,13 @@ class _PaymentDialogState extends State<_PaymentDialog> {
   final List<PaymentLine> _lines = [];
   String _method = _availableMethods.first;
   final _amountController = TextEditingController();
+  Customer? _selectedCustomer;
+  List<Customer>? _customers;
+  bool _customersLoadFailed = false;
 
   double get _paid => _lines.fold(0, (sum, l) => sum + l.amount);
   double get _remaining => widget.total - _paid;
+  bool get _hasCreditLine => _lines.any((l) => l.method == 'credit');
 
   @override
   void initState() {
@@ -46,9 +66,28 @@ class _PaymentDialogState extends State<_PaymentDialog> {
     super.dispose();
   }
 
+  Future<void> _onMethodChanged(String method) async {
+    setState(() => _method = method);
+    if (method == 'credit' && _customers == null && !_customersLoadFailed) {
+      try {
+        final customers = await widget.customersRepository.listCustomers();
+        if (!mounted) return;
+        setState(() => _customers = customers);
+      } catch (_) {
+        // Leaves _customers null — the "add line" button stays disabled for
+        // credit until a customer can actually be picked. Shown inline
+        // rather than via ScaffoldMessenger, since this dialog may be shown
+        // from a context with no Scaffold ancestor.
+        if (!mounted) return;
+        setState(() => _customersLoadFailed = true);
+      }
+    }
+  }
+
   void _addLine() {
     final amount = double.tryParse(_amountController.text.trim().replaceAll(',', '.'));
     if (amount == null || amount <= 0) return;
+    if (_method == 'credit' && _selectedCustomer == null) return;
     setState(() {
       _lines.add(PaymentLine(_method, amount));
       final remaining = _remaining;
@@ -58,6 +97,7 @@ class _PaymentDialogState extends State<_PaymentDialog> {
 
   @override
   Widget build(BuildContext context) {
+    final canAdd = _method != 'credit' || _selectedCustomer != null;
     return AlertDialog(
       title: const Text('Paiement'),
       content: SizedBox(
@@ -88,7 +128,7 @@ class _PaymentDialogState extends State<_PaymentDialog> {
                       items: _availableMethods
                           .map((m) => DropdownMenuItem(value: m, child: Text(paymentMethodLabels[m]!)))
                           .toList(),
-                      onChanged: (v) => setState(() => _method = v!),
+                      onChanged: (v) => _onMethodChanged(v!),
                     ),
                   ),
                   const SizedBox(width: 8),
@@ -101,8 +141,26 @@ class _PaymentDialogState extends State<_PaymentDialog> {
                   ),
                 ],
               ),
+              if (_method == 'credit') ...[
+                const SizedBox(height: 8),
+                if (_customersLoadFailed)
+                  const Text('Impossible de charger la liste des clients.', style: TextStyle(color: Colors.red))
+                else if (_customers == null)
+                  const Padding(padding: EdgeInsets.all(8), child: CircularProgressIndicator())
+                else
+                  DropdownButtonFormField<Customer>(
+                    initialValue: _selectedCustomer,
+                    isExpanded: true,
+                    decoration: const InputDecoration(labelText: 'Client *'),
+                    items: [
+                      for (final customer in _customers!)
+                        DropdownMenuItem(value: customer, child: Text(customer.name)),
+                    ],
+                    onChanged: (c) => setState(() => _selectedCustomer = c),
+                  ),
+              ],
               const SizedBox(height: 8),
-              OutlinedButton(onPressed: _addLine, child: const Text('Ajouter la ligne de paiement')),
+              OutlinedButton(onPressed: canAdd ? _addLine : null, child: const Text('Ajouter la ligne de paiement')),
             ] else
               Text('Restant : ${_remaining.toStringAsFixed(0)} FCFA', style: const TextStyle(color: Colors.green)),
           ],
@@ -111,7 +169,9 @@ class _PaymentDialogState extends State<_PaymentDialog> {
       actions: [
         TextButton(onPressed: () => Navigator.of(context).pop(), child: const Text('Annuler')),
         FilledButton(
-          onPressed: _remaining.abs() < 0.01 ? () => Navigator.of(context).pop(_lines) : null,
+          onPressed: _remaining.abs() < 0.01
+              ? () => Navigator.of(context).pop(PaymentOutcome(_lines, _hasCreditLine ? _selectedCustomer?.id : null))
+              : null,
           child: const Text('Valider le paiement'),
         ),
       ],

@@ -127,7 +127,16 @@ Détail complet dans `docs/api/purchasing.md`.
 
 Restant avant `DONE` : vérification bout en bout une fois l'API déployée.
 
-### Phase 11 — Clients / Crédits — `TODO`
+### Phase 11 — Clients / Crédits — `TESTING`
+Détail complet dans `docs/api/customers.md`.
+- [x] `CustomersService`/`CustomersController` : CRUD clients (`customers.manage`).
+- [x] `CreditsService`/`CreditsController` : historique fusionné (ventes à crédit + remboursements), remboursement volontaire (réutilise `applyRepayment` de la Phase 7, strict — rejette un remboursement supérieur au solde). Testé (Prisma mocké), 4 tests.
+- [x] **Paiement à crédit activé en caisse** (dette laissée ouverte en Phase 7/8) : `PaymentDialog` charge la liste des clients et exige une sélection avant d'accepter une ligne crédit. Testé, y compris la gestion défensive d'un échec de chargement de la liste clients.
+- [x] UI Flutter (`lib/customers/`) : liste clients, création avec plafond de crédit, écran de crédit par client (historique + remboursement). `flutter analyze`/`test`/`build web` ✅.
+- [ ] **Non vérifié en conditions réelles** : round-trip HTTP complet — même limitation `DATABASE_URL` que les phases précédentes.
+
+Restant avant `DONE` : vérification bout en bout une fois l'API déployée.
+
 ### Phase 12 — Dépenses / Pertes / Comptabilité — `TODO`
 ### Phase 13 — Rapports — `TODO`
 ### Phase 14 — Notifications — `TODO`
@@ -145,10 +154,11 @@ Restant avant `DONE` : vérification bout en bout une fois l'API déployée.
 - Plan de salle, additions, transfert/fusion/division, clôture liée à la caisse (Phase 8) — service testé (Prisma mocké), UI testée (analyse/build) ; fusion/division pas encore dans l'UI.
 - Offline-first pour ventes et mouvements de stock : idempotence, moteur de synchronisation par lot, file locale, indicateur de connexion (Phase 9) — vérifié en conditions réelles pour la persistance locale, mocké pour le backend.
 - Fournisseurs, achats, réception avec incrémentation automatique du stock (Phase 10) — service testé (Prisma mocké), UI testée (analyse/build).
+- Clients, crédits, remboursements, et activation du paiement à crédit en caisse (Phase 11) — service testé (Prisma mocké), UI testée.
 
 ## Prochaines étapes immédiates
 
 1. Résoudre l'accès en écriture au dépôt GitHub distant (`yasminerestomaquis/Chez_Yasmine`) avant tout `git push`.
 2. Premier commit + push, puis vérifier que le pipeline CI GitHub Actions passe.
 3. Renseigner le mot de passe de connexion Postgres réel dans `.env` pour vérifier tous les modules en conditions réelles et pouvoir lancer l'API NestJS localement.
-4. Démarrer la Phase 11 (Clients / Crédits).
+4. Démarrer la Phase 12 (Dépenses / Pertes / Comptabilité).

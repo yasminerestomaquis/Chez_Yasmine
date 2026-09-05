@@ -1,15 +1,22 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
 
+import 'package:chez_yasmine/api/api_client.dart';
+import 'package:chez_yasmine/customers/customers_repository.dart';
 import 'package:chez_yasmine/pos/payment_dialog.dart';
 
 void main() {
-  Future<List<PaymentLine>?> openAndCapture(WidgetTester tester, {required double total}) async {
-    List<PaymentLine>? result;
+  // None of these tests select the "Crédit" method, so this is never called
+  // — no need for a live ApiClient/Supabase session here.
+  final customersRepository = CustomersRepository(ApiClient(), 'est-1');
+
+  Future<PaymentOutcome?> openAndCapture(WidgetTester tester, {required double total}) async {
+    PaymentOutcome? result;
     await tester.pumpWidget(MaterialApp(
       home: Builder(
         builder: (context) => ElevatedButton(
-          onPressed: () async => result = await showPaymentDialog(context, total: total),
+          onPressed: () async =>
+              result = await showPaymentDialog(context, total: total, customersRepository: customersRepository),
           child: const Text('open'),
         ),
       ),
@@ -30,7 +37,7 @@ void main() {
     await tester.pumpWidget(MaterialApp(
       home: Builder(
         builder: (context) => ElevatedButton(
-          onPressed: () => showPaymentDialog(context, total: 5000),
+          onPressed: () => showPaymentDialog(context, total: 5000, customersRepository: customersRepository),
           child: const Text('open'),
         ),
       ),
@@ -65,7 +72,7 @@ void main() {
     await tester.pumpWidget(MaterialApp(
       home: Builder(
         builder: (context) => ElevatedButton(
-          onPressed: () => showPaymentDialog(context, total: 1000),
+          onPressed: () => showPaymentDialog(context, total: 1000, customersRepository: customersRepository),
           child: const Text('open'),
         ),
       ),
@@ -83,5 +90,26 @@ void main() {
     expect(find.text('Espèces : 1000 FCFA'), findsNothing);
     final button = tester.widget<FilledButton>(find.widgetWithText(FilledButton, 'Valider le paiement'));
     expect(button.onPressed, isNull);
+  });
+
+  testWidgets('selecting "Crédit" requires a customer before the line can be added', (tester) async {
+    await tester.pumpWidget(MaterialApp(
+      home: Builder(
+        builder: (context) => ElevatedButton(
+          onPressed: () => showPaymentDialog(context, total: 1000, customersRepository: customersRepository),
+          child: const Text('open'),
+        ),
+      ),
+    ));
+    await tester.tap(find.text('open'));
+    await tester.pumpAndSettle();
+
+    await tester.tap(find.text('Espèces').last);
+    await tester.pumpAndSettle();
+    await tester.tap(find.text('Crédit').last);
+    await tester.pump(); // triggers the async customer list load, which fails fast (no network) in this test.
+
+    final addButton = tester.widget<OutlinedButton>(find.widgetWithText(OutlinedButton, 'Ajouter la ligne de paiement'));
+    expect(addButton.onPressed, isNull, reason: 'no customer has been picked yet');
   });
 }

@@ -5,6 +5,7 @@ import '../api/api_client.dart';
 import '../catalog/catalog_cache.dart';
 import '../catalog/catalog_repository.dart';
 import '../catalog/models.dart';
+import '../customers/customers_repository.dart';
 import '../sync/device_id.dart';
 import '../sync/pending_operation.dart';
 import '../sync/sync_queue_service.dart';
@@ -28,6 +29,7 @@ class _PosPageState extends State<PosPage> {
   late final PosRepository _pos = PosRepository(ApiClient(), widget.establishmentId);
   late final CatalogCache _cache = CatalogCache(widget.establishmentId);
   late final SyncQueueService _syncQueue = SyncQueueService(ApiClient(), widget.establishmentId);
+  late final CustomersRepository _customers = CustomersRepository(ApiClient(), widget.establishmentId);
   late Future<(List<Category>, List<Product>)> _future = _load();
 
   final List<CartLine> _cart = [];
@@ -71,16 +73,16 @@ class _PosPageState extends State<PosPage> {
   Future<void> _checkout() async {
     if (_cart.isEmpty) return;
     final total = _subtotal;
-    final paymentLines = await showPaymentDialog(context, total: total);
-    if (paymentLines == null) return;
+    final outcome = await showPaymentDialog(context, total: total, customersRepository: _customers);
+    if (outcome == null) return;
 
     final saleId = const Uuid().v4();
     final items = _cart.map((l) => {'productId': l.product.id, 'quantity': l.quantity}).toList();
-    final payments = paymentLines.map((p) => {'method': p.method, 'amount': p.amount}).toList();
+    final payments = outcome.lines.map((p) => {'method': p.method, 'amount': p.amount}).toList();
 
     setState(() => _isCharging = true);
     try {
-      final sale = await _pos.createSale(id: saleId, items: items, payments: payments);
+      final sale = await _pos.createSale(id: saleId, items: items, payments: payments, customerId: outcome.customerId);
       if (!mounted) return;
       setState(() {
         _cart.clear();

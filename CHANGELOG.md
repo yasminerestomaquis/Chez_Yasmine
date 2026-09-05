@@ -33,6 +33,9 @@
 - `docs/api/sync.md` documentant le mécanisme offline-first.
 - Fournisseurs, commandes d'achat, réception avec incrémentation automatique du stock (`apps/api/nestjs/src/purchasing/`) ; UI Flutter correspondante (`apps/web/flutter/lib/purchasing/`).
 - `docs/api/purchasing.md` documentant la logique achats/fournisseurs.
+- Gestion des clients, historique et remboursement de crédit (`apps/api/nestjs/src/customers/`) ; UI Flutter correspondante (`apps/web/flutter/lib/customers/`).
+- Paiement à crédit activé en caisse (sélecteur de client dans `PaymentDialog`), après avoir été volontairement laissé de côté en Phases 7/8.
+- `docs/api/customers.md` documentant la logique clients/crédits.
 
 ### Décisions
 - Adoption de l'architecture v5 (Flutter + NestJS + Supabase) en remplacement du prototype v1 local (React/Vite/Dexie), conservé comme référence.
