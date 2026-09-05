@@ -32,7 +32,7 @@ Flutter Web (PWA)  →  HTTPS/REST + WebSocket  →  NestJS API  →  Supabase (
 
 ### Décision actée : authentification
 
-Validée explicitement par l'utilisateur (2026-09-05) : Supabase Auth est le fournisseur d'identité unique, pour éviter une double authentification Supabase/NestJS. Voir `docs/decisions/`.
+Validée explicitement par l'utilisateur (2026-09-05) : Supabase Auth est le fournisseur d'identité unique, pour éviter une double authentification Supabase/NestJS. Le projet signe ses JWT en **ES256 via JWKS** (pas de secret partagé) — NestJS vérifie via `SupabaseJwtGuard` (`apps/api/nestjs/src/auth/`). Détail complet, y compris le trigger d'auto-inscription et les vérifications en conditions réelles, dans `docs/api/auth.md`.
 
 ## Projet Supabase
 

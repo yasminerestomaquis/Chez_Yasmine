@@ -1,6 +1,12 @@
 import 'package:flutter/material.dart';
+import 'package:supabase_flutter/supabase_flutter.dart';
 
-void main() {
+import 'auth/auth_gate.dart';
+import 'config/supabase_config.dart';
+
+Future<void> main() async {
+  WidgetsFlutterBinding.ensureInitialized();
+  await Supabase.initialize(url: SupabaseConfig.url, publishableKey: SupabaseConfig.publishableKey);
   runApp(const ChezYasmineApp());
 }
 
@@ -12,7 +18,7 @@ class ChezYasmineApp extends StatelessWidget {
     return MaterialApp(
       title: 'Chez Yasmine',
       theme: ThemeData(colorScheme: ColorScheme.fromSeed(seedColor: const Color(0xFFE07A1F))),
-      home: const HomePage(),
+      home: AuthGate(authenticated: (context) => const HomePage()),
     );
   }
 }
@@ -22,6 +28,7 @@ class HomePage extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final user = Supabase.instance.client.auth.currentUser;
     return Scaffold(
       appBar: AppBar(
         backgroundColor: Theme.of(context).colorScheme.surface,
@@ -36,9 +43,23 @@ class HomePage extends StatelessWidget {
             const Text('Chez Yasmine', style: TextStyle(fontWeight: FontWeight.bold)),
           ],
         ),
+        actions: [
+          IconButton(
+            tooltip: 'Se déconnecter',
+            icon: const Icon(Icons.logout),
+            onPressed: () => Supabase.instance.client.auth.signOut(),
+          ),
+        ],
       ),
-      body: const Center(
-        child: Text('Fondations en cours de mise en place.'),
+      body: Center(
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            const Text('Fondations en cours de mise en place.'),
+            const SizedBox(height: 8),
+            if (user?.email != null) Text('Connecté en tant que ${user!.email}'),
+          ],
+        ),
       ),
     );
   }

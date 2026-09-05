@@ -51,12 +51,18 @@ Restant avant `DONE` : vérifier le pipeline CI une fois le premier push possibl
 - [x] Seed des rôles/permissions système (`supabase/seed/001_roles_permissions.sql`) exécuté : 15 permissions, 8 rôles, 74 associations.
 - [x] Schéma Prisma (`apps/api/nestjs/prisma/schema.prisma`) écrit à la main en miroir des migrations (pas d'accès à `DATABASE_URL` réel pour introspecter) ; `prisma validate`/`prisma generate` ✅. Intégration NestJS via adaptateur pilote `@prisma/adapter-pg` (Prisma 7 a retiré `datasource.url` du schéma) : `PrismaModule`/`PrismaService`, build NestJS ✅.
 
-### Phase 4 — Authentification et RBAC — `IN_PROGRESS`
-Utilisateurs, organisations, établissements, rôles, permissions, sessions — via Supabase Auth + RBAC NestJS (décision actée).
+### Phase 4 — Authentification et RBAC — `TESTING`
+Utilisateurs, organisations, établissements, rôles, permissions, sessions — via Supabase Auth + RBAC NestJS (décision actée). Détail complet dans `docs/api/auth.md`.
 - [x] Tables et seed RBAC en place (voir Phase 3) : `roles`, `permissions`, `role_permissions`, `user_establishment_roles`, 8 rôles système avec permissions par défaut.
-- [ ] Flux Supabase Auth côté Flutter (inscription/connexion/OTP) — à faire.
-- [ ] Guard NestJS de vérification du JWT Supabase (JWKS) + décorateurs de permission — à faire.
-- [ ] Écran de gestion des utilisateurs/rôles par établissement — à faire.
+- [x] Trigger d'auto-inscription (`handle_new_user`, migration `20260905193000_auth_bootstrap_trigger.sql`) : crée organisation + établissement + profil + rôle Propriétaire à l'inscription. **Vérifié en conditions réelles** (inscription via l'API Supabase Auth réelle, requête SQL confirmant la création correcte, puis nettoyage des données de test).
+- [x] Flux Supabase Auth côté Flutter : connexion par mot de passe, connexion par OTP e-mail, inscription propriétaire (`lib/auth/`). **Vérifié en conditions réelles** dans le navigateur : page de connexion, inscription (bloquée par la limite d'envoi d'e-mails du plan Supabase gratuit — erreur correctement affichée, aucune donnée orpheline créée), et rejet d'identifiants invalides (« Invalid login credentials » correctement affiché).
+- [x] Guard NestJS de vérification du JWT Supabase (`SupabaseJwtGuard`, `src/auth/`) via JWKS (le projet signe en ES256, confirmé en interrogeant l'endpoint JWKS réel) — pas de secret partagé. **Vérifié en conditions réelles** : un jeton émis par une vraie connexion Supabase est accepté, un jeton altéré est rejeté. Tests unitaires ✅ (mocks de `jose`).
+- [x] `PermissionsGuard` + `@RequirePermissions(...)` (`src/auth/`), vérifie les permissions via Prisma sur l'établissement `:establishmentId` de la route. Tests unitaires ✅. **Non vérifié en conditions réelles** (nécessite `DATABASE_URL` réel, indisponible ici).
+- [x] `GET /auth/me` (profil + établissements de l'utilisateur connecté) — compile, non testé en conditions réelles (même limitation `DATABASE_URL`).
+- [ ] Écran de gestion des utilisateurs/rôles par établissement — reporté (fonctionnalité produit, pas fondation d'auth).
+- [ ] Flux d'invitation d'un utilisateur dans une organisation existante (au-delà de l'auto-inscription du propriétaire) — reporté.
+
+Restant avant `DONE` : renseigner `DATABASE_URL` réel pour vérifier `PermissionsGuard`/`GET /auth/me` en conditions réelles.
 
 ### Phase 5 — Produits et photos — `TODO`
 ### Phase 6 — Stock — `TODO`
@@ -74,11 +80,14 @@ Utilisateurs, organisations, établissements, rôles, permissions, sessions — 
 
 ## Fonctionnalités terminées
 
-Aucune fonctionnalité métier utilisateur final encore développée (Phases 0-3 = audit, fondations et schéma de données, conformément à la règle du prompt maître : pas de développement fonctionnel avant une base technique saine). Le schéma de données et le RBAC de référence sont en revanche en place et vérifiés (RLS, advisors, seed).
+- Schéma de données et RBAC de référence (Phase 3), vérifiés (RLS, advisors, seed).
+- Inscription propriétaire, connexion (mot de passe + OTP) et vérification JWT (Phase 4) — bout en bout côté authentification, vérifiées en conditions réelles contre le projet Supabase.
+
+Pas encore de fonctionnalité métier utilisateur final (catalogue, caisse, stock, etc. — Phase 5+), conformément à la règle du prompt maître : pas de développement fonctionnel avant une base technique saine.
 
 ## Prochaines étapes immédiates
 
 1. Résoudre l'accès en écriture au dépôt GitHub distant (`yasminerestomaquis/Chez_Yasmine`) avant tout `git push`.
 2. Premier commit + push, puis vérifier que le pipeline CI GitHub Actions passe.
-3. Renseigner le mot de passe de connexion Postgres réel dans `.env` pour pouvoir lancer l'API NestJS localement contre la base.
-4. Poursuivre la Phase 4 (Auth Supabase côté Flutter + guard JWT NestJS) ou démarrer la Phase 5 (produits/photos) selon la priorité choisie.
+3. Renseigner le mot de passe de connexion Postgres réel dans `.env` pour vérifier `PermissionsGuard`/`GET /auth/me` en conditions réelles et pouvoir lancer l'API NestJS localement.
+4. Démarrer la Phase 5 (produits/photos) — première fonctionnalité métier visible.

@@ -12,6 +12,7 @@ Appliqué sur le projet Supabase `tsebsulvhgttdwtgqfoj` (eu-west-1, Postgres 17)
 | 20260905191620 | revoke_rls_helper_functions_from_anon | Retire explicitement le droit d'exécution accordé par défaut au rôle `anon` |
 | 20260905191701 | add_missing_foreign_key_indexes | Index manquants relevés par l'advisor de performance Supabase |
 | 20260905191800 | add_system_role_unique_index | Index unique partiel sur `roles(name) where organization_id is null`, pour que le seed des rôles système soit idempotent |
+| 20260905193000 | auth_bootstrap_trigger | Trigger `on_auth_user_created` (SECURITY DEFINER) sur `auth.users` : à l'inscription, crée automatiquement l'organisation, l'établissement, le `user_profiles` et affecte le rôle système « Propriétaire ». Voir `docs/api/auth.md`. |
 
 Seed (hors migrations, rejouable) : `supabase/seed/001_roles_permissions.sql` — 15 permissions, 8 rôles système (Super Administrateur, Administrateur, Propriétaire, Gérant, Caissier, Serveur, Magasinier, Comptable), 74 associations rôle/permission. Déjà exécuté sur le projet.
 
