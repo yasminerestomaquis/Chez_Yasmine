@@ -1,0 +1,161 @@
+import { BadRequestException, ConflictException, Injectable, NotFoundException } from '@nestjs/common';
+import { PrismaService } from '../prisma/prisma.service.js';
+import { applyCreditSale } from './credit-math.js';
+import type { CreateSaleDto } from './dto/create-sale.dto.js';
+import { computeCartTotals, validatePayments, type CartLine } from './pos-math.js';
+
+@Injectable()
+export class SalesService {
+  constructor(private readonly prisma: PrismaService) {}
+
+  async create(establishmentId: string, userId: string, dto: CreateSaleDto) {
+    const productIds = [...new Set(dto.items.map((i) => i.productId))];
+    const products = await this.prisma.product.findMany({ where: { id: { in: productIds }, establishmentId } });
+    if (products.length !== productIds.length) {
+      throw new BadRequestException("Un ou plusieurs produits n'appartiennent pas à cet établissement");
+    }
+    const productById = new Map(products.map((p) => [p.id, p]));
+
+    for (const item of dto.items) {
+      const product = productById.get(item.productId)!;
+      if (product.stockQuantity.toNumber() < item.quantity) {
+        throw new ConflictException(`Stock insuffisant pour ${product.name}`);
+      }
+    }
+
+    const lines: CartLine[] = dto.items.map((item) => ({
+      productId: item.productId,
+      unitPrice: productById.get(item.productId)!.salePrice.toNumber(),
+      quantity: item.quantity,
+    }));
+
+    let totals;
+    try {
+      totals = computeCartTotals(lines, dto.discount ?? { type: 'amount', value: 0 });
+      validatePayments(dto.payments, totals.total, { customerId: dto.customerId });
+    } catch (error) {
+      throw new BadRequestException(error instanceof Error ? error.message : 'Vente invalide');
+    }
+
+    const creditAmount = dto.payments.filter((p) => p.method === 'credit').reduce((sum, p) => sum + p.amount, 0);
+    let customer = dto.customerId
+      ? await this.prisma.customer.findFirst({ where: { id: dto.customerId, establishmentId } })
+      : null;
+    if (dto.customerId && !customer) {
+      throw new BadRequestException("Le client indiqué n'appartient pas à cet établissement");
+    }
+    let nextCreditBalance: number | null = null;
+    if (creditAmount > 0) {
+      try {
+        nextCreditBalance = applyCreditSale(
+          { balance: customer!.creditBalance.toNumber(), limit: customer!.creditLimit.toNumber() },
+          creditAmount,
+        );
+      } catch (error) {
+        throw new BadRequestException(error instanceof Error ? error.message : 'Crédit invalide');
+      }
+    }
+
+    return this.prisma.$transaction(async (tx) => {
+      for (const item of dto.items) {
+        await tx.product.update({ where: { id: item.productId }, data: { stockQuantity: { decrement: item.quantity } } });
+        await tx.stockMovement.create({
+          data: { productId: item.productId, type: 'sale', quantity: item.quantity, createdBy: userId },
+        });
+      }
+
+      const sale = await tx.sale.create({
+        data: {
+          establishmentId,
+          source: dto.source ?? 'pos',
+          tableId: dto.tableId,
+          orderId: dto.orderId,
+          customerId: dto.customerId,
+          subtotal: totals.subtotal,
+          discount: totals.discount,
+          total: totals.total,
+          createdBy: userId,
+          items: {
+            create: dto.items.map((item) => ({
+              productId: item.productId,
+              name: productById.get(item.productId)!.name,
+              quantity: item.quantity,
+              unitPrice: productById.get(item.productId)!.salePrice,
+            })),
+          },
+          payments: { create: dto.payments.map((p) => ({ method: p.method, amount: p.amount })) },
+        },
+        include: { items: true, payments: true },
+      });
+
+      if (creditAmount > 0 && nextCreditBalance !== null) {
+        await tx.customer.update({ where: { id: customer!.id }, data: { creditBalance: nextCreditBalance } });
+        await tx.credit.create({ data: { customerId: customer!.id, saleId: sale.id, amount: creditAmount } });
+      }
+
+      return sale;
+    });
+  }
+
+  async get(establishmentId: string, saleId: string) {
+    const sale = await this.prisma.sale.findFirst({
+      where: { id: saleId, establishmentId },
+      include: { items: true, payments: true },
+    });
+    if (!sale) {
+      throw new NotFoundException('Vente introuvable pour cet établissement');
+    }
+    return sale;
+  }
+
+  async listForDay(establishmentId: string, day: string) {
+    const start = new Date(`${day}T00:00:00.000Z`);
+    const end = new Date(`${day}T23:59:59.999Z`);
+    return this.prisma.sale.findMany({
+      where: { establishmentId, createdAt: { gte: start, lte: end } },
+      include: { items: true, payments: true },
+      orderBy: { createdAt: 'desc' },
+    });
+  }
+
+  /** Restocks every item and reverses any credit granted — the sale itself is kept, only marked voided (audit trail). */
+  async refund(establishmentId: string, userId: string, saleId: string) {
+    const sale = await this.prisma.sale.findFirst({
+      where: { id: saleId, establishmentId },
+      include: { items: true, credits: true },
+    });
+    if (!sale) {
+      throw new NotFoundException('Vente introuvable pour cet établissement');
+    }
+    if (sale.voidedAt) {
+      throw new ConflictException('Cette vente a déjà été remboursée');
+    }
+
+    return this.prisma.$transaction(async (tx) => {
+      for (const item of sale.items) {
+        const quantity = item.quantity.toNumber();
+        await tx.product.update({ where: { id: item.productId }, data: { stockQuantity: { increment: quantity } } });
+        await tx.stockMovement.create({
+          data: {
+            productId: item.productId,
+            type: 'in',
+            quantity,
+            reason: `Remboursement vente ${sale.id}`,
+            createdBy: userId,
+          },
+        });
+      }
+
+      if (sale.customerId) {
+        const creditAmount = sale.credits.reduce((sum, c) => sum + c.amount.toNumber(), 0);
+        if (creditAmount > 0) {
+          const customer = await tx.customer.findUniqueOrThrow({ where: { id: sale.customerId } });
+          const nextBalance = Math.max(0, customer.creditBalance.toNumber() - creditAmount);
+          await tx.customer.update({ where: { id: sale.customerId }, data: { creditBalance: nextBalance } });
+        }
+      }
+
+      return tx.sale.update({ where: { id: saleId }, data: { voidedAt: new Date() }, include: { items: true, payments: true } });
+    });
+  }
+}

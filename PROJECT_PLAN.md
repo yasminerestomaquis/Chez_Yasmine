@@ -85,7 +85,17 @@ Détail complet dans `docs/api/stock.md`.
 
 Restant avant `DONE` : vérification bout en bout une fois l'API déployée avec un vrai `DATABASE_URL`.
 
-### Phase 7 — POS — `TODO`
+### Phase 7 — POS — `TESTING`
+Détail complet dans `docs/api/pos.md`.
+- [x] Logique pure `pos-math.ts`/`credit-math.ts` (totaux de panier, remise, validation de paiement, plafond de crédit), reprise et adaptée du prototype v1. **Testée en conditions réelles**, sans mock, 19 tests.
+- [x] `SalesService.create` : recharge toujours le prix depuis la base (jamais depuis le client), vérifie le stock avant transaction, décrémente le stock et écrit un mouvement `sale` par ligne, gère le paiement mixte et le paiement à crédit (plafond vérifié, `Credit` créé). Testé (Prisma mocké).
+- [x] `SalesService.refund` : ne supprime jamais la vente (marque `voidedAt`, migration `20260905210122_add_sale_voided_at.sql`), restocke chaque article, réverse le crédit accordé. Testé (Prisma mocké).
+- [x] UI Flutter (`lib/pos/`) : cartes produits avec recherche/catégories, panier, paiement mixte, reçu. Un vrai bug de dépassement visuel sur le sélecteur de méthode de paiement a été détecté par les tests et corrigé. 3 tests widget.
+- [ ] Paiement à crédit non exposé dans l'UI — nécessite un sélecteur de client (Phase 11), le backend le supporte déjà. Annulation/remboursement pas encore accessible depuis l'UI (endpoint prêt, bouton à ajouter).
+- [ ] **Non vérifié en conditions réelles** : round-trip HTTP complet — même limitation `DATABASE_URL` que les phases précédentes.
+
+Restant avant `DONE` : bouton remboursement dans l'UI, vérification bout en bout une fois l'API déployée.
+
 ### Phase 8 — Tables et serveurs — `TODO`
 ### Phase 9 — Offline-first — `TODO`
 ### Phase 10 — Achats / Fournisseurs — `TODO`
@@ -103,10 +113,11 @@ Restant avant `DONE` : vérification bout en bout une fois l'API déployée avec
 - Inscription propriétaire, connexion (mot de passe + OTP) et vérification JWT (Phase 4) — bout en bout côté authentification, vérifiées en conditions réelles contre le projet Supabase.
 - Catégories, produits et pipeline photo natif (Phase 5) — première fonctionnalité métier visible ; logique et pipeline image vérifiés (mocks Prisma + vraies images), round-trip HTTP complet pas encore vérifiable faute d'API déployée.
 - Mouvements de stock, alertes de seuil et historique (Phase 6) — logique pure vérifiée en conditions réelles, service testé (Prisma mocké), UI testée.
+- Caisse : vente, paiement mixte, décrémentation automatique du stock, remboursement (Phase 7) — logique pure vérifiée en conditions réelles, service testé (Prisma mocké), UI testée (un bug de dépassement visuel réel a été trouvé et corrigé).
 
 ## Prochaines étapes immédiates
 
 1. Résoudre l'accès en écriture au dépôt GitHub distant (`yasminerestomaquis/Chez_Yasmine`) avant tout `git push`.
 2. Premier commit + push, puis vérifier que le pipeline CI GitHub Actions passe.
-3. Renseigner le mot de passe de connexion Postgres réel dans `.env` pour vérifier `PermissionsGuard`/`GET /auth/me`/le catalogue/le stock en conditions réelles et pouvoir lancer l'API NestJS localement.
-4. Démarrer la Phase 7 (Caisse / POS) — vente, paiement, décrémentation automatique du stock via un mouvement de type `sale`.
+3. Renseigner le mot de passe de connexion Postgres réel dans `.env` pour vérifier tous les modules en conditions réelles et pouvoir lancer l'API NestJS localement.
+4. Démarrer la Phase 8 (Tables et serveurs) — plan de salle, ouverture/transfert/fusion d'addition, clôture.

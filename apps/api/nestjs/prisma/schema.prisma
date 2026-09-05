@@ -380,8 +380,9 @@ model Sale {
   subtotal        Decimal  @db.Decimal(12, 2)
   discount        Decimal  @default(0) @db.Decimal(12, 2)
   total           Decimal  @db.Decimal(12, 2)
-  createdBy       String?  @map("created_by")
-  createdAt       DateTime @default(now()) @map("created_at")
+  createdBy       String?   @map("created_by")
+  createdAt       DateTime  @default(now()) @map("created_at")
+  voidedAt        DateTime? @map("voided_at")
 
   establishment Establishment    @relation(fields: [establishmentId], references: [id], onDelete: Cascade)
   pointOfSale   PointOfSale?     @relation(fields: [pointOfSaleId], references: [id])
