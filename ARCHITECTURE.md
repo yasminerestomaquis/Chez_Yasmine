@@ -91,6 +91,7 @@ UUID pour tous les identifiants. Détail des colonnes/relations à formaliser en
 | 2026-09-05 | Le type de mouvement de stock `sale` n'est jamais accepté sur la route de saisie manuelle (`in`/`out`/`adjustment`/`loss` seulement) | Une vente doit rester la seule origine possible d'un mouvement `sale`, écrit automatiquement par le flux caisse (Phase 7) — l'exposer en saisie manuelle permettrait de fausser les statistiques de vente sans transaction réelle |
 | 2026-09-05 | Une vente n'est jamais supprimée : un remboursement marque `voidedAt` et restocke, sans effacer la ligne | Piste d'audit obligatoire sur une opération financière (prompt maître §35, §44) ; une suppression effacerait toute trace comptable de la transaction d'origine |
 | 2026-09-05 | Le paiement à crédit n'est pas exposé dans l'UI caisse tant que la gestion des clients (Phase 11) n'existe pas | Un champ « ID client » en texte libre serait une UI trompeuse ; le backend le supporte déjà, seul le sélecteur de client manque |
+| 2026-09-05 | La règle « une seule addition ouverte par table » n'est imposée qu'au niveau applicatif (`openTable`), pas par une contrainte de base de données ; `split` la contourne délibérément | Diviser une addition entre deux groupes assis à la même table doit rester possible sans déplacer physiquement personne — une contrainte DB stricte l'aurait empêché |
 
 ## Points ouverts (nécessitent une décision ou une action ultérieure)
 

@@ -96,7 +96,17 @@ Détail complet dans `docs/api/pos.md`.
 
 Restant avant `DONE` : bouton remboursement dans l'UI, vérification bout en bout une fois l'API déployée.
 
-### Phase 8 — Tables et serveurs — `TODO`
+### Phase 8 — Tables et serveurs — `TESTING`
+Détail complet dans `docs/api/tables.md`.
+- [x] `TablesService`/`TablesController` : CRUD tables (nom, zone).
+- [x] `OrdersService`/`OrdersController` : ouverture d'addition (une seule par table, sauf exception `split`), ajout/retrait d'article (prix toujours relu du produit), transfert (table cible doit être libre), fusion (déplace les articles, ferme la source, libère sa table), division. Testé (Prisma mocké), 14 tests.
+- [x] `SalesService.create` étendu : la clôture d'une addition (paramètre `orderId`) ferme l'addition et libère la table dans la même transaction que la vente. 2 tests supplémentaires.
+- [x] UI Flutter (`lib/tables/`) : plan de salle par zone avec couleur selon statut, détail d'addition (ajout/suppression d'article, encaissement). `flutter analyze`/`test`/`build web` ✅.
+- [ ] Fusion et division non exposées dans l'UI (backend prêt et testé, sélecteur de table/addition cible reporté).
+- [ ] **Non vérifié en conditions réelles** : round-trip HTTP complet — même limitation `DATABASE_URL` que les phases précédentes.
+
+Restant avant `DONE` : UI fusion/division, vérification bout en bout une fois l'API déployée.
+
 ### Phase 9 — Offline-first — `TODO`
 ### Phase 10 — Achats / Fournisseurs — `TODO`
 ### Phase 11 — Clients / Crédits — `TODO`
@@ -114,10 +124,11 @@ Restant avant `DONE` : bouton remboursement dans l'UI, vérification bout en bou
 - Catégories, produits et pipeline photo natif (Phase 5) — première fonctionnalité métier visible ; logique et pipeline image vérifiés (mocks Prisma + vraies images), round-trip HTTP complet pas encore vérifiable faute d'API déployée.
 - Mouvements de stock, alertes de seuil et historique (Phase 6) — logique pure vérifiée en conditions réelles, service testé (Prisma mocké), UI testée.
 - Caisse : vente, paiement mixte, décrémentation automatique du stock, remboursement (Phase 7) — logique pure vérifiée en conditions réelles, service testé (Prisma mocké), UI testée (un bug de dépassement visuel réel a été trouvé et corrigé).
+- Plan de salle, additions, transfert/fusion/division, clôture liée à la caisse (Phase 8) — service testé (Prisma mocké), UI testée (analyse/build) ; fusion/division pas encore dans l'UI.
 
 ## Prochaines étapes immédiates
 
 1. Résoudre l'accès en écriture au dépôt GitHub distant (`yasminerestomaquis/Chez_Yasmine`) avant tout `git push`.
 2. Premier commit + push, puis vérifier que le pipeline CI GitHub Actions passe.
 3. Renseigner le mot de passe de connexion Postgres réel dans `.env` pour vérifier tous les modules en conditions réelles et pouvoir lancer l'API NestJS localement.
-4. Démarrer la Phase 8 (Tables et serveurs) — plan de salle, ouverture/transfert/fusion d'addition, clôture.
+4. Démarrer la Phase 9 (Offline-first) — stockage local, file d'attente de synchronisation, idempotence, résolution de conflits.

@@ -13,12 +13,18 @@ class PosRepository {
     required List<Map<String, dynamic>> payments,
     Map<String, dynamic>? discount,
     String? customerId,
+    String? orderId,
+    String? tableId,
+    String? source,
   }) async {
     final json = await _api.post('/establishments/$establishmentId/sales', body: {
       'items': items,
       'payments': payments,
       'discount': ?discount,
       'customerId': ?customerId,
+      'orderId': ?orderId,
+      'tableId': ?tableId,
+      'source': ?source,
     }) as Map<String, dynamic>;
     return SaleResult.fromJson(json);
   }

@@ -8,6 +8,7 @@ import 'catalog/catalog_page.dart';
 import 'config/supabase_config.dart';
 import 'pos/pos_page.dart';
 import 'stock/stock_page.dart';
+import 'tables/floor_plan_page.dart';
 
 Future<void> main() async {
   WidgetsFlutterBinding.ensureInitialized();
@@ -122,6 +123,13 @@ class _HomePageState extends State<HomePage> {
                         OverflowBar(
                           alignment: MainAxisAlignment.end,
                           children: [
+                            TextButton.icon(
+                              icon: const Icon(Icons.table_restaurant_outlined),
+                              label: const Text('Tables'),
+                              onPressed: () => Navigator.of(context).push(
+                                MaterialPageRoute(builder: (_) => FloorPlanPage(establishmentId: establishment.id)),
+                              ),
+                            ),
                             TextButton.icon(
                               icon: const Icon(Icons.point_of_sale_outlined),
                               label: const Text('Caisse'),

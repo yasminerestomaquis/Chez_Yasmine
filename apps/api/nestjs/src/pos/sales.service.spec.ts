@@ -11,6 +11,8 @@ function makePrismaMock() {
     sale: { create: vi.fn(), findFirst: vi.fn(), findMany: vi.fn(), update: vi.fn() },
     customer: { findFirst: vi.fn(), update: vi.fn(), findUniqueOrThrow: vi.fn() },
     credit: { create: vi.fn() },
+    order: { findFirst: vi.fn(), update: vi.fn() },
+    restaurantTable: { update: vi.fn() },
     $transaction: vi.fn(async (callback: (tx: unknown) => unknown) => callback(prisma)),
   };
   return prisma;
@@ -91,6 +93,38 @@ describe('SalesService.create', () => {
       expect.objectContaining({ data: expect.objectContaining({ subtotal: 3000, discount: 0, total: 3000 }) }),
     );
     expect(prisma.credit.create).not.toHaveBeenCalled();
+  });
+
+  it('rejects checking out an order that is already closed', async () => {
+    (prisma.product as any).findMany.mockResolvedValue([product()]);
+    (prisma.order as any).findFirst.mockResolvedValue({ id: 'order-1', status: 'closed', tableId: 't1' });
+
+    await expect(
+      service.create('est-1', 'user-1', {
+        orderId: 'order-1',
+        items: [{ productId: 'p1', quantity: 1 }],
+        payments: [{ method: 'cash', amount: 1000 }],
+      } as any),
+    ).rejects.toBeInstanceOf(ConflictException);
+    expect(prisma.$transaction).not.toHaveBeenCalled();
+  });
+
+  it('closes the order and frees its table when the sale checks out a table addition', async () => {
+    (prisma.product as any).findMany.mockResolvedValue([product()]);
+    (prisma.order as any).findFirst.mockResolvedValue({ id: 'order-1', status: 'open', tableId: 't1' });
+    (prisma.sale as any).create.mockResolvedValue({ id: 'sale-1', items: [], payments: [] });
+
+    await service.create('est-1', 'user-1', {
+      orderId: 'order-1',
+      items: [{ productId: 'p1', quantity: 1 }],
+      payments: [{ method: 'cash', amount: 1000 }],
+    } as any);
+
+    expect(prisma.order.update).toHaveBeenCalledWith({
+      where: { id: 'order-1' },
+      data: { status: 'closed', closedAt: expect.any(Date) },
+    });
+    expect(prisma.restaurantTable.update).toHaveBeenCalledWith({ where: { id: 't1' }, data: { status: 'free' } });
   });
 
   it('rejects a credit sale that would exceed the customer credit limit, before starting a transaction', async () => {

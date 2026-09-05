@@ -56,6 +56,20 @@ export class SalesService {
       }
     }
 
+    // Checking out a table's addition: the order must still be open, and we
+    // close it + free its table once the sale is recorded (same transaction).
+    let orderToClose: { id: string; tableId: string | null } | null = null;
+    if (dto.orderId) {
+      const order = await this.prisma.order.findFirst({ where: { id: dto.orderId, establishmentId } });
+      if (!order) {
+        throw new BadRequestException("L'addition indiquée n'appartient pas à cet établissement");
+      }
+      if (order.status !== 'open') {
+        throw new ConflictException('Cette addition est déjà clôturée');
+      }
+      orderToClose = { id: order.id, tableId: order.tableId };
+    }
+
     return this.prisma.$transaction(async (tx) => {
       for (const item of dto.items) {
         await tx.product.update({ where: { id: item.productId }, data: { stockQuantity: { decrement: item.quantity } } });
@@ -91,6 +105,13 @@ export class SalesService {
       if (creditAmount > 0 && nextCreditBalance !== null) {
         await tx.customer.update({ where: { id: customer!.id }, data: { creditBalance: nextCreditBalance } });
         await tx.credit.create({ data: { customerId: customer!.id, saleId: sale.id, amount: creditAmount } });
+      }
+
+      if (orderToClose) {
+        await tx.order.update({ where: { id: orderToClose.id }, data: { status: 'closed', closedAt: new Date() } });
+        if (orderToClose.tableId) {
+          await tx.restaurantTable.update({ where: { id: orderToClose.tableId }, data: { status: 'free' } });
+        }
       }
 
       return sale;

@@ -26,6 +26,8 @@
 - `docs/api/stock.md` documentant la logique de stock.
 - Vente en caisse (panier, remise, paiement mixte/crédit), décrémentation automatique du stock (mouvement `sale`), remboursement (`apps/api/nestjs/src/pos/`) ; UI Flutter correspondante (`apps/web/flutter/lib/pos/`).
 - `docs/api/pos.md` documentant la logique de caisse.
+- Plan de salle, additions (ouverture/ajout/retrait d'article/transfert/fusion/division), clôture liée à la caisse (`apps/api/nestjs/src/tables/`) ; UI Flutter correspondante (`apps/web/flutter/lib/tables/`).
+- `docs/api/tables.md` documentant la logique tables/additions.
 
 ### Décisions
 - Adoption de l'architecture v5 (Flutter + NestJS + Supabase) en remplacement du prototype v1 local (React/Vite/Dexie), conservé comme référence.
