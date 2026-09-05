@@ -118,7 +118,15 @@ Détail complet dans `docs/api/sync.md`.
 
 Restant avant `DONE` : étendre la file aux opérations tables/additions, vérification bout en bout une fois l'API déployée.
 
-### Phase 10 — Achats / Fournisseurs — `TODO`
+### Phase 10 — Achats / Fournisseurs — `TESTING`
+Détail complet dans `docs/api/purchasing.md`.
+- [x] `SuppliersService`/`SuppliersController` : CRUD fournisseurs.
+- [x] `PurchasesService`/`PurchasesController` : création (total calculé côté serveur, jamais transmis par le client), réception (incrémente le stock + mouvement `in` par ligne, dans la même transaction que le changement de statut), annulation (uniquement si encore en attente). Testé (Prisma mocké), 8 tests.
+- [x] UI Flutter (`lib/purchasing/`) : liste des achats avec statut et actions Recevoir/Annuler, formulaire de création, gestion des fournisseurs. `flutter analyze`/`test`/`build web` ✅.
+- [ ] **Non vérifié en conditions réelles** : round-trip HTTP complet — même limitation `DATABASE_URL` que les phases précédentes.
+
+Restant avant `DONE` : vérification bout en bout une fois l'API déployée.
+
 ### Phase 11 — Clients / Crédits — `TODO`
 ### Phase 12 — Dépenses / Pertes / Comptabilité — `TODO`
 ### Phase 13 — Rapports — `TODO`
@@ -136,10 +144,11 @@ Restant avant `DONE` : étendre la file aux opérations tables/additions, vérif
 - Caisse : vente, paiement mixte, décrémentation automatique du stock, remboursement (Phase 7) — logique pure vérifiée en conditions réelles, service testé (Prisma mocké), UI testée (un bug de dépassement visuel réel a été trouvé et corrigé).
 - Plan de salle, additions, transfert/fusion/division, clôture liée à la caisse (Phase 8) — service testé (Prisma mocké), UI testée (analyse/build) ; fusion/division pas encore dans l'UI.
 - Offline-first pour ventes et mouvements de stock : idempotence, moteur de synchronisation par lot, file locale, indicateur de connexion (Phase 9) — vérifié en conditions réelles pour la persistance locale, mocké pour le backend.
+- Fournisseurs, achats, réception avec incrémentation automatique du stock (Phase 10) — service testé (Prisma mocké), UI testée (analyse/build).
 
 ## Prochaines étapes immédiates
 
 1. Résoudre l'accès en écriture au dépôt GitHub distant (`yasminerestomaquis/Chez_Yasmine`) avant tout `git push`.
 2. Premier commit + push, puis vérifier que le pipeline CI GitHub Actions passe.
 3. Renseigner le mot de passe de connexion Postgres réel dans `.env` pour vérifier tous les modules en conditions réelles et pouvoir lancer l'API NestJS localement.
-4. Démarrer la Phase 10 (Achats / Fournisseurs).
+4. Démarrer la Phase 11 (Clients / Crédits).

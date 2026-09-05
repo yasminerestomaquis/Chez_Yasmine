@@ -31,6 +31,8 @@
 - Idempotence des ventes et mouvements de stock (`id` client réutilisé comme id serveur), moteur de synchronisation par lot (`apps/api/nestjs/src/sync/`) avec vérification de permission par opération.
 - File de synchronisation locale, cache catalogue hors ligne, indicateur de connexion (`apps/web/flutter/lib/sync/`, `apps/web/flutter/lib/catalog/catalog_cache.dart`) intégrés à la caisse et au stock.
 - `docs/api/sync.md` documentant le mécanisme offline-first.
+- Fournisseurs, commandes d'achat, réception avec incrémentation automatique du stock (`apps/api/nestjs/src/purchasing/`) ; UI Flutter correspondante (`apps/web/flutter/lib/purchasing/`).
+- `docs/api/purchasing.md` documentant la logique achats/fournisseurs.
 
 ### Décisions
 - Adoption de l'architecture v5 (Flutter + NestJS + Supabase) en remplacement du prototype v1 local (React/Vite/Dexie), conservé comme référence.

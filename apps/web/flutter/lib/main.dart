@@ -7,6 +7,7 @@ import 'auth/me_repository.dart';
 import 'catalog/catalog_page.dart';
 import 'config/supabase_config.dart';
 import 'pos/pos_page.dart';
+import 'purchasing/purchases_page.dart';
 import 'stock/stock_page.dart';
 import 'tables/floor_plan_page.dart';
 
@@ -142,6 +143,13 @@ class _HomePageState extends State<HomePage> {
                               label: const Text('Stock'),
                               onPressed: () => Navigator.of(context).push(
                                 MaterialPageRoute(builder: (_) => StockPage(establishmentId: establishment.id)),
+                              ),
+                            ),
+                            TextButton.icon(
+                              icon: const Icon(Icons.shopping_cart_outlined),
+                              label: const Text('Achats'),
+                              onPressed: () => Navigator.of(context).push(
+                                MaterialPageRoute(builder: (_) => PurchasesPage(establishmentId: establishment.id)),
                               ),
                             ),
                             TextButton.icon(
