@@ -88,6 +88,7 @@ UUID pour tous les identifiants. Détail des colonnes/relations à formaliser en
 | 2026-09-05 | Vérification JWT NestJS via JWKS (`jose`), confirmé après avoir interrogé l'endpoint `.well-known/jwks.json` réel du projet (signature ES256) | Le prompt maître demandait explicitement JWKS plutôt qu'un secret partagé JWT ; confirmé que le projet Supabase utilise bien les clés de signature asymétriques modernes, pas l'ancien secret HS256 |
 | 2026-09-05 | Upload des photos produit vers Supabase Storage avec le jeton JWT de l'utilisateur authentifié (propagé depuis `SupabaseJwtGuard`), pas une clé `service_role` | Évite d'introduire un nouveau secret côté NestJS pour cet usage ; la RLS de `storage.objects` (identique au modèle des tables) suffit à garantir l'isolation, cohérent avec la défense en profondeur déjà en place |
 | 2026-09-05 | Bucket `product-images` privé (pas de fichiers publics) ; l'accès se fait via URL signée à durée limitée générée à la demande par NestJS | Le prompt maître interdit de faire confiance au client ; une URL publique permanente contournerait entièrement la RLS Storage |
+| 2026-09-05 | Le type de mouvement de stock `sale` n'est jamais accepté sur la route de saisie manuelle (`in`/`out`/`adjustment`/`loss` seulement) | Une vente doit rester la seule origine possible d'un mouvement `sale`, écrit automatiquement par le flux caisse (Phase 7) — l'exposer en saisie manuelle permettrait de fausser les statistiques de vente sans transaction réelle |
 
 ## Points ouverts (nécessitent une décision ou une action ultérieure)
 

@@ -6,6 +6,7 @@ import 'auth/auth_gate.dart';
 import 'auth/me_repository.dart';
 import 'catalog/catalog_page.dart';
 import 'config/supabase_config.dart';
+import 'stock/stock_page.dart';
 
 Future<void> main() async {
   WidgetsFlutterBinding.ensureInitialized();
@@ -107,13 +108,36 @@ class _HomePageState extends State<HomePage> {
             children: [
               for (final establishment in profile.establishments)
                 Card(
-                  child: ListTile(
-                    leading: const Icon(Icons.storefront_outlined),
-                    title: Text(establishment.name),
-                    subtitle: Text(establishment.role),
-                    trailing: const Icon(Icons.chevron_right),
-                    onTap: () => Navigator.of(context).push(
-                      MaterialPageRoute(builder: (_) => CatalogPage(establishmentId: establishment.id)),
+                  child: Padding(
+                    padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        ListTile(
+                          leading: const Icon(Icons.storefront_outlined),
+                          title: Text(establishment.name),
+                          subtitle: Text(establishment.role),
+                        ),
+                        OverflowBar(
+                          alignment: MainAxisAlignment.end,
+                          children: [
+                            TextButton.icon(
+                              icon: const Icon(Icons.inventory_2_outlined),
+                              label: const Text('Stock'),
+                              onPressed: () => Navigator.of(context).push(
+                                MaterialPageRoute(builder: (_) => StockPage(establishmentId: establishment.id)),
+                              ),
+                            ),
+                            TextButton.icon(
+                              icon: const Icon(Icons.storefront_outlined),
+                              label: const Text('Catalogue'),
+                              onPressed: () => Navigator.of(context).push(
+                                MaterialPageRoute(builder: (_) => CatalogPage(establishmentId: establishment.id)),
+                              ),
+                            ),
+                          ],
+                        ),
+                      ],
                     ),
                   ),
                 ),

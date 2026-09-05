@@ -22,6 +22,8 @@
 - CRUD catégories et produits, bucket Storage `product-images` + RLS, pipeline photo (validation + 4 variantes WebP via `sharp`, upload avec le jeton utilisateur) (`apps/api/nestjs/src/catalog/`, `apps/api/nestjs/src/storage/`).
 - UI Flutter catalogue : liste catégories/produits, formulaire produit avec sélecteur photo à 4 options (caméra/galerie/fichier/image générique) (`apps/web/flutter/lib/catalog/`).
 - `docs/api/catalog.md` documentant le pipeline produits/photos.
+- Mouvements de stock (entrée/sortie/correction/perte), alertes de seuil et historique par produit (`apps/api/nestjs/src/stock/`) ; UI Flutter correspondante (`apps/web/flutter/lib/stock/`).
+- `docs/api/stock.md` documentant la logique de stock.
 
 ### Décisions
 - Adoption de l'architecture v5 (Flutter + NestJS + Supabase) en remplacement du prototype v1 local (React/Vite/Dexie), conservé comme référence.

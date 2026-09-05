@@ -76,7 +76,15 @@ Détail complet dans `docs/api/catalog.md`.
 
 Restant avant `DONE` : vérification bout en bout une fois l'API déployée avec un vrai `DATABASE_URL`.
 
-### Phase 6 — Stock — `TODO`
+### Phase 6 — Stock — `TESTING`
+Détail complet dans `docs/api/stock.md`.
+- [x] Logique pure `applyStockMovement`/`isLowStock` (`src/stock/stock-math.ts`), reprise et adaptée de la règle déjà validée dans le prototype v1. **Testée en conditions réelles** (fonctions pures, sans mock, 12 tests) : entrée/sortie/perte/correction, rejet stock insuffisant, rejet quantité invalide, seuil à 0 = pas d'alerte.
+- [x] `StockMovementsService`/`StockController` : mouvements manuels (`in`/`out`/`adjustment`/`loss`), historique par produit, alertes de stock bas — mise à jour du produit et écriture du mouvement dans une même transaction Prisma. Testé (Prisma mocké) : rejet avant écriture si le mouvement est invalide, transaction bien invoquée sinon. `sale` réservé au flux de vente (Phase 7), `transfer` reporté (attend le multi-établissement).
+- [x] UI Flutter (`lib/stock/`) : liste des produits avec stock actuel, bandeau d'alertes, dialogue d'ajout de mouvement (libellé adapté selon le type), historique par produit. Accessible depuis l'accueil. Testé : 3 tests widget sur le dialogue.
+- [ ] **Non vérifié en conditions réelles** : round-trip HTTP complet — même limitation `DATABASE_URL` que les Phases 4 et 5.
+
+Restant avant `DONE` : vérification bout en bout une fois l'API déployée avec un vrai `DATABASE_URL`.
+
 ### Phase 7 — POS — `TODO`
 ### Phase 8 — Tables et serveurs — `TODO`
 ### Phase 9 — Offline-first — `TODO`
@@ -94,10 +102,11 @@ Restant avant `DONE` : vérification bout en bout une fois l'API déployée avec
 - Schéma de données et RBAC de référence (Phase 3), vérifiés (RLS, advisors, seed).
 - Inscription propriétaire, connexion (mot de passe + OTP) et vérification JWT (Phase 4) — bout en bout côté authentification, vérifiées en conditions réelles contre le projet Supabase.
 - Catégories, produits et pipeline photo natif (Phase 5) — première fonctionnalité métier visible ; logique et pipeline image vérifiés (mocks Prisma + vraies images), round-trip HTTP complet pas encore vérifiable faute d'API déployée.
+- Mouvements de stock, alertes de seuil et historique (Phase 6) — logique pure vérifiée en conditions réelles, service testé (Prisma mocké), UI testée.
 
 ## Prochaines étapes immédiates
 
 1. Résoudre l'accès en écriture au dépôt GitHub distant (`yasminerestomaquis/Chez_Yasmine`) avant tout `git push`.
 2. Premier commit + push, puis vérifier que le pipeline CI GitHub Actions passe.
-3. Renseigner le mot de passe de connexion Postgres réel dans `.env` pour vérifier `PermissionsGuard`/`GET /auth/me`/le catalogue en conditions réelles et pouvoir lancer l'API NestJS localement.
-4. Démarrer la Phase 6 (Stock) — mouvements de stock, seuils, alertes.
+3. Renseigner le mot de passe de connexion Postgres réel dans `.env` pour vérifier `PermissionsGuard`/`GET /auth/me`/le catalogue/le stock en conditions réelles et pouvoir lancer l'API NestJS localement.
+4. Démarrer la Phase 7 (Caisse / POS) — vente, paiement, décrémentation automatique du stock via un mouvement de type `sale`.
