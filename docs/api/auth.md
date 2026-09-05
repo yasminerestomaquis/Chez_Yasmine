@@ -11,7 +11,7 @@ Flutter ──(Authorization: Bearer <jwt>)──> NestJS ──(vérifie via JW
 
 ## Inscription (bootstrap propriétaire)
 
-`supabase.auth.signUp(email, password, data: { organization_name, full_name })` côté Flutter ([lib/auth/sign_up_page.dart](../../apps/web/flutter/lib/auth/sign_up_page.dart)) déclenche le trigger Postgres `handle_new_user` (`supabase/migrations/20260905193000_auth_bootstrap_trigger.sql`), exécuté en `SECURITY DEFINER` (contourne RLS car l'utilisateur n'a par définition pas encore d'organisation) :
+`supabase.auth.signUp(email, password, data: { organization_name, full_name })` côté Flutter ([lib/auth/sign_up_page.dart](../../apps/web/flutter/lib/auth/sign_up_page.dart)) déclenche le trigger Postgres `handle_new_user` (`supabase/migrations/20260905193641_auth_bootstrap_trigger.sql`), exécuté en `SECURITY DEFINER` (contourne RLS car l'utilisateur n'a par définition pas encore d'organisation) :
 
 1. crée une `Organization` et un `Establishment` nommés d'après `organization_name` ;
 2. crée le `user_profiles` correspondant ;

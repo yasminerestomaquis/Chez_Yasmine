@@ -54,7 +54,7 @@ Restant avant `DONE` : vérifier le pipeline CI une fois le premier push possibl
 ### Phase 4 — Authentification et RBAC — `TESTING`
 Utilisateurs, organisations, établissements, rôles, permissions, sessions — via Supabase Auth + RBAC NestJS (décision actée). Détail complet dans `docs/api/auth.md`.
 - [x] Tables et seed RBAC en place (voir Phase 3) : `roles`, `permissions`, `role_permissions`, `user_establishment_roles`, 8 rôles système avec permissions par défaut.
-- [x] Trigger d'auto-inscription (`handle_new_user`, migration `20260905193000_auth_bootstrap_trigger.sql`) : crée organisation + établissement + profil + rôle Propriétaire à l'inscription. **Vérifié en conditions réelles** (inscription via l'API Supabase Auth réelle, requête SQL confirmant la création correcte, puis nettoyage des données de test).
+- [x] Trigger d'auto-inscription (`handle_new_user`, migration `20260905193641_auth_bootstrap_trigger.sql`) : crée organisation + établissement + profil + rôle Propriétaire à l'inscription. **Vérifié en conditions réelles** (inscription via l'API Supabase Auth réelle, requête SQL confirmant la création correcte, puis nettoyage des données de test). RPC directe sur la fonction trigger elle-même retirée pour `anon`/`authenticated` (migration `20260905195906_restrict_handle_new_user_function.sql`, finding relevé par l'advisor de sécurité après la Phase 5).
 - [x] Flux Supabase Auth côté Flutter : connexion par mot de passe, connexion par OTP e-mail, inscription propriétaire (`lib/auth/`). **Vérifié en conditions réelles** dans le navigateur : page de connexion, inscription (bloquée par la limite d'envoi d'e-mails du plan Supabase gratuit — erreur correctement affichée, aucune donnée orpheline créée), et rejet d'identifiants invalides (« Invalid login credentials » correctement affiché).
 - [x] Guard NestJS de vérification du JWT Supabase (`SupabaseJwtGuard`, `src/auth/`) via JWKS (le projet signe en ES256, confirmé en interrogeant l'endpoint JWKS réel) — pas de secret partagé. **Vérifié en conditions réelles** : un jeton émis par une vraie connexion Supabase est accepté, un jeton altéré est rejeté. Tests unitaires ✅ (mocks de `jose`).
 - [x] `PermissionsGuard` + `@RequirePermissions(...)` (`src/auth/`), vérifie les permissions via Prisma sur l'établissement `:establishmentId` de la route. Tests unitaires ✅. **Non vérifié en conditions réelles** (nécessite `DATABASE_URL` réel, indisponible ici).
@@ -64,7 +64,18 @@ Utilisateurs, organisations, établissements, rôles, permissions, sessions — 
 
 Restant avant `DONE` : renseigner `DATABASE_URL` réel pour vérifier `PermissionsGuard`/`GET /auth/me` en conditions réelles.
 
-### Phase 5 — Produits et photos — `TODO`
+### Phase 5 — Produits et photos — `TESTING`
+Détail complet dans `docs/api/catalog.md`.
+- [x] CRUD catégories (`src/catalog/categories.*`) — testé (Prisma mocké) : isolation par établissement, 404 correct si la ressource n'appartient pas à l'établissement de la route.
+- [x] CRUD produits (`src/catalog/products.*`), champs du prompt maître §17 — testé (Prisma mocké), y compris le rejet d'un `categoryId`/`supplierId` appartenant à un autre établissement. `stockQuantity` volontairement exclu de la mise à jour (réservé aux mouvements de stock, Phase 6).
+- [x] Bucket Storage privé `product-images` + RLS (`storage.objects`), migration appliquée sur le projet réel, advisor de sécurité revérifié.
+- [x] Pipeline photo : validation réelle (MIME + décodage, pas seulement le MIME déclaré) + génération de 4 variantes WebP (thumbnail/small/medium/large) via `sharp`. **Testé en conditions réelles** (vraies images générées et traitées en mémoire, 7 tests, aucun mock).
+- [x] Upload/suppression/URL signée via `SupabaseStorageService`, authentifié avec le jeton de l'utilisateur (pas de clé `service_role` nécessaire côté NestJS).
+- [x] UI Flutter catalogue (liste catégories/produits) et formulaire produit avec sélecteur photo à 4 options (caméra / galerie / fichier / image générique), conforme au prompt maître §18. **Testé** : 5 tests widget (champs, 4 boutons photo, aperçu, validation, pré-remplissage en édition) + `flutter analyze`/`flutter build web` ✅.
+- [ ] **Non vérifié en conditions réelles** : l'appel HTTP bout en bout Flutter → NestJS → Supabase — bloqué par l'absence de `DATABASE_URL` réel (API NestJS non exécutable ici) et par la limite d'envoi d'e-mails Supabase atteinte pendant la session (empêchant un nouveau compte de test confirmé).
+
+Restant avant `DONE` : vérification bout en bout une fois l'API déployée avec un vrai `DATABASE_URL`.
+
 ### Phase 6 — Stock — `TODO`
 ### Phase 7 — POS — `TODO`
 ### Phase 8 — Tables et serveurs — `TODO`
@@ -82,12 +93,11 @@ Restant avant `DONE` : renseigner `DATABASE_URL` réel pour vérifier `Permissio
 
 - Schéma de données et RBAC de référence (Phase 3), vérifiés (RLS, advisors, seed).
 - Inscription propriétaire, connexion (mot de passe + OTP) et vérification JWT (Phase 4) — bout en bout côté authentification, vérifiées en conditions réelles contre le projet Supabase.
-
-Pas encore de fonctionnalité métier utilisateur final (catalogue, caisse, stock, etc. — Phase 5+), conformément à la règle du prompt maître : pas de développement fonctionnel avant une base technique saine.
+- Catégories, produits et pipeline photo natif (Phase 5) — première fonctionnalité métier visible ; logique et pipeline image vérifiés (mocks Prisma + vraies images), round-trip HTTP complet pas encore vérifiable faute d'API déployée.
 
 ## Prochaines étapes immédiates
 
 1. Résoudre l'accès en écriture au dépôt GitHub distant (`yasminerestomaquis/Chez_Yasmine`) avant tout `git push`.
 2. Premier commit + push, puis vérifier que le pipeline CI GitHub Actions passe.
-3. Renseigner le mot de passe de connexion Postgres réel dans `.env` pour vérifier `PermissionsGuard`/`GET /auth/me` en conditions réelles et pouvoir lancer l'API NestJS localement.
-4. Démarrer la Phase 5 (produits/photos) — première fonctionnalité métier visible.
+3. Renseigner le mot de passe de connexion Postgres réel dans `.env` pour vérifier `PermissionsGuard`/`GET /auth/me`/le catalogue en conditions réelles et pouvoir lancer l'API NestJS localement.
+4. Démarrer la Phase 6 (Stock) — mouvements de stock, seuils, alertes.

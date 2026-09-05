@@ -3,7 +3,7 @@ import 'package:supabase_flutter/supabase_flutter.dart';
 
 /// Self-signup for a new establishment owner. The organization_name/full_name
 /// metadata is read by the `handle_new_user` Postgres trigger (see
-/// supabase/migrations/20260905193000_auth_bootstrap_trigger.sql), which
+/// supabase/migrations/20260905193641_auth_bootstrap_trigger.sql), which
 /// creates the Organization, Establishment, UserProfile and assigns the
 /// "Propriétaire" role automatically.
 class SignUpPage extends StatefulWidget {

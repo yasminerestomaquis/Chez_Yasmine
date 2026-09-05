@@ -12,6 +12,8 @@ export interface SupabaseUser extends JWTPayload {
 declare module 'express' {
   interface Request {
     user?: SupabaseUser;
+    /** The raw bearer token, kept so downstream services (e.g. Storage uploads) can act as this user rather than a service role. */
+    supabaseAccessToken?: string;
   }
 }
 
@@ -49,6 +51,7 @@ export class SupabaseJwtGuard implements CanActivate {
         audience: 'authenticated',
       });
       request.user = payload as SupabaseUser;
+      request.supabaseAccessToken = token;
       return true;
     } catch {
       throw new UnauthorizedException('Jeton d\'authentification invalide ou expiré');

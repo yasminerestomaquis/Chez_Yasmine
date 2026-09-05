@@ -53,7 +53,7 @@ describe('SupabaseJwtGuard', () => {
     jwtVerifyMock.mockResolvedValueOnce({ payload });
 
     const guard = new SupabaseJwtGuard();
-    const request: { headers: Record<string, string>; user?: unknown } = {
+    const request: { headers: Record<string, string>; user?: unknown; supabaseAccessToken?: string } = {
       headers: { authorization: 'Bearer good.token.value' },
     };
     const context = {
@@ -62,6 +62,7 @@ describe('SupabaseJwtGuard', () => {
 
     await expect(guard.canActivate(context)).resolves.toBe(true);
     expect(request.user).toEqual(payload);
+    expect(request.supabaseAccessToken).toBe('good.token.value');
     expect(jwtVerifyMock).toHaveBeenCalledWith('good.token.value', expect.anything(), {
       issuer: 'https://tsebsulvhgttdwtgqfoj.supabase.co/auth/v1',
       audience: 'authenticated',

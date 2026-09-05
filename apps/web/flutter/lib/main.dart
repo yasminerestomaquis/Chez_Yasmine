@@ -1,7 +1,10 @@
 import 'package:flutter/material.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 
+import 'api/api_client.dart';
 import 'auth/auth_gate.dart';
+import 'auth/me_repository.dart';
+import 'catalog/catalog_page.dart';
 import 'config/supabase_config.dart';
 
 Future<void> main() async {
@@ -23,8 +26,21 @@ class ChezYasmineApp extends StatelessWidget {
   }
 }
 
-class HomePage extends StatelessWidget {
+class HomePage extends StatefulWidget {
   const HomePage({super.key});
+
+  @override
+  State<HomePage> createState() => _HomePageState();
+}
+
+class _HomePageState extends State<HomePage> {
+  late Future<MyProfile> _future;
+
+  @override
+  void initState() {
+    super.initState();
+    _future = MeRepository(ApiClient()).fetchMe();
+  }
 
   @override
   Widget build(BuildContext context) {
@@ -51,15 +67,59 @@ class HomePage extends StatelessWidget {
           ),
         ],
       ),
-      body: Center(
-        child: Column(
-          mainAxisSize: MainAxisSize.min,
-          children: [
-            const Text('Fondations en cours de mise en place.'),
-            const SizedBox(height: 8),
-            if (user?.email != null) Text('Connecté en tant que ${user!.email}'),
-          ],
-        ),
+      body: FutureBuilder<MyProfile>(
+        future: _future,
+        builder: (context, snapshot) {
+          if (snapshot.connectionState != ConnectionState.done) {
+            return const Center(child: CircularProgressIndicator());
+          }
+          if (snapshot.hasError) {
+            final message = snapshot.error is ApiException ? (snapshot.error as ApiException).message : '${snapshot.error}';
+            return Center(
+              child: Padding(
+                padding: const EdgeInsets.all(24),
+                child: Column(
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    const Icon(Icons.cloud_off, size: 40),
+                    const SizedBox(height: 12),
+                    Text("Impossible de joindre l'API : $message", textAlign: TextAlign.center),
+                    const SizedBox(height: 4),
+                    if (user?.email != null) Text('Connecté en tant que ${user!.email}'),
+                    const SizedBox(height: 12),
+                    OutlinedButton(
+                      onPressed: () => setState(() => _future = MeRepository(ApiClient()).fetchMe()),
+                      child: const Text('Réessayer'),
+                    ),
+                  ],
+                ),
+              ),
+            );
+          }
+
+          final profile = snapshot.data!;
+          if (profile.establishments.isEmpty) {
+            return const Center(child: Text('Aucun établissement associé à ce compte.'));
+          }
+
+          return ListView(
+            padding: const EdgeInsets.all(16),
+            children: [
+              for (final establishment in profile.establishments)
+                Card(
+                  child: ListTile(
+                    leading: const Icon(Icons.storefront_outlined),
+                    title: Text(establishment.name),
+                    subtitle: Text(establishment.role),
+                    trailing: const Icon(Icons.chevron_right),
+                    onTap: () => Navigator.of(context).push(
+                      MaterialPageRoute(builder: (_) => CatalogPage(establishmentId: establishment.id)),
+                    ),
+                  ),
+                ),
+            ],
+          );
+        },
       ),
     );
   }
