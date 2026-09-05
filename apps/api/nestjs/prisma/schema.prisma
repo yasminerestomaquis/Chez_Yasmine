@@ -1,0 +1,603 @@
+// Chez Yasmine — Prisma schema
+// Hand-written to mirror supabase/migrations exactly (no live DB credentials
+// available in this environment to run `prisma db pull`). Status/type/method
+// columns are stored as plain `text` with a Postgres CHECK constraint, not a
+// native enum — kept as `String` here so the generated client matches what is
+// actually in the database. Run `prisma validate` / `prisma generate` to check
+// this file; run `prisma db pull` once DATABASE_URL has real credentials to
+// confirm it stays in sync with the migrations.
+//
+// Prisma 7 dropped `datasource.url` — the connection URL lives in
+// prisma.config.ts (for the CLI/migrations) and the PrismaClient is
+// constructed with a driver adapter at runtime (see src/prisma/prisma.service.ts).
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+}
+
+// ── Tenancy ────────────────────────────────────────────────────────────────
+
+model Organization {
+  id        String   @id @default(uuid())
+  name      String
+  createdAt DateTime @default(now()) @map("created_at")
+
+  establishments  Establishment[]
+  userProfiles    UserProfile[]
+  roles           Role[]
+  notifications   Notification[]
+  subscriptions   Subscription[]
+  auditLogs       AuditLog[]
+
+  @@map("organizations")
+}
+
+model Establishment {
+  id             String   @id @default(uuid())
+  organizationId String   @map("organization_id")
+  name           String
+  address        String?
+  currency       String   @default("FCFA")
+  createdAt      DateTime @default(now()) @map("created_at")
+
+  organization Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+
+  pointsOfSale       PointOfSale[]
+  categories         Category[]
+  suppliers          Supplier[]
+  products           Product[]
+  purchases          Purchase[]
+  restaurantTables   RestaurantTable[]
+  orders             Order[]
+  customers          Customer[]
+  sales              Sale[]
+  expenses           Expense[]
+  losses             Loss[]
+  accountingEntries  AccountingEntry[]
+  userEstablishmentRoles UserEstablishmentRole[]
+
+  @@map("establishments")
+}
+
+model PointOfSale {
+  id              String   @id @default(uuid())
+  establishmentId String   @map("establishment_id")
+  name            String
+  createdAt       DateTime @default(now()) @map("created_at")
+
+  establishment Establishment @relation(fields: [establishmentId], references: [id], onDelete: Cascade)
+  cashRegisters CashRegister[]
+  sales         Sale[]
+
+  @@map("points_of_sale")
+}
+
+// ── Users / RBAC ─────────────────────────────────────────────────────────
+// Identity lives in Supabase Auth (auth.users, not modeled here). UserProfile
+// mirrors it 1:1 by sharing the same id.
+
+model UserProfile {
+  id             String   @id
+  organizationId String   @map("organization_id")
+  fullName       String?  @map("full_name")
+  createdAt      DateTime @default(now()) @map("created_at")
+
+  organization Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+
+  establishmentRoles UserEstablishmentRole[]
+  stockMovements     StockMovement[]
+  losses             Loss[]
+  ordersServed       Order[]                @relation("OrderServer")
+  salesCreated       Sale[]                 @relation("SaleCreatedBy")
+  serverCommissions  ServerCommission[]
+  cashClosings       CashClosing[]
+  notifications      Notification[]
+  syncOperations     SyncOperation[]
+  auditLogs          AuditLog[]
+
+  @@map("user_profiles")
+}
+
+model Role {
+  id             String   @id @default(uuid())
+  organizationId String?  @map("organization_id")
+  name           String
+  isSystem       Boolean  @default(false) @map("is_system")
+  createdAt      DateTime @default(now()) @map("created_at")
+
+  organization Organization? @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+
+  rolePermissions        RolePermission[]
+  userEstablishmentRoles UserEstablishmentRole[]
+
+  @@map("roles")
+}
+
+model Permission {
+  id          String  @id @default(uuid())
+  code        String  @unique
+  description String?
+
+  rolePermissions RolePermission[]
+
+  @@map("permissions")
+}
+
+model RolePermission {
+  roleId       String @map("role_id")
+  permissionId String @map("permission_id")
+
+  role       Role       @relation(fields: [roleId], references: [id], onDelete: Cascade)
+  permission Permission @relation(fields: [permissionId], references: [id], onDelete: Cascade)
+
+  @@id([roleId, permissionId])
+  @@map("role_permissions")
+}
+
+model UserEstablishmentRole {
+  id              String   @id @default(uuid())
+  userId          String   @map("user_id")
+  establishmentId String   @map("establishment_id")
+  roleId          String   @map("role_id")
+  createdAt       DateTime @default(now()) @map("created_at")
+
+  user          UserProfile   @relation(fields: [userId], references: [id], onDelete: Cascade)
+  establishment Establishment @relation(fields: [establishmentId], references: [id], onDelete: Cascade)
+  role          Role          @relation(fields: [roleId], references: [id], onDelete: Cascade)
+
+  @@unique([userId, establishmentId, roleId])
+  @@map("user_establishment_roles")
+}
+
+// ── Catalog ──────────────────────────────────────────────────────────────
+
+model Category {
+  id              String   @id @default(uuid())
+  establishmentId String   @map("establishment_id")
+  name            String
+  createdAt       DateTime @default(now()) @map("created_at")
+
+  establishment Establishment @relation(fields: [establishmentId], references: [id], onDelete: Cascade)
+  products      Product[]
+
+  @@map("categories")
+}
+
+model Supplier {
+  id              String   @id @default(uuid())
+  establishmentId String   @map("establishment_id")
+  name            String
+  phone           String?
+  address         String?
+  createdAt       DateTime @default(now()) @map("created_at")
+
+  establishment Establishment @relation(fields: [establishmentId], references: [id], onDelete: Cascade)
+  products      Product[]
+  purchases     Purchase[]
+
+  @@map("suppliers")
+}
+
+/// status: 'active' | 'archived'
+model Product {
+  id              String   @id @default(uuid())
+  establishmentId String   @map("establishment_id")
+  categoryId      String?  @map("category_id")
+  supplierId      String?  @map("supplier_id")
+  name            String
+  reference       String?
+  description     String?
+  barcode         String?
+  qrCode          String?  @map("qr_code")
+  unit            String?
+  purchasePrice   Decimal? @map("purchase_price") @db.Decimal(12, 2)
+  salePrice       Decimal  @map("sale_price") @db.Decimal(12, 2)
+  vatRate         Decimal  @default(0) @map("vat_rate") @db.Decimal(5, 2)
+  minStock        Decimal  @default(0) @map("min_stock") @db.Decimal(12, 2)
+  stockQuantity   Decimal  @default(0) @map("stock_quantity") @db.Decimal(12, 2)
+  status          String   @default("active")
+  createdAt       DateTime @default(now()) @map("created_at")
+
+  establishment Establishment @relation(fields: [establishmentId], references: [id], onDelete: Cascade)
+  category      Category?     @relation(fields: [categoryId], references: [id], onDelete: SetNull)
+  supplier      Supplier?     @relation(fields: [supplierId], references: [id], onDelete: SetNull)
+
+  images         ProductImage[]
+  stockMovements StockMovement[]
+  purchaseItems  PurchaseItem[]
+  orderItems     OrderItem[]
+  saleItems      SaleItem[]
+  losses         Loss[]
+
+  @@map("products")
+}
+
+model ProductImage {
+  id         String   @id @default(uuid())
+  productId  String   @map("product_id")
+  storagePath String  @map("storage_path")
+  isPrimary  Boolean  @default(false) @map("is_primary")
+  position   Int      @default(0)
+  createdAt  DateTime @default(now()) @map("created_at")
+
+  product Product @relation(fields: [productId], references: [id], onDelete: Cascade)
+
+  @@map("product_images")
+}
+
+// ── Stock ────────────────────────────────────────────────────────────────
+
+/// type: 'in' | 'out' | 'adjustment' | 'sale' | 'loss' | 'transfer'
+model StockMovement {
+  id        String   @id @default(uuid())
+  productId String   @map("product_id")
+  type      String
+  quantity  Decimal  @db.Decimal(12, 2)
+  reason    String?
+  createdBy String?  @map("created_by")
+  createdAt DateTime @default(now()) @map("created_at")
+
+  product   Product      @relation(fields: [productId], references: [id], onDelete: Cascade)
+  createdByUser UserProfile? @relation(fields: [createdBy], references: [id])
+
+  @@map("stock_movements")
+}
+
+// ── Purchases ────────────────────────────────────────────────────────────
+
+/// status: 'pending' | 'received' | 'cancelled'
+model Purchase {
+  id              String   @id @default(uuid())
+  establishmentId String   @map("establishment_id")
+  supplierId      String?  @map("supplier_id")
+  status          String   @default("pending")
+  total           Decimal  @default(0) @db.Decimal(12, 2)
+  createdAt       DateTime @default(now()) @map("created_at")
+
+  establishment Establishment  @relation(fields: [establishmentId], references: [id], onDelete: Cascade)
+  supplier      Supplier?      @relation(fields: [supplierId], references: [id], onDelete: SetNull)
+  items         PurchaseItem[]
+
+  @@map("purchases")
+}
+
+model PurchaseItem {
+  id         String  @id @default(uuid())
+  purchaseId String  @map("purchase_id")
+  productId  String  @map("product_id")
+  quantity   Decimal @db.Decimal(12, 2)
+  unitPrice  Decimal @map("unit_price") @db.Decimal(12, 2)
+
+  purchase Purchase @relation(fields: [purchaseId], references: [id], onDelete: Cascade)
+  product  Product  @relation(fields: [productId], references: [id])
+
+  @@map("purchase_items")
+}
+
+// ── Tables / service à table ─────────────────────────────────────────────
+
+/// status: 'free' | 'occupied' | 'billing'
+model RestaurantTable {
+  id              String   @id @default(uuid())
+  establishmentId String   @map("establishment_id")
+  name            String
+  zone            String?
+  status          String   @default("free")
+  createdAt       DateTime @default(now()) @map("created_at")
+
+  establishment Establishment @relation(fields: [establishmentId], references: [id], onDelete: Cascade)
+  reservations  Reservation[]
+  orders        Order[]
+  sales         Sale[]
+
+  @@map("restaurant_tables")
+}
+
+/// status: 'pending' | 'confirmed' | 'cancelled' | 'seated'
+model Reservation {
+  id           String   @id @default(uuid())
+  tableId      String   @map("table_id")
+  customerName String?  @map("customer_name")
+  phone        String?
+  reservedAt   DateTime @map("reserved_at")
+  status       String   @default("pending")
+  createdAt    DateTime @default(now()) @map("created_at")
+
+  table RestaurantTable @relation(fields: [tableId], references: [id], onDelete: Cascade)
+
+  @@map("reservations")
+}
+
+/// status: 'open' | 'closed'
+model Order {
+  id              String    @id @default(uuid())
+  establishmentId String    @map("establishment_id")
+  tableId         String?   @map("table_id")
+  serverId        String?   @map("server_id")
+  status          String    @default("open")
+  openedAt        DateTime  @default(now()) @map("opened_at")
+  closedAt        DateTime? @map("closed_at")
+
+  establishment Establishment    @relation(fields: [establishmentId], references: [id], onDelete: Cascade)
+  table         RestaurantTable? @relation(fields: [tableId], references: [id], onDelete: SetNull)
+  server        UserProfile?     @relation("OrderServer", fields: [serverId], references: [id])
+
+  items OrderItem[]
+  sales Sale[]
+
+  @@map("orders")
+}
+
+model OrderItem {
+  id        String   @id @default(uuid())
+  orderId   String   @map("order_id")
+  productId String   @map("product_id")
+  quantity  Decimal  @db.Decimal(12, 2)
+  unitPrice Decimal  @map("unit_price") @db.Decimal(12, 2)
+  addedAt   DateTime @default(now()) @map("added_at")
+
+  order   Order   @relation(fields: [orderId], references: [id], onDelete: Cascade)
+  product Product @relation(fields: [productId], references: [id])
+
+  @@map("order_items")
+}
+
+// ── Customers / crédit ───────────────────────────────────────────────────
+
+model Customer {
+  id              String   @id @default(uuid())
+  establishmentId String   @map("establishment_id")
+  name            String
+  phone           String?
+  address         String?
+  creditBalance   Decimal  @default(0) @map("credit_balance") @db.Decimal(12, 2)
+  creditLimit     Decimal  @default(0) @map("credit_limit") @db.Decimal(12, 2)
+  createdAt       DateTime @default(now()) @map("created_at")
+
+  establishment Establishment @relation(fields: [establishmentId], references: [id], onDelete: Cascade)
+  sales         Sale[]
+  credits       Credit[]
+  creditPayments CreditPayment[]
+
+  @@map("customers")
+}
+
+// ── Sales / POS ──────────────────────────────────────────────────────────
+
+/// source: 'pos' | 'table'
+model Sale {
+  id              String   @id @default(uuid())
+  establishmentId String   @map("establishment_id")
+  pointOfSaleId   String?  @map("point_of_sale_id")
+  source          String   @default("pos")
+  tableId         String?  @map("table_id")
+  orderId         String?  @map("order_id")
+  customerId      String?  @map("customer_id")
+  subtotal        Decimal  @db.Decimal(12, 2)
+  discount        Decimal  @default(0) @db.Decimal(12, 2)
+  total           Decimal  @db.Decimal(12, 2)
+  createdBy       String?  @map("created_by")
+  createdAt       DateTime @default(now()) @map("created_at")
+
+  establishment Establishment    @relation(fields: [establishmentId], references: [id], onDelete: Cascade)
+  pointOfSale   PointOfSale?     @relation(fields: [pointOfSaleId], references: [id])
+  table         RestaurantTable? @relation(fields: [tableId], references: [id])
+  order         Order?           @relation(fields: [orderId], references: [id])
+  customer      Customer?        @relation(fields: [customerId], references: [id], onDelete: SetNull)
+  createdByUser UserProfile?     @relation("SaleCreatedBy", fields: [createdBy], references: [id])
+
+  items              SaleItem[]
+  payments           Payment[]
+  credits            Credit[]
+  serverCommissions  ServerCommission[]
+
+  @@map("sales")
+}
+
+model SaleItem {
+  id        String  @id @default(uuid())
+  saleId    String  @map("sale_id")
+  productId String  @map("product_id")
+  name      String
+  quantity  Decimal @db.Decimal(12, 2)
+  unitPrice Decimal @map("unit_price") @db.Decimal(12, 2)
+
+  sale    Sale    @relation(fields: [saleId], references: [id], onDelete: Cascade)
+  product Product @relation(fields: [productId], references: [id])
+
+  @@map("sale_items")
+}
+
+/// method: 'cash' | 'mobile_money' | 'card' | 'credit'
+model Payment {
+  id        String   @id @default(uuid())
+  saleId    String   @map("sale_id")
+  method    String
+  amount    Decimal  @db.Decimal(12, 2)
+  createdAt DateTime @default(now()) @map("created_at")
+
+  sale Sale @relation(fields: [saleId], references: [id], onDelete: Cascade)
+
+  @@map("payments")
+}
+
+model Credit {
+  id         String   @id @default(uuid())
+  customerId String   @map("customer_id")
+  saleId     String?  @map("sale_id")
+  amount     Decimal  @db.Decimal(12, 2)
+  createdAt  DateTime @default(now()) @map("created_at")
+
+  customer Customer @relation(fields: [customerId], references: [id], onDelete: Cascade)
+  sale     Sale?    @relation(fields: [saleId], references: [id], onDelete: SetNull)
+
+  @@map("credits")
+}
+
+model CreditPayment {
+  id         String   @id @default(uuid())
+  customerId String   @map("customer_id")
+  amount     Decimal  @db.Decimal(12, 2)
+  createdAt  DateTime @default(now()) @map("created_at")
+
+  customer Customer @relation(fields: [customerId], references: [id], onDelete: Cascade)
+
+  @@map("credit_payments")
+}
+
+// ── Dépenses / pertes / caisse / comptabilité ────────────────────────────
+
+model Expense {
+  id              String   @id @default(uuid())
+  establishmentId String   @map("establishment_id")
+  label           String
+  category        String?
+  amount          Decimal  @db.Decimal(12, 2)
+  expenseDate     DateTime @default(now()) @map("expense_date") @db.Date
+  note            String?
+  createdAt       DateTime @default(now()) @map("created_at")
+
+  establishment Establishment @relation(fields: [establishmentId], references: [id], onDelete: Cascade)
+
+  @@map("expenses")
+}
+
+model Loss {
+  id              String   @id @default(uuid())
+  establishmentId String   @map("establishment_id")
+  productId       String   @map("product_id")
+  quantity        Decimal  @db.Decimal(12, 2)
+  reason          String?
+  createdBy       String?  @map("created_by")
+  createdAt       DateTime @default(now()) @map("created_at")
+
+  establishment Establishment @relation(fields: [establishmentId], references: [id], onDelete: Cascade)
+  product       Product       @relation(fields: [productId], references: [id])
+  createdByUser UserProfile?  @relation(fields: [createdBy], references: [id])
+
+  @@map("losses")
+}
+
+model CashRegister {
+  id            String @id @default(uuid())
+  pointOfSaleId String @map("point_of_sale_id")
+  name          String
+
+  pointOfSale PointOfSale   @relation(fields: [pointOfSaleId], references: [id], onDelete: Cascade)
+  closings    CashClosing[]
+
+  @@map("cash_registers")
+}
+
+model CashClosing {
+  id              String   @id @default(uuid())
+  cashRegisterId  String   @map("cash_register_id")
+  openedAt        DateTime @map("opened_at")
+  closedAt        DateTime @default(now()) @map("closed_at")
+  expectedAmount  Decimal  @map("expected_amount") @db.Decimal(12, 2)
+  countedAmount   Decimal  @map("counted_amount") @db.Decimal(12, 2)
+  closedBy        String?  @map("closed_by")
+
+  cashRegister  CashRegister @relation(fields: [cashRegisterId], references: [id], onDelete: Cascade)
+  closedByUser  UserProfile? @relation(fields: [closedBy], references: [id])
+
+  @@map("cash_closings")
+}
+
+model AccountingEntry {
+  id              String   @id @default(uuid())
+  establishmentId String   @map("establishment_id")
+  entryType       String   @map("entry_type")
+  amount          Decimal  @db.Decimal(12, 2)
+  referenceId     String?  @map("reference_id")
+  createdAt       DateTime @default(now()) @map("created_at")
+
+  establishment Establishment @relation(fields: [establishmentId], references: [id], onDelete: Cascade)
+
+  @@map("accounting_entries")
+}
+
+model ServerCommission {
+  id        String   @id @default(uuid())
+  serverId  String   @map("server_id")
+  saleId    String   @map("sale_id")
+  amount    Decimal  @db.Decimal(12, 2)
+  createdAt DateTime @default(now()) @map("created_at")
+
+  server UserProfile @relation(fields: [serverId], references: [id], onDelete: Cascade)
+  sale   Sale        @relation(fields: [saleId], references: [id], onDelete: Cascade)
+
+  @@map("server_commissions")
+}
+
+// ── Système : notifications, abonnement, synchronisation, audit ─────────
+
+model Notification {
+  id             String    @id @default(uuid())
+  organizationId String    @map("organization_id")
+  userId         String?   @map("user_id")
+  title          String
+  body           String?
+  readAt         DateTime? @map("read_at")
+  createdAt      DateTime  @default(now()) @map("created_at")
+
+  organization Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  user         UserProfile? @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@map("notifications")
+}
+
+/// status: 'active' | 'past_due' | 'cancelled'
+model Subscription {
+  id                String    @id @default(uuid())
+  organizationId    String    @map("organization_id")
+  plan              String    @default("free")
+  status            String    @default("active")
+  currentPeriodEnd  DateTime? @map("current_period_end")
+  createdAt         DateTime  @default(now()) @map("created_at")
+
+  organization Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+
+  @@map("subscriptions")
+}
+
+/// status: 'PENDING' | 'SYNCING' | 'SYNCED' | 'FAILED' | 'CONFLICT'
+/// service_role only — no RLS policy grants `authenticated` access (see
+/// supabase/migrations 20260905191510_rls_policies.sql).
+model SyncOperation {
+  id            String   @id @default(uuid())
+  operationType String   @map("operation_type")
+  entityType    String   @map("entity_type")
+  entityId      String?  @map("entity_id")
+  payload       Json
+  userId        String?  @map("user_id")
+  deviceId      String   @map("device_id")
+  status        String   @default("PENDING")
+  attemptCount  Int      @default(0) @map("attempt_count")
+  createdAt     DateTime @default(now()) @map("created_at")
+
+  user UserProfile? @relation(fields: [userId], references: [id])
+
+  @@map("sync_operations")
+}
+
+/// service_role only — no RLS policy grants `authenticated` access.
+model AuditLog {
+  id             String   @id @default(uuid())
+  organizationId String?  @map("organization_id")
+  userId         String?  @map("user_id")
+  action         String
+  entityType     String?  @map("entity_type")
+  entityId       String?  @map("entity_id")
+  metadata       Json?
+  createdAt      DateTime @default(now()) @map("created_at")
+
+  organization Organization? @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  user         UserProfile?  @relation(fields: [userId], references: [id])
+
+  @@map("audit_logs")
+}

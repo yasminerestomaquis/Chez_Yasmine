@@ -30,6 +30,7 @@ scripts/         Scripts d'exploitation
 ```bash
 cd apps/api/nestjs
 npm install
+npx prisma generate
 npm run start:dev
 ```
 

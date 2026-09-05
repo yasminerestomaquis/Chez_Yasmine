@@ -1,0 +1,21 @@
+-- Closes the remaining "unindexed foreign key" performance advisor findings.
+create index audit_logs_user_id_idx on audit_logs(user_id);
+create index cash_closings_closed_by_idx on cash_closings(closed_by);
+create index credits_sale_id_idx on credits(sale_id);
+create index losses_created_by_idx on losses(created_by);
+create index losses_product_id_idx on losses(product_id);
+create index order_items_product_id_idx on order_items(product_id);
+create index orders_server_id_idx on orders(server_id);
+create index products_supplier_id_idx on products(supplier_id);
+create index purchase_items_product_id_idx on purchase_items(product_id);
+create index purchases_supplier_id_idx on purchases(supplier_id);
+create index role_permissions_permission_id_idx on role_permissions(permission_id);
+create index sale_items_product_id_idx on sale_items(product_id);
+create index sales_created_by_idx on sales(created_by);
+create index sales_order_id_idx on sales(order_id);
+create index sales_point_of_sale_id_idx on sales(point_of_sale_id);
+create index sales_table_id_idx on sales(table_id);
+create index server_commissions_sale_id_idx on server_commissions(sale_id);
+create index stock_movements_created_by_idx on stock_movements(created_by);
+create index sync_operations_user_id_idx on sync_operations(user_id);
+create index user_establishment_roles_role_id_idx on user_establishment_roles(role_id);
