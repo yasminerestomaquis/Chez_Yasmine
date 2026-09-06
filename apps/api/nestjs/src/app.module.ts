@@ -4,6 +4,7 @@ import { AppService } from './app.service.js';
 import { AuthModule } from './auth/auth.module.js';
 import { CashModule } from './cash/cash.module.js';
 import { CatalogModule } from './catalog/catalog.module.js';
+import { ChartsModule } from './charts/charts.module.js';
 import { CustomersModule } from './customers/customers.module.js';
 import { ExpensesModule } from './expenses/expenses.module.js';
 import { LossesModule } from './losses/losses.module.js';
@@ -32,6 +33,7 @@ import { TablesModule } from './tables/tables.module.js';
     CashModule,
     ReportsModule,
     NotificationsModule,
+    ChartsModule,
   ],
   controllers: [AppController],
   providers: [AppService],

@@ -1,0 +1,191 @@
+import { Decimal } from '@prisma/client';
+import { describe, expect, it, vi } from 'vitest';
+import type { PrismaService } from '../prisma/prisma.service.js';
+import { ChartsService } from './charts.service.js';
+
+function makePrismaMock() {
+  return { saleItem: { findMany: vi.fn() } };
+}
+
+interface ItemOverrides {
+  createdAt?: Date;
+  quantity?: number;
+  unitPrice?: number;
+  purchasePrice?: number;
+  productId?: string;
+  name?: string;
+  categoryId?: string | null;
+  categoryName?: string;
+}
+
+function item(overrides: ItemOverrides = {}) {
+  const categoryId = overrides.categoryId === undefined ? 'c1' : overrides.categoryId;
+  return {
+    quantity: new Decimal(overrides.quantity ?? 1),
+    unitPrice: new Decimal(overrides.unitPrice ?? 100),
+    productId: overrides.productId ?? 'p1',
+    name: overrides.name ?? 'Produit',
+    sale: { createdAt: overrides.createdAt ?? new Date('2026-09-07T10:00:00Z') },
+    product: {
+      purchasePrice: new Decimal(overrides.purchasePrice ?? 60),
+      categoryId,
+      category: categoryId === null ? null : { name: overrides.categoryName ?? 'Boissons' },
+    },
+  };
+}
+
+describe('ChartsService.weeklyTotal', () => {
+  it('buckets revenue by weekday (Monday-first) for the week containing weekStart', async () => {
+    const prisma = makePrismaMock();
+    const service = new ChartsService(prisma as unknown as PrismaService);
+    prisma.saleItem.findMany.mockResolvedValue([
+      item({ createdAt: new Date('2026-09-07T10:00:00Z'), quantity: 2, unitPrice: 500 }), // Lundi
+      item({ createdAt: new Date('2026-09-09T10:00:00Z'), quantity: 1, unitPrice: 300 }), // Mercredi
+    ]);
+
+    const result = await service.weeklyTotal('est-1', 'revenue', '2026-09-07');
+
+    expect(result.weekStart).toBe('2026-09-07');
+    expect(result.weekEnd).toBe('2026-09-13');
+    expect(result.series).toHaveLength(1);
+    expect(result.series[0].points[0]).toEqual({ day: 'Lundi', value: 1000 });
+    expect(result.series[0].points[1]).toEqual({ day: 'Mardi', value: 0 });
+    expect(result.series[0].points[2]).toEqual({ day: 'Mercredi', value: 300 });
+  });
+
+  it('snaps any weekday given as weekStart back to that week\'s Monday', async () => {
+    const prisma = makePrismaMock();
+    const service = new ChartsService(prisma as unknown as PrismaService);
+    prisma.saleItem.findMany.mockResolvedValue([]);
+
+    const result = await service.weeklyTotal('est-1', 'revenue', '2026-09-10'); // un jeudi
+
+    expect(result.weekStart).toBe('2026-09-07');
+    expect(result.weekEnd).toBe('2026-09-13');
+  });
+
+  it('computes profit as revenue minus quantity times the current purchase price', async () => {
+    const prisma = makePrismaMock();
+    const service = new ChartsService(prisma as unknown as PrismaService);
+    prisma.saleItem.findMany.mockResolvedValue([item({ quantity: 2, unitPrice: 500, purchasePrice: 300 })]);
+
+    const result = await service.weeklyTotal('est-1', 'profit', '2026-09-07');
+
+    expect(result.series[0].points[0].value).toBe(400); // (500 - 300) * 2
+  });
+
+  it('excludes sales outside the requested week', async () => {
+    const prisma = makePrismaMock();
+    prisma.saleItem.findMany.mockResolvedValue([]);
+    const service = new ChartsService(prisma as unknown as PrismaService);
+    await service.weeklyTotal('est-1', 'revenue', '2026-09-07');
+
+    expect(prisma.saleItem.findMany).toHaveBeenCalledWith(
+      expect.objectContaining({
+        where: expect.objectContaining({
+          sale: expect.objectContaining({
+            establishmentId: 'est-1',
+            voidedAt: null,
+            createdAt: { gte: new Date('2026-09-07T00:00:00'), lte: new Date('2026-09-13T23:59:59.999') },
+          }),
+        }),
+      }),
+    );
+  });
+});
+
+describe('ChartsService.weeklyByCategory', () => {
+  it('groups by category sorted by weekly total descending when unfiltered', async () => {
+    const prisma = makePrismaMock();
+    const service = new ChartsService(prisma as unknown as PrismaService);
+    prisma.saleItem.findMany.mockResolvedValue([
+      item({ categoryId: 'c1', categoryName: 'Boissons', quantity: 1, unitPrice: 100 }),
+      item({ categoryId: 'c2', categoryName: 'Plats', quantity: 1, unitPrice: 500 }),
+      item({ categoryId: null, quantity: 1, unitPrice: 50 }),
+    ]);
+
+    const result = await service.weeklyByCategory('est-1', 'revenue', '2026-09-07');
+
+    expect(result.series.map((s) => s.name)).toEqual(['Plats', 'Boissons', 'Sans catégorie']);
+  });
+
+  it('filters to a single category when categoryId is given', async () => {
+    const prisma = makePrismaMock();
+    const service = new ChartsService(prisma as unknown as PrismaService);
+    prisma.saleItem.findMany.mockResolvedValue([
+      item({ categoryId: 'c1', categoryName: 'Boissons', quantity: 1, unitPrice: 100 }),
+      item({ categoryId: 'c2', categoryName: 'Plats', quantity: 1, unitPrice: 500 }),
+    ]);
+
+    const result = await service.weeklyByCategory('est-1', 'revenue', '2026-09-07', 'c1');
+
+    expect(result.series).toHaveLength(1);
+    expect(result.series[0].name).toBe('Boissons');
+  });
+});
+
+describe('ChartsService.weeklyByProduct', () => {
+  it('filters to a single product when productId is given', async () => {
+    const prisma = makePrismaMock();
+    const service = new ChartsService(prisma as unknown as PrismaService);
+    prisma.saleItem.findMany.mockResolvedValue([
+      item({ productId: 'p1', name: 'Bière', quantity: 1, unitPrice: 1000 }),
+      item({ productId: 'p2', name: 'Soda', quantity: 1, unitPrice: 500 }),
+    ]);
+
+    const result = await service.weeklyByProduct('est-1', 'revenue', '2026-09-07', 'p2');
+
+    expect(result.series).toHaveLength(1);
+    expect(result.series[0].name).toBe('Soda');
+  });
+});
+
+describe('ChartsService.monthly', () => {
+  it('buckets by month for the given year, ignoring other years', async () => {
+    const prisma = makePrismaMock();
+    const service = new ChartsService(prisma as unknown as PrismaService);
+    prisma.saleItem.findMany.mockResolvedValue([
+      item({ createdAt: new Date('2026-01-15T10:00:00Z'), quantity: 1, unitPrice: 100 }),
+      item({ createdAt: new Date('2026-03-02T10:00:00Z'), quantity: 1, unitPrice: 200 }),
+    ]);
+
+    const result = await service.monthly('est-1', 'revenue', 2026);
+
+    expect(result.year).toBe(2026);
+    expect(result.months[0]).toEqual({ month: 'Janvier', value: 100 });
+    expect(result.months[1]).toEqual({ month: 'Février', value: 0 });
+    expect(result.months[2]).toEqual({ month: 'Mars', value: 200 });
+  });
+});
+
+describe('ChartsService.top', () => {
+  it('ranks categories by revenue for the "revenue" metric', async () => {
+    const prisma = makePrismaMock();
+    const service = new ChartsService(prisma as unknown as PrismaService);
+    prisma.saleItem.findMany.mockResolvedValue([
+      item({ categoryId: 'c1', categoryName: 'Boissons', quantity: 1, unitPrice: 100 }),
+      item({ categoryId: 'c2', categoryName: 'Plats', quantity: 1, unitPrice: 500 }),
+    ]);
+
+    const result = await service.top('est-1', 'revenue', new Date('2026-01-01'), new Date('2026-12-31'));
+
+    expect(result.groupBy).toBe('category');
+    expect(result.items[0]).toEqual({ id: 'c2', name: 'Plats', value: 500 });
+  });
+
+  it('ranks individual products by profit for the "profit" metric, capped at 10', async () => {
+    const prisma = makePrismaMock();
+    const service = new ChartsService(prisma as unknown as PrismaService);
+    prisma.saleItem.findMany.mockResolvedValue(
+      Array.from({ length: 12 }, (_, i) =>
+        item({ productId: `p${i}`, name: `Produit ${i}`, quantity: 1, unitPrice: 100 + i, purchasePrice: 50 }),
+      ),
+    );
+
+    const result = await service.top('est-1', 'profit', new Date('2026-01-01'), new Date('2026-12-31'));
+
+    expect(result.groupBy).toBe('product');
+    expect(result.items).toHaveLength(10);
+    expect(result.items[0].name).toBe('Produit 11');
+  });
+});

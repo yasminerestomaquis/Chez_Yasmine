@@ -6,6 +6,7 @@ import 'auth/auth_gate.dart';
 import 'auth/me_repository.dart';
 import 'cash/cash_page.dart';
 import 'catalog/catalog_page.dart';
+import 'charts/graphiques_page.dart';
 import 'config/supabase_config.dart';
 import 'customers/customers_page.dart';
 import 'expenses/expenses_page.dart';
@@ -205,6 +206,13 @@ class _HomePageState extends State<HomePage> {
                               label: const Text('Notifications'),
                               onPressed: () => Navigator.of(context).push(
                                 MaterialPageRoute(builder: (_) => NotificationsPage(establishmentId: establishment.id)),
+                              ),
+                            ),
+                            TextButton.icon(
+                              icon: const Icon(Icons.insert_chart_outlined),
+                              label: const Text('Graphiques'),
+                              onPressed: () => Navigator.of(context).push(
+                                MaterialPageRoute(builder: (_) => GraphiquesPage(establishmentId: establishment.id)),
                               ),
                             ),
                           ],
