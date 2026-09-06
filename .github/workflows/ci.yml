@@ -13,6 +13,12 @@ jobs:
     defaults:
       run:
         working-directory: apps/api/nestjs
+    env:
+      # Dummy value: `prisma.config.ts` requires DATABASE_URL to resolve at
+      # all (Prisma 7 env validation), but `npm run build`/`test` never
+      # actually open a connection — no real database needed here, matching
+      # how every phase in this session ran these same commands locally.
+      DATABASE_URL: postgresql://user:pass@localhost:5432/db
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-node@v4
@@ -40,3 +46,20 @@ jobs:
       - run: flutter analyze
       - run: flutter test
       - run: flutter build web
+
+  # Pipeline de production (prompt maître §36 : Tests → Build → Build PWA →
+  # Déploiement), déclenché sur une branche `production` dédiée. Inerte pour
+  # l'instant (`if: false`) : aucun hébergeur n'a été choisi (voir
+  # PROJECT_PLAN.md, « Points ouverts »), donc il n'y a ni secrets ni cible
+  # réelle à configurer. `needs: [api, web]` garantit déjà que tests et
+  # builds (API + PWA) passent avant tout déploiement une fois activé —
+  # il ne reste qu'à retirer `if: false` et ajouter l'étape de déploiement
+  # propre à l'hébergeur choisi (ex. `vercel deploy`, upload vers un bucket
+  # statique, etc.), sans rien changer aux jobs `api`/`web` ci-dessus.
+  deploy:
+    name: Déploiement production (à configurer)
+    if: false
+    needs: [api, web]
+    runs-on: ubuntu-latest
+    steps:
+      - run: echo "Hébergeur non choisi — voir PROJECT_PLAN.md."

@@ -187,7 +187,15 @@ Détail complet dans `docs/testing/phase-16-tests.md`.
 
 Restant avant `DONE` : E2E une fois l'API déployée avec un vrai `DATABASE_URL`.
 
-### Phase 17 — Production — `TODO`
+### Phase 17 — Production — `TESTING`
+Détail complet dans `docs/deployment/production-readiness.md`.
+- [x] **Bug CI réel trouvé et corrigé** : le job `api` de `.github/workflows/ci.yml` (écrit en Phase 2, jamais exécuté faute de push) ne définissait pas `DATABASE_URL` — `npm run build` aurait échoué dès sa première exécution réelle (chaque `npm run build` de ce projet, tout au long des 17 phases, n'a jamais tourné sans cette variable en préfixe). Corrigé et revérifié en local, dans l'ordre exact de la CI (lint/test/build).
+- [x] Job `deploy` ajouté sur une branche `production` dédiée (Tests → Build → Build PWA → Déploiement, prompt maître §36), `needs: [api, web]`, mais `if: false` — aucun hébergeur choisi, pas de secrets/cible à fabriquer.
+- [x] `.env.example` réconcilié avec l'usage réel du code (vérifié par recherche, pas supposé) : `JWT_SECRET`/`SUPABASE_SERVICE_ROLE_KEY`/`STORAGE_BUCKET` annotés comme non lus par le code (décisions déjà actées en Phases 4/5), sans être supprimés (traçabilité face à la liste du prompt maître §37). `API_URL` — qui, lui, était censé être utilisé mais était figé en dur côté Flutter — rendu réellement configurable via `--dart-define`.
+- [x] Nettoyage : script `deploy` mort (`nest deploy`, fourni par `@nestjs/mau`, désinstallé depuis la Phase 2) retiré de `package.json`.
+- [ ] **Toujours bloqué** : Docker (introuvable, re-vérifié), push GitHub (droits du compte `gh`), `DATABASE_URL` réel, choix d'un hébergeur de production — identiques aux phases précédentes, non résolus par cette phase.
+
+Restant avant `DONE` : lever les blocages ci-dessus (accès GitHub, mot de passe Postgres, choix d'hébergeur) — hors de portée de cet environnement de développement.
 
 ## Fonctionnalités terminées
 
@@ -205,10 +213,23 @@ Restant avant `DONE` : E2E une fois l'API déployée avec un vrai `DATABASE_URL`
 - Notifications in-app (diffusion, alertes de stock bas à la demande) (Phase 14) — service testé (Prisma mocké), UI testée.
 - PWA avancée : service worker de cache écrit à la main (celui de Flutter ne fait plus rien dans ce SDK), bandeau de mise à jour, bouton d'installation (Phase 15) — **hors ligne réel vérifié** (app chargée avec le serveur effectivement arrêté).
 - Tests complets (Phase 16) : lacunes unitaires comblées (161 tests NestJS, 30 Flutter), **isolation multi-tenant RLS vérifiée par une vraie requête Postgres simulant deux utilisateurs** (pas seulement les advisors statiques) ; E2E non fabriqués faute d'API déployée.
+- Production (Phase 17) : bug réel de CI corrigé (`DATABASE_URL` manquant, aurait fait échouer le premier run réel), job de déploiement structuré mais inerte (pas d'hébergeur choisi), `.env.example` réconcilié avec l'usage réel du code, `API_URL` Flutter enfin configurable par environnement.
+
+## Les 17 phases du plan initial sont closes
+
+Chacune reste au statut `TESTING` plutôt que `DONE` dans ce document : la définition de « fini » ici (voir `CLAUDE.md`/prompt maître §11) inclut une vérification en conditions réelles que trois blocages environnementaux — jamais levés du début à la fin de ce développement — ont empêchée pour une bonne partie de chaque phase :
+
+1. **`DATABASE_URL` réel indisponible** — bloque tout round-trip HTTP complet Flutter → NestJS → Postgres, l'exécution locale de l'API, et les deux scénarios E2E du prompt maître (§39).
+2. **Accès en écriture GitHub manquant** — rien n'a jamais été poussé vers `origin` ; la CI (Phase 17) n'a donc jamais tourné en conditions réelles, seulement rejouée localement.
+3. **Docker absent de cette machine** — `docker build`/`docker-compose up` jamais testés.
+
+Rien de tout cela n'a été contourné ni fabriqué : chaque limitation est documentée à l'endroit où elle mord (ce fichier, `ARCHITECTURE.md`, et le `docs/*.md` de la phase concernée), avec ce qui a pu être vérifié malgré elle — notamment le test d'isolation RLS réel de la Phase 16, qui contourne le blocage n°1 en interrogeant directement Postgres via les outils Supabase plutôt que via l'API. Le code métier, lui, est réel, testé (191 tests au total, NestJS + Flutter), documenté, et commité phase par phase avec un historique Git complet des décisions.
 
 ## Prochaines étapes immédiates
 
-1. Résoudre l'accès en écriture au dépôt GitHub distant (`yasminerestomaquis/Chez_Yasmine`) avant tout `git push`.
-2. Premier commit + push, puis vérifier que le pipeline CI GitHub Actions passe.
-3. Renseigner le mot de passe de connexion Postgres réel dans `.env` pour vérifier tous les modules en conditions réelles et pouvoir lancer l'API NestJS localement.
-4. Démarrer la Phase 17 (Production).
+Les 17 phases sont closes ; il ne reste plus de nouvelle phase à démarrer — seulement les trois blocages ci-dessus à lever, dans cet ordre de priorité pour débloquer le plus de vérifications d'un coup :
+
+1. Résoudre l'accès en écriture au dépôt GitHub distant (`yasminerestomaquis/Chez_Yasmine`) avant tout `git push` — débloque le tout premier run réel du pipeline CI (Phase 17).
+2. Renseigner le mot de passe de connexion Postgres réel dans `.env` — débloque l'exécution locale de l'API NestJS, tous les round-trips HTTP complets, `PermissionsGuard` en conditions réelles, et les deux scénarios E2E (Phase 16).
+3. Choisir un hébergeur de production pour activer le job `deploy` (actuellement `if: false`, Phase 17).
+4. Une fois (1) et (2) résolus : rejouer manuellement les deux scénarios E2E du prompt maître §39, et vérifier `docker build`/`docker-compose up` si Docker devient disponible.

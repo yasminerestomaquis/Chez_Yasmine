@@ -50,6 +50,10 @@
 - `docs/pwa/advanced-pwa.md` documentant la découverte sur le service worker déprécié, la stratégie de cache retenue, et les vérifications effectuées.
 - Tests unitaires manquants comblés : `AuthorizationService`, `CustomersService`, `SuppliersService`, `TablesService` (+18 tests, 161 au total côté NestJS).
 - Isolation multi-tenant RLS vérifiée par une vraie requête Postgres (deux utilisateurs simulés, lecture et écriture croisées), pas seulement par les advisors statiques — voir `docs/testing/phase-16-tests.md`.
+- CI (`.github/workflows/ci.yml`) : `DATABASE_URL` factice ajoutée au job `api` (bug réel qui aurait fait échouer son tout premier run) ; job `deploy` structuré pour la branche `production` (Tests → Build → Build PWA → Déploiement) mais désactivé, faute d'hébergeur choisi.
+- `.env.example` réconcilié avec l'usage réel du code (`JWT_SECRET`/`SUPABASE_SERVICE_ROLE_KEY`/`STORAGE_BUCKET` annotés comme non lus par le code, avec renvoi vers la décision d'architecture correspondante).
+- `ApiConfig.baseUrl` (Flutter) configurable par environnement via `--dart-define=API_URL=...`, au lieu d'une constante figée.
+- `docs/deployment/production-readiness.md` documentant le bug CI, le pipeline de production et les blocages restants.
 
 ### Décisions
 - Adoption de l'architecture v5 (Flutter + NestJS + Supabase) en remplacement du prototype v1 local (React/Vite/Dexie), conservé comme référence.
@@ -66,3 +70,5 @@
 - Une notification diffusée à toute l'organisation ne peut pas être marquée lue individuellement (limite du schéma, documentée).
 - Cache PWA en JavaScript brut, service worker écrit à la main (celui de Flutter est déprécié dans ce SDK et ne met plus rien en cache).
 - Bandeau de mise à jour/installation en JavaScript brut plutôt qu'en Dart, pour ne pas faire dépendre `main.dart` de bindings web incompatibles avec l'exécution des tests sur la VM.
+- Job `deploy` de la CI présent mais désactivé (`if: false`) tant qu'aucun hébergeur de production n'est choisi, plutôt qu'un déploiement fabriqué qui ne déploierait nulle part.
+- `JWT_SECRET`/`SUPABASE_SERVICE_ROLE_KEY`/`STORAGE_BUCKET` conservés dans `.env.example` et annotés plutôt que supprimés, pour rester traçables face à la liste explicite du prompt maître même si le code ne les lit pas.

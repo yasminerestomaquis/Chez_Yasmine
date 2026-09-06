@@ -1,8 +1,11 @@
 /// Base URL de l'API NestJS.
 ///
-/// Pas d'instance déployée accessible pour l'instant (voir PROJECT_PLAN.md :
-/// `DATABASE_URL` réel manquant dans l'environnement de développement) — à
-/// mettre à jour vers l'URL réelle une fois l'API déployée.
+/// Configurable par environnement (prompt maître §37 : development/staging/
+/// production) via `--dart-define=API_URL=...` au moment du build/run,
+/// sans avoir à modifier ce fichier ni le committer avec une valeur figée.
+/// Par défaut `http://localhost:3000` (développement local) — pas d'instance
+/// déployée accessible pour l'instant (voir PROJECT_PLAN.md : `DATABASE_URL`
+/// réel manquant dans l'environnement de développement).
 class ApiConfig {
-  static const String baseUrl = 'http://localhost:3000';
+  static const String baseUrl = String.fromEnvironment('API_URL', defaultValue: 'http://localhost:3000');
 }
