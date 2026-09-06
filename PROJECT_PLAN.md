@@ -178,7 +178,15 @@ Détail complet dans `docs/pwa/advanced-pwa.md`.
 
 Restant avant `DONE` : vérification en conditions de déploiement réel (mise à jour de version, invite d'installation naturelle).
 
-### Phase 16 — Tests complets — `TODO`
+### Phase 16 — Tests complets — `TESTING`
+Détail complet dans `docs/testing/phase-16-tests.md`.
+- [x] Audit unitaire : 4 lacunes trouvées et comblées — `AuthorizationService` (jamais testé directement malgré « permissions » explicitement cité au prompt maître §39), `CustomersService`/`SuppliersService`/`TablesService` (CRUD testés seulement par ricochet jusqu'ici). +18 tests. Total : **161 tests NestJS, 30 tests Flutter**, tous passants.
+- [x] **Test d'intégration PostgreSQL/Supabase réel** (première fois, pas seulement les advisors statiques déjà vérifiés en Phase 3/5) : deux comptes créés en SQL (le trigger `handle_new_user` s'est déclenché normalement), un produit confidentiel par établissement, puis lecture/écriture simulées avec `set local role authenticated` + `request.jwt.claims` par utilisateur — isolation totale confirmée en lecture (chacun ne voit que le sien), en écriture (tentative de modification croisée sans effet, revérifié avec `service_role`), et pour le rôle `anon` (rien visible). Toutes les données de test supprimées, base revérifiée à zéro ligne.
+- [x] Advisors sécurité/performance re-vérifiés : aucune régression depuis la Phase 3/5, mêmes findings déjà acceptés.
+- [ ] **E2E non exécutés** (les deux scénarios du prompt maître §39) — demandent l'API NestJS réellement démarrée contre `DATABASE_URL`, toujours indisponible ; non fabriqués (règle de non-fabrication, §48).
+
+Restant avant `DONE` : E2E une fois l'API déployée avec un vrai `DATABASE_URL`.
+
 ### Phase 17 — Production — `TODO`
 
 ## Fonctionnalités terminées
@@ -196,10 +204,11 @@ Restant avant `DONE` : vérification en conditions de déploiement réel (mise �
 - Rapports (chiffre d'affaires, marge, bénéfice net estimé, créances, alertes de stock, top produits, performance serveurs) avec export CSV (Phase 13) — service testé (Prisma mocké), UI testée.
 - Notifications in-app (diffusion, alertes de stock bas à la demande) (Phase 14) — service testé (Prisma mocké), UI testée.
 - PWA avancée : service worker de cache écrit à la main (celui de Flutter ne fait plus rien dans ce SDK), bandeau de mise à jour, bouton d'installation (Phase 15) — **hors ligne réel vérifié** (app chargée avec le serveur effectivement arrêté).
+- Tests complets (Phase 16) : lacunes unitaires comblées (161 tests NestJS, 30 Flutter), **isolation multi-tenant RLS vérifiée par une vraie requête Postgres simulant deux utilisateurs** (pas seulement les advisors statiques) ; E2E non fabriqués faute d'API déployée.
 
 ## Prochaines étapes immédiates
 
 1. Résoudre l'accès en écriture au dépôt GitHub distant (`yasminerestomaquis/Chez_Yasmine`) avant tout `git push`.
 2. Premier commit + push, puis vérifier que le pipeline CI GitHub Actions passe.
 3. Renseigner le mot de passe de connexion Postgres réel dans `.env` pour vérifier tous les modules en conditions réelles et pouvoir lancer l'API NestJS localement.
-4. Démarrer la Phase 16 (Tests complets).
+4. Démarrer la Phase 17 (Production).

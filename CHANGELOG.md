@@ -48,6 +48,8 @@
 - Service worker de cache hors ligne écrit à la main (`apps/web/flutter/web/pwa_cache_worker.js`) : le service worker généré par Flutter s'est révélé, à la vérification, s'auto-désinstaller à l'activation dans ce SDK (mécanisme déprécié côté Flutter) plutôt que mettre quoi que ce soit en cache. **Hors ligne réel vérifié** dans le navigateur (serveur effectivement arrêté, app toujours chargée depuis le cache).
 - Bandeau de mise à jour et bouton d'installation PWA (`apps/web/flutter/web/index.html`), en JavaScript brut.
 - `docs/pwa/advanced-pwa.md` documentant la découverte sur le service worker déprécié, la stratégie de cache retenue, et les vérifications effectuées.
+- Tests unitaires manquants comblés : `AuthorizationService`, `CustomersService`, `SuppliersService`, `TablesService` (+18 tests, 161 au total côté NestJS).
+- Isolation multi-tenant RLS vérifiée par une vraie requête Postgres (deux utilisateurs simulés, lecture et écriture croisées), pas seulement par les advisors statiques — voir `docs/testing/phase-16-tests.md`.
 
 ### Décisions
 - Adoption de l'architecture v5 (Flutter + NestJS + Supabase) en remplacement du prototype v1 local (React/Vite/Dexie), conservé comme référence.
