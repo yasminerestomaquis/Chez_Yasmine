@@ -13,11 +13,17 @@ Statuts : `TODO`, `IN_PROGRESS`, `BLOCKED`, `TESTING`, `DONE`
 
 ## Problèmes connus
 
-- **BLOCKED (permissions)** — Push vers `origin` impossible : le compte `gh`/git authentifié (`Autocad-Qgis`) n'a pas les droits d'écriture sur `yasminerestomaquis/Chez_Yasmine`. Rien n'a été poussé.
+- ~~**BLOCKED (permissions)** — Push vers `origin` impossible~~ **RÉSOLU (2026-09-06)** : `gh` reconnecté au compte `yasminerestomaquis` (device flow, scopes `repo`+`workflow`), `git` configuré pour utiliser ses identifiants (`gh auth setup-git`). Premier push réussi (`master` → `main`), pipeline CI GitHub Actions exécuté pour de vrai — a immédiatement révélé et permis de corriger deux bugs réels invisibles en local : un `package-lock.json` incohérent (`npm ci` échouait, `tsconfck` avait `typescript` dédupliqué vers une version invalide) et l'absence de `npx prisma generate` après `npm ci`. Les deux corrigés, la CI est verte (voir historique Git).
 - **Outillage local manquant** — Docker n'est pas installé sur la machine de développement (le build de `docker/Dockerfile.nestjs` n'a donc pas pu être testé localement). Supabase CLI n'est pas installée globalement mais reste utilisable à la demande via `npx supabase@latest ...` (a servi à générer `supabase/config.toml`) ; le développement contre le projet Supabase distant se fait surtout via les outils MCP Supabase (migrations, SQL, Storage) plutôt que via `supabase start` (qui nécessite Docker).
 - Un test (`AdditionDetail.test.tsx`, prototype v1) est occasionnellement flaky sous charge (timeout `findByText`) mais passe de manière fiable en isolation ou en re-run — sans impact sur le v5, noté pour mémoire.
 - **`npm audit` — 4 vulnérabilités high acceptées** dans `apps/api/nestjs` : `deepmerge-ts`/`mysql2` sont des dépendances transitives du *CLI* Prisma 7.10.0 lui-même (`@prisma/config`), pas du client généré ni du code applicatif — non exposées en production. Le correctif proposé par `npm audit fix --force` rétrograderait vers `prisma@6.19.3`, ce qui abandonnerait la CLI stable actuelle pour une version antérieure ; à réévaluer à la prochaine release stable de Prisma. `@nestjs/mau` (CLI de déploiement Nest, non utilisé — on déploie via Docker/GitHub Actions) a été désinstallé, ce qui a déjà éliminé 5 des 9 vulnérabilités initiales.
-- `DATABASE_URL` réel (mot de passe de connexion directe Postgres) non disponible dans cet environnement : les migrations ont été appliquées via les outils MCP Supabase (API de gestion), pas via une connexion Postgres directe depuis la machine. `prisma db pull`/`prisma migrate dev` et toute exécution réelle de l'API NestJS contre la base nécessitent de renseigner ce mot de passe dans `.env`.
+- ~~`DATABASE_URL` réel non disponible~~ **RÉSOLU (2026-09-06)** : mot de passe réel fourni par l'utilisateur, renseigné dans `.env` (jamais committé). `npx prisma validate` confirme le schéma toujours aligné avec la base réelle. **L'API NestJS a été démarrée en local pour la première fois du projet** (`npm run start`, connexion Prisma réelle confirmée par les logs — `PrismaService: Connected to the database`) et un vrai round-trip HTTP de bout en bout a été vérifié :
+  - `GET /` → 200 (serveur fonctionnel).
+  - `GET /auth/me` sans jeton → 401 ; avec un jeton invalide → 401 ; avec un vrai jeton (inscription + confirmation directe en SQL + connexion réelle via l'API Supabase Auth) → 200, profil correctement renvoyé, trigger `handle_new_user` déclenché en conditions réelles (organisation + établissement + rôle Propriétaire auto-créés).
+  - `GET /establishments/:id/categories` et `GET /establishments/:id/reports/summary` avec ce jeton → 200 : **`PermissionsGuard` vérifié en conditions réelles pour la première fois** (jusqu'ici seulement testé avec Prisma mocké).
+  - Toutes les données de test supprimées après coup (organisation, établissement, profil, compte `auth.users`) ; base revérifiée à zéro ligne sur ces tables.
+  
+  Cela referme la quasi-totalité des « non vérifié en conditions réelles » listés phase par phase depuis la Phase 4 — non repris ligne par ligne dans chaque section de phase ci-dessous par souci de proportion, mais chacune reste valide comme trace de ce qui a été testé au moment de sa construction (mocké) par opposition à cette vérification (réelle, plus tardive).
 
 ## Phases
 
@@ -217,19 +223,18 @@ Restant avant `DONE` : lever les blocages ci-dessus (accès GitHub, mot de passe
 
 ## Les 17 phases du plan initial sont closes
 
-Chacune reste au statut `TESTING` plutôt que `DONE` dans ce document : la définition de « fini » ici (voir `CLAUDE.md`/prompt maître §11) inclut une vérification en conditions réelles que trois blocages environnementaux — jamais levés du début à la fin de ce développement — ont empêchée pour une bonne partie de chaque phase :
+Chacune restait au statut `TESTING` plutôt que `DONE` dans ce document parce que la définition de « fini » ici (voir `CLAUDE.md`/prompt maître §11) inclut une vérification en conditions réelles que trois blocages environnementaux ont empêchée pour une bonne partie de chaque phase — **deux des trois ont été levés le 2026-09-06** (accès GitHub, `DATABASE_URL` réel, voir « Problèmes connus » ci-dessus) :
 
-1. **`DATABASE_URL` réel indisponible** — bloque tout round-trip HTTP complet Flutter → NestJS → Postgres, l'exécution locale de l'API, et les deux scénarios E2E du prompt maître (§39).
-2. **Accès en écriture GitHub manquant** — rien n'a jamais été poussé vers `origin` ; la CI (Phase 17) n'a donc jamais tourné en conditions réelles, seulement rejouée localement.
-3. **Docker absent de cette machine** — `docker build`/`docker-compose up` jamais testés.
+1. ~~`DATABASE_URL` réel indisponible~~ **résolu** — API NestJS démarrée en local pour la première fois, round-trip HTTP réel vérifié (`SupabaseJwtGuard` et `PermissionsGuard` tous deux confirmés en conditions réelles, pas seulement mockés).
+2. ~~Accès en écriture GitHub manquant~~ **résolu** — premier push réussi, pipeline CI exécuté réellement sur GitHub Actions et vert (deux bugs réels trouvés et corrigés au passage : lockfile incohérent, `prisma generate` manquant en CI).
+3. **Docker absent de cette machine** — toujours bloqué, `docker build`/`docker-compose up` jamais testés.
 
-Rien de tout cela n'a été contourné ni fabriqué : chaque limitation est documentée à l'endroit où elle mord (ce fichier, `ARCHITECTURE.md`, et le `docs/*.md` de la phase concernée), avec ce qui a pu être vérifié malgré elle — notamment le test d'isolation RLS réel de la Phase 16, qui contourne le blocage n°1 en interrogeant directement Postgres via les outils Supabase plutôt que via l'API. Le code métier, lui, est réel, testé (191 tests au total, NestJS + Flutter), documenté, et commité phase par phase avec un historique Git complet des décisions.
+Rien de tout cela n'a été contourné ni fabriqué : chaque vérification réelle est documentée à l'endroit où elle a eu lieu, et les mentions « non vérifié en conditions réelles » dans chaque section de phase ci-dessous n'ont pas été réécrites rétroactivement une par une (disproportionné) — elles restent la trace fidèle de ce qui était vérifiable *au moment de la construction* de chaque phase, la levée du blocage étant postérieure et documentée ici. Le code métier, lui, est réel, testé (191 tests au total, NestJS + Flutter), documenté, et commité phase par phase avec un historique Git complet des décisions.
 
 ## Prochaines étapes immédiates
 
-Les 17 phases sont closes ; il ne reste plus de nouvelle phase à démarrer — seulement les trois blocages ci-dessus à lever, dans cet ordre de priorité pour débloquer le plus de vérifications d'un coup :
+Il ne reste qu'un blocage environnemental (Docker) et une décision produit (hébergeur) :
 
-1. Résoudre l'accès en écriture au dépôt GitHub distant (`yasminerestomaquis/Chez_Yasmine`) avant tout `git push` — débloque le tout premier run réel du pipeline CI (Phase 17).
-2. Renseigner le mot de passe de connexion Postgres réel dans `.env` — débloque l'exécution locale de l'API NestJS, tous les round-trips HTTP complets, `PermissionsGuard` en conditions réelles, et les deux scénarios E2E (Phase 16).
-3. Choisir un hébergeur de production pour activer le job `deploy` (actuellement `if: false`, Phase 17).
-4. Une fois (1) et (2) résolus : rejouer manuellement les deux scénarios E2E du prompt maître §39, et vérifier `docker build`/`docker-compose up` si Docker devient disponible.
+1. Choisir un hébergeur de production pour activer le job `deploy` (actuellement `if: false`, Phase 17) — décision en attente de l'utilisateur.
+2. Rejouer manuellement les deux scénarios E2E du prompt maître §39 maintenant que l'API tourne réellement (fait ponctuellement pour la connexion/permissions ci-dessus, pas encore pour les deux scénarios complets bout en bout : vente/paiement/stock/clôture, et coupure réseau/sync).
+3. Vérifier `docker build`/`docker-compose up` si Docker devient disponible sur cette machine.

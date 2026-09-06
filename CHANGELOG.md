@@ -55,6 +55,11 @@
 - `ApiConfig.baseUrl` (Flutter) configurable par environnement via `--dart-define=API_URL=...`, au lieu d'une constante figée.
 - `docs/deployment/production-readiness.md` documentant le bug CI, le pipeline de production et les blocages restants.
 
+### Résolu (post-plan, 2026-09-06)
+- Accès GitHub en écriture obtenu (`gh` reconnecté au compte `yasminerestomaquis`) ; premier `git push` réussi, `main` créée sur le dépôt distant.
+- Premier run réel du pipeline CI sur GitHub Actions — a immédiatement révélé et permis de corriger deux bugs invisibles en local : `package-lock.json` incohérent (`npm ci` échouait, `tsconfck` avait `typescript` dédupliqué vers une version invalide) et `npx prisma generate` manquant après `npm ci`. CI verte après correction.
+- Mot de passe Postgres réel obtenu et placé dans `.env` — l'API NestJS a tourné en local pour la première fois du projet, avec un vrai round-trip HTTP vérifié (`SupabaseJwtGuard`, `PermissionsGuard`, trigger `handle_new_user`, tous confirmés en conditions réelles). Données de test supprimées après coup.
+
 ### Décisions
 - Adoption de l'architecture v5 (Flutter + NestJS + Supabase) en remplacement du prototype v1 local (React/Vite/Dexie), conservé comme référence.
 - Authentification via Supabase Auth uniquement.
