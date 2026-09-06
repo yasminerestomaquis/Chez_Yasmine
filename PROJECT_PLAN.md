@@ -251,8 +251,16 @@ Rien de tout cela n'a été contourné ni fabriqué : chaque vérification réel
 - `apps/web/flutter/vercel.json` mis à jour : `flutter build web` inclut maintenant `--dart-define=API_URL=https://chez-yasmine-api.onrender.com` — la PWA en production pointe enfin vers la vraie API plutôt que `localhost:3000`.
 - **Limite connue du palier Free Render** : l'instance se met en veille après une période d'inactivité, avec un redémarrage à froid pouvant dépasser 50 secondes sur la requête suivante — acceptable pour découvrir/valider le déploiement, à surveiller si ça devient gênant en usage réel (upgrade payant possible plus tard).
 
+## Vérification PWA ↔ API en production (2026-09-06)
+
+**Round-trip complet Flutter → NestJS → Postgres vérifié dans un vrai navigateur, pour la première fois du projet.** Deux bugs réels, invisibles jusqu'ici, sont apparus et ont été corrigés au passage :
+
+- **CORS absent** (`apps/api/nestjs/src/main.ts`) : NestJS ne l'active pas par défaut. Invisible en tests unitaires (Prisma mocké) et en `curl` (n'applique jamais CORS) — seul un vrai appel cross-origin depuis le navigateur le révèle (`Failed to fetch`, sans autre détail). Corrigé par `app.enableCors(...)` avec liste blanche explicite (origine PWA de production + tout `localhost`).
+- **`ENETUNREACH` vers Postgres depuis Render** : l'hôte de connexion directe Supabase ne résout qu'en IPv6, or Render n'a pas de sortie IPv6. Corrigé en basculant `DATABASE_URL` sur Render (uniquement — `.env` local inchangé, cette machine a de l'IPv6) vers le **Session Pooler** Supabase (IPv4), nom d'utilisateur `postgres.<project-ref>`, hôte `aws-1-eu-west-1.pooler.supabase.com` (propre à ce projet, trouvé via le dialogue « Connect » de Supabase — ne pas supposer `aws-0`).
+
+Vérifié dans le navigateur réel : connexion avec un compte de test, chargement effectif de la vue authentifiée (établissement, navigation complète : Tables, Caisse, Stock, Achats, Clients, Catalogue, Dépenses, Pertes, Rapports, Notifications) au lieu de l'écran d'erreur serveur observé avant correction. Confirmé reproductible après rechargement complet de la page. Compte de test et toutes les données associées (organisation, établissement, profil, rôle) supprimés après vérification.
+
 ## Prochaines étapes immédiates
 
-1. Vérifier dans le navigateur que la PWA déployée (une fois le nouveau build Vercel terminé) communique bien avec l'API réelle — premier vrai round-trip Flutter → NestJS → Postgres en conditions de production.
-2. Rejouer manuellement les deux scénarios E2E du prompt maître §39 maintenant que l'API tourne réellement en production (fait ponctuellement pour la connexion/permissions ci-dessus, pas encore pour les deux scénarios complets bout en bout : vente/paiement/stock/clôture, et coupure réseau/sync).
-3. Vérifier `docker build`/`docker-compose up` si Docker devient disponible sur cette machine.
+1. Rejouer manuellement les deux scénarios E2E du prompt maître §39 maintenant que l'API tourne réellement en production (fait ponctuellement pour la connexion/permissions ci-dessus, pas encore pour les deux scénarios complets bout en bout : vente/paiement/stock/clôture, et coupure réseau/sync).
+2. Vérifier `docker build`/`docker-compose up` si Docker devient disponible sur cette machine.
