@@ -39,6 +39,9 @@
 - Dépenses (CRUD), pertes de stock valorisées (`quantity * purchasePrice`, remplace la saisie manuelle de type « perte »), clôture de caisse avec calcul du montant attendu et de l'écart (`apps/api/nestjs/src/{expenses,losses,cash}/`) ; UI Flutter correspondante (`apps/web/flutter/lib/{expenses,losses,cash}/`).
 - `DecimalTransformInterceptor` global (`apps/api/nestjs/src/common/`) : corrige la sérialisation des `Decimal` Prisma (chaîne JSON, incompatible avec les modèles Flutter) sur toute réponse de l'API — défaut présent depuis la Phase 5, découvert en Phase 12.
 - `docs/api/accounting.md` documentant dépenses/pertes/caisse et la correction de sérialisation.
+- Rapports (`apps/api/nestjs/src/reports/`) : chiffre d'affaires, remises, coût des marchandises vendues et marge, dépenses, pertes, bénéfice net estimé, créances clients, alertes de stock bas, produits les plus vendus, performance des serveurs — par jour/semaine/mois/année ou plage explicite, avec export CSV.
+- UI Flutter des rapports (`apps/web/flutter/lib/reports/`) : sélecteur de période, indicateurs, top produits, performance serveurs, export CSV.
+- `docs/api/reports.md` documentant les indicateurs, les approximations assumées, et l'export CSV-seulement (PDF/Excel reportés).
 
 ### Décisions
 - Adoption de l'architecture v5 (Flutter + NestJS + Supabase) en remplacement du prototype v1 local (React/Vite/Dexie), conservé comme référence.
@@ -49,3 +52,5 @@
 - Upload des photos vers Supabase Storage avec le jeton de l'utilisateur authentifié plutôt qu'une clé `service_role` (RLS Storage suffit, pas de nouveau secret introduit).
 - Les pertes de stock ne s'écrivent plus que via le module Pertes (Phase 12), jamais via la saisie manuelle générique, pour garantir une trace comptable systématique.
 - Un point de vente/caisse par défaut est créé paresseusement à la première clôture plutôt que d'ajouter un CRUD dédié, en l'absence de besoin multi-caisse actuel.
+- Seul l'export CSV des rapports est livré (PDF/Excel reportés, faute de dépendance de rendu choisie/testée).
+- La marge des rapports utilise le coût d'achat actuel du produit, faute de coût historique figé sur `SaleItem`.

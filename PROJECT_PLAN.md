@@ -148,7 +148,16 @@ Détail complet dans `docs/api/accounting.md`.
 
 Restant avant `DONE` : vérification bout en bout une fois l'API déployée.
 
-### Phase 13 — Rapports — `TODO`
+### Phase 13 — Rapports — `TESTING`
+Détail complet dans `docs/api/reports.md`.
+- [x] `ReportsService.summary` (`reports.view`) : chiffre d'affaires, remises, nombre de ventes, coût des marchandises vendues et marge (à partir du `purchasePrice` *actuel*, `SaleItem` ne fige pas de coût historique — documenté), dépenses et pertes de la période, bénéfice net estimé, créances clients (solde présent, non borné à la période — documenté), alertes de stock bas (réutilise `StockMovementsService.listLowStockAlerts`), produits les plus vendus, performance des serveurs par `Sale.createdBy` (`ServerCommission` existe dans le schéma mais n'est alimenté nulle part — non utilisé, pour rester honnête). `from`/`to` ou `period` (jour/semaine/mois/année) couvrent les quatre périodicités du prompt maître §34 sans quatre endpoints séparés. Testé (Prisma mocké), 8 tests.
+- [x] Export CSV (`GET .../reports/summary.csv`). PDF/Excel (également demandés au §34) **délibérément non livrés** : nécessiteraient une dépendance de rendu non choisie/testée, pour une fonctionnalité qui resterait de toute façon invérifiable de bout en bout tant que `DATABASE_URL` manque.
+- [x] UI Flutter (`lib/reports/`) : sélecteur de période, indicateurs, top produits, performance serveurs, export CSV affiché dans un dialogue copiable.
+- [x] **Effet de bord découvert en testant cette phase** : un défaut latent dans le motif `setState(() { _future = repo.methode(); })` déjà utilisé par plusieurs écrans à rechargement depuis la Phase 5 (course entre le rejet d'un `Future` et le réabonnement de `FutureBuilder`, visible seulement sous `flutter_test`, jamais en production) — corrigé dans `ReportsPage` (`future.ignore()`), documenté sans être répercuté ailleurs (aucun test existant ne l'exerce, pas un bug métier).
+- [ ] **Non vérifié en conditions réelles** : round-trip HTTP complet — même limitation `DATABASE_URL` que les phases précédentes.
+
+Restant avant `DONE` : vérification bout en bout une fois l'API déployée ; envisager PDF/Excel si un besoin réel se confirme.
+
 ### Phase 14 — Notifications — `TODO`
 ### Phase 15 — PWA avancée — `TODO`
 ### Phase 16 — Tests complets — `TODO`
@@ -166,10 +175,11 @@ Restant avant `DONE` : vérification bout en bout une fois l'API déployée.
 - Fournisseurs, achats, réception avec incrémentation automatique du stock (Phase 10) — service testé (Prisma mocké), UI testée (analyse/build).
 - Clients, crédits, remboursements, et activation du paiement à crédit en caisse (Phase 11) — service testé (Prisma mocké), UI testée.
 - Dépenses, pertes valorisées, clôture de caisse, et correction transverse de la sérialisation des `Decimal` (Phase 12) — services testés (Prisma mocké), UI testée.
+- Rapports (chiffre d'affaires, marge, bénéfice net estimé, créances, alertes de stock, top produits, performance serveurs) avec export CSV (Phase 13) — service testé (Prisma mocké), UI testée.
 
 ## Prochaines étapes immédiates
 
 1. Résoudre l'accès en écriture au dépôt GitHub distant (`yasminerestomaquis/Chez_Yasmine`) avant tout `git push`.
 2. Premier commit + push, puis vérifier que le pipeline CI GitHub Actions passe.
 3. Renseigner le mot de passe de connexion Postgres réel dans `.env` pour vérifier tous les modules en conditions réelles et pouvoir lancer l'API NestJS localement.
-4. Démarrer la Phase 13 (Rapports).
+4. Démarrer la Phase 14 (Notifications).

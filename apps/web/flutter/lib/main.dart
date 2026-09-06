@@ -12,6 +12,7 @@ import 'expenses/expenses_page.dart';
 import 'losses/losses_page.dart';
 import 'pos/pos_page.dart';
 import 'purchasing/purchases_page.dart';
+import 'reports/reports_page.dart';
 import 'stock/stock_page.dart';
 import 'tables/floor_plan_page.dart';
 
@@ -189,6 +190,13 @@ class _HomePageState extends State<HomePage> {
                               label: const Text('Caisse'),
                               onPressed: () => Navigator.of(context).push(
                                 MaterialPageRoute(builder: (_) => CashPage(establishmentId: establishment.id)),
+                              ),
+                            ),
+                            TextButton.icon(
+                              icon: const Icon(Icons.bar_chart_outlined),
+                              label: const Text('Rapports'),
+                              onPressed: () => Navigator.of(context).push(
+                                MaterialPageRoute(builder: (_) => ReportsPage(establishmentId: establishment.id)),
                               ),
                             ),
                           ],

@@ -33,6 +33,17 @@ class ApiClient {
     return _decode(response);
   }
 
+  /// Comme [get], mais pour une réponse non-JSON (ex. l'export CSV des
+  /// rapports, `GET .../reports/summary.csv`) — `_decode` ferait échouer le
+  /// `jsonDecode` sur un corps CSV.
+  Future<String> getText(String path, {Map<String, String>? query}) async {
+    final response = await http.get(_uri(path, query), headers: _authHeaders);
+    if (response.statusCode >= 200 && response.statusCode < 300) {
+      return response.body;
+    }
+    throw ApiException(response.statusCode, 'Erreur ${response.statusCode}');
+  }
+
   Future<dynamic> post(String path, {Object? body}) async {
     final response = await http.post(
       _uri(path),

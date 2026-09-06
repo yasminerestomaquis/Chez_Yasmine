@@ -10,6 +10,7 @@ import { LossesModule } from './losses/losses.module.js';
 import { PosModule } from './pos/pos.module.js';
 import { PrismaModule } from './prisma/prisma.module.js';
 import { PurchasingModule } from './purchasing/purchasing.module.js';
+import { ReportsModule } from './reports/reports.module.js';
 import { StockModule } from './stock/stock.module.js';
 import { SyncModule } from './sync/sync.module.js';
 import { TablesModule } from './tables/tables.module.js';
@@ -28,6 +29,7 @@ import { TablesModule } from './tables/tables.module.js';
     ExpensesModule,
     LossesModule,
     CashModule,
+    ReportsModule,
   ],
   controllers: [AppController],
   providers: [AppService],
