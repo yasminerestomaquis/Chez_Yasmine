@@ -31,8 +31,57 @@
 
   <title>Chez Yasmine</title>
   <link rel="manifest" href="manifest.json">
+
+  <!--
+    PWA avancée (Phase 15) : bandeau de mise à jour, bouton d'installation, et
+    service worker de cache hors ligne (pwa_cache_worker.js), en JavaScript
+    brut plutôt qu'en Dart (package:web/js_interop) — évite d'introduire du
+    code lié au navigateur dans un arbre importé par main.dart, que
+    `flutter test` compile et exécute sur la VM, pas Chrome. Voir
+    pwa_cache_worker.js pour le détail de la stratégie de cache et pourquoi
+    le service worker généré par Flutter (flutter_service_worker.js) n'est
+    plus utilisable pour ça dans ce SDK.
+  -->
+  <style>
+    #pwa-update-banner, #pwa-install-banner {
+      display: none;
+      position: fixed;
+      left: 50%;
+      transform: translateX(-50%);
+      bottom: 16px;
+      z-index: 9999;
+      background: #0175C2;
+      color: #fff;
+      padding: 10px 16px;
+      border-radius: 8px;
+      font-family: sans-serif;
+      font-size: 14px;
+      box-shadow: 0 2px 8px rgba(0,0,0,0.3);
+      align-items: center;
+      gap: 12px;
+    }
+    #pwa-update-banner.visible, #pwa-install-banner.visible { display: flex; }
+    #pwa-update-banner button, #pwa-install-banner button {
+      background: #fff;
+      color: #0175C2;
+      border: none;
+      border-radius: 4px;
+      padding: 6px 10px;
+      cursor: pointer;
+      font-weight: bold;
+    }
+  </style>
 </head>
 <body>
+  <div id="pwa-update-banner">
+    <span>Nouvelle version disponible.</span>
+    <button id="pwa-update-reload">Actualiser</button>
+  </div>
+  <div id="pwa-install-banner">
+    <span>Installer Chez Yasmine sur cet appareil ?</span>
+    <button id="pwa-install-accept">Installer</button>
+  </div>
+
   <!--
     You can customize the "flutter_bootstrap.js" script.
     This is useful to provide a custom configuration to the Flutter loader
@@ -42,5 +91,59 @@
     * https://docs.flutter.dev/platform-integration/web/initialization
   -->
   <script src="flutter_bootstrap.js" async></script>
+
+  <script>
+    // Enregistrement du service worker de cache (pwa_cache_worker.js, voir ce
+    // fichier pour le détail). Pas flutter_service_worker.js : vérifié
+    // directement dans le navigateur, celui généré par Flutter s'auto-
+    // désinstalle à l'activation dans ce SDK (mécanisme officiellement
+    // déprécié, https://github.com/flutter/flutter/issues/156910) — il ne
+    // fait plus aucune mise en cache, un vrai service worker était à écrire
+    // à la main pour obtenir un cache hors ligne réel.
+    if ('serviceWorker' in navigator) {
+      window.addEventListener('load', function () {
+        navigator.serviceWorker.register('pwa_cache_worker.js').catch(function (err) {
+          console.error('Échec de l\'enregistrement du service worker :', err);
+        });
+      });
+    }
+
+    // Mise à jour : flutter_service_worker.js appelle self.skipWaiting() une
+    // fois la nouvelle version installée (comportement par défaut du
+    // service worker généré par Flutter) ; "controllerchange" se déclenche
+    // au moment où l'onglet bascule effectivement dessus.
+    if ('serviceWorker' in navigator) {
+      let refreshing = false;
+      navigator.serviceWorker.addEventListener('controllerchange', function () {
+        if (refreshing) return;
+        document.getElementById('pwa-update-banner').classList.add('visible');
+      });
+      document.getElementById('pwa-update-reload').addEventListener('click', function () {
+        refreshing = true;
+        window.location.reload();
+      });
+    }
+
+    // Installation : Chrome/Edge déclenchent "beforeinstallprompt" quand les
+    // critères d'installabilité (manifest + service worker + HTTPS) sont
+    // réunis ; on l'intercepte pour proposer notre propre bouton plutôt que
+    // de dépendre uniquement de l'icône native du navigateur.
+    let deferredInstallPrompt = null;
+    window.addEventListener('beforeinstallprompt', function (event) {
+      event.preventDefault();
+      deferredInstallPrompt = event;
+      document.getElementById('pwa-install-banner').classList.add('visible');
+    });
+    document.getElementById('pwa-install-accept').addEventListener('click', function () {
+      document.getElementById('pwa-install-banner').classList.remove('visible');
+      if (deferredInstallPrompt) {
+        deferredInstallPrompt.prompt();
+        deferredInstallPrompt = null;
+      }
+    });
+    window.addEventListener('appinstalled', function () {
+      document.getElementById('pwa-install-banner').classList.remove('visible');
+    });
+  </script>
 </body>
 </html>

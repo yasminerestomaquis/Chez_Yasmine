@@ -45,6 +45,9 @@
 - Notifications in-app (`apps/api/nestjs/src/notifications/`) : diffusion (à toute l'organisation ou ciblée), alertes de stock bas générées à la demande, dédoublonnées. Pas de notifications push (aucune infrastructure FCM/APNs/Web Push disponible).
 - UI Flutter des notifications (`apps/web/flutter/lib/notifications/`) : liste, diffusion, déclenchement manuel de la vérification de stock bas.
 - `docs/api/notifications.md` documentant la portée in-app-seulement et la traduction établissement → organisation.
+- Service worker de cache hors ligne écrit à la main (`apps/web/flutter/web/pwa_cache_worker.js`) : le service worker généré par Flutter s'est révélé, à la vérification, s'auto-désinstaller à l'activation dans ce SDK (mécanisme déprécié côté Flutter) plutôt que mettre quoi que ce soit en cache. **Hors ligne réel vérifié** dans le navigateur (serveur effectivement arrêté, app toujours chargée depuis le cache).
+- Bandeau de mise à jour et bouton d'installation PWA (`apps/web/flutter/web/index.html`), en JavaScript brut.
+- `docs/pwa/advanced-pwa.md` documentant la découverte sur le service worker déprécié, la stratégie de cache retenue, et les vérifications effectuées.
 
 ### Décisions
 - Adoption de l'architecture v5 (Flutter + NestJS + Supabase) en remplacement du prototype v1 local (React/Vite/Dexie), conservé comme référence.
@@ -59,3 +62,5 @@
 - La marge des rapports utilise le coût d'achat actuel du produit, faute de coût historique figé sur `SaleItem`.
 - Notifications in-app uniquement, pas de push, faute d'infrastructure disponible.
 - Une notification diffusée à toute l'organisation ne peut pas être marquée lue individuellement (limite du schéma, documentée).
+- Cache PWA en JavaScript brut, service worker écrit à la main (celui de Flutter est déprécié dans ce SDK et ne met plus rien en cache).
+- Bandeau de mise à jour/installation en JavaScript brut plutôt qu'en Dart, pour ne pas faire dépendre `main.dart` de bindings web incompatibles avec l'exécution des tests sur la VM.

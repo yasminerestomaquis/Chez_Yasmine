@@ -168,7 +168,16 @@ Détail complet dans `docs/api/notifications.md`.
 
 Restant avant `DONE` : vérification bout en bout une fois l'API déployée ; brancher un vrai ordonnanceur pour `low-stock-check` si le besoin se confirme.
 
-### Phase 15 — PWA avancée — `TODO`
+### Phase 15 — PWA avancée — `TESTING`
+Détail complet dans `docs/pwa/advanced-pwa.md`.
+- [x] **Découverte** : le service worker généré par `flutter build web` (`flutter_service_worker.js`) ne met plus rien en cache dans ce SDK — vérifié dans le navigateur, il s'auto-désinstalle à l'activation (mécanisme officiellement déprécié par Flutter, https://github.com/flutter/flutter/issues/156910). L'hypothèse initiale (« le cache hors ligne est déjà fourni par Flutter ») était fausse ; corrigée avant d'être documentée comme acquise ailleurs.
+- [x] Service worker de cache écrit à la main (`web/pwa_cache_worker.js`) : cache au fil de l'eau (pas de liste de préchargement figée, `canvaskit/` a plusieurs variantes de ~37 Mo selon le navigateur), nettoyage des anciens caches à l'activation. **Vérifié en conditions réelles** : cycle de vie complet observé dans le navigateur, et — test décisif — l'app s'est chargée et affichée normalement après arrêt effectif du serveur (pas une simulation).
+- [x] Bandeau de mise à jour (écoute `controllerchange`) et bouton d'installation (`beforeinstallprompt`), en JavaScript brut dans `web/index.html` plutôt qu'en Dart — évite de faire dépendre `main.dart` (importé par un test) de bindings web incompatibles avec l'exécution sur la VM de `flutter test`. Déclenchement vérifié par simulation directe des événements navigateur.
+- [x] Optimisation : tree-shaking des polices déjà actif (mesuré : réductions de 99%+ à chaque build) ; `--wasm` évalué (compilation confirmée) mais **non adopté**, compatibilité runtime des plugins fédérés utilisés (image_picker, file_picker, connectivity_plus, shared_preferences) non vérifiée.
+- [ ] **Non vérifié** : un vrai cycle de mise à jour de bout en bout (deux versions déployées successivement) et un déclenchement naturel de l'invite d'installation — tous deux demandent un déploiement réel.
+
+Restant avant `DONE` : vérification en conditions de déploiement réel (mise à jour de version, invite d'installation naturelle).
+
 ### Phase 16 — Tests complets — `TODO`
 ### Phase 17 — Production — `TODO`
 
@@ -186,10 +195,11 @@ Restant avant `DONE` : vérification bout en bout une fois l'API déployée ; br
 - Dépenses, pertes valorisées, clôture de caisse, et correction transverse de la sérialisation des `Decimal` (Phase 12) — services testés (Prisma mocké), UI testée.
 - Rapports (chiffre d'affaires, marge, bénéfice net estimé, créances, alertes de stock, top produits, performance serveurs) avec export CSV (Phase 13) — service testé (Prisma mocké), UI testée.
 - Notifications in-app (diffusion, alertes de stock bas à la demande) (Phase 14) — service testé (Prisma mocké), UI testée.
+- PWA avancée : service worker de cache écrit à la main (celui de Flutter ne fait plus rien dans ce SDK), bandeau de mise à jour, bouton d'installation (Phase 15) — **hors ligne réel vérifié** (app chargée avec le serveur effectivement arrêté).
 
 ## Prochaines étapes immédiates
 
 1. Résoudre l'accès en écriture au dépôt GitHub distant (`yasminerestomaquis/Chez_Yasmine`) avant tout `git push`.
 2. Premier commit + push, puis vérifier que le pipeline CI GitHub Actions passe.
 3. Renseigner le mot de passe de connexion Postgres réel dans `.env` pour vérifier tous les modules en conditions réelles et pouvoir lancer l'API NestJS localement.
-4. Démarrer la Phase 15 (PWA avancée).
+4. Démarrer la Phase 16 (Tests complets).
