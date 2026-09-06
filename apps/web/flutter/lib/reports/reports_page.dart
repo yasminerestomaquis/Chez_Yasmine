@@ -131,6 +131,17 @@ class _ReportsPageState extends State<ReportsPage> {
                         ),
                       const SizedBox(height: 16),
                     ],
+                    if (s.productProfitability.isNotEmpty) ...[
+                      const Text('Bénéfice par produit', style: TextStyle(fontWeight: FontWeight.bold)),
+                      for (final p in s.productProfitability)
+                        ListTile(
+                          dense: true,
+                          title: Text(p.name),
+                          subtitle: Text('${p.quantity.toStringAsFixed(0)} vendu(s) — CA ${p.revenue.toStringAsFixed(0)} FCFA'),
+                          trailing: Text('${p.profit.toStringAsFixed(0)} FCFA'),
+                        ),
+                      const SizedBox(height: 16),
+                    ],
                     if (s.serverPerformance.isNotEmpty) ...[
                       const Text('Performance des serveurs', style: TextStyle(fontWeight: FontWeight.bold)),
                       for (final perf in s.serverPerformance)

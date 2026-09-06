@@ -1,16 +1,27 @@
 class TopProduct {
-  TopProduct({required this.productId, required this.name, required this.quantity, required this.revenue});
+  TopProduct({
+    required this.productId,
+    required this.name,
+    required this.quantity,
+    required this.revenue,
+    required this.cost,
+    required this.profit,
+  });
 
   final String productId;
   final String name;
   final double quantity;
   final double revenue;
+  final double cost;
+  final double profit;
 
   factory TopProduct.fromJson(Map<String, dynamic> json) => TopProduct(
         productId: json['productId'] as String,
         name: json['name'] as String,
         quantity: (json['quantity'] as num).toDouble(),
         revenue: (json['revenue'] as num).toDouble(),
+        cost: (json['cost'] as num).toDouble(),
+        profit: (json['profit'] as num).toDouble(),
       );
 }
 
@@ -45,6 +56,7 @@ class ReportSummary {
     required this.receivables,
     required this.lowStockCount,
     required this.topProducts,
+    required this.productProfitability,
     required this.serverPerformance,
   });
 
@@ -61,6 +73,7 @@ class ReportSummary {
   final double receivables;
   final int lowStockCount;
   final List<TopProduct> topProducts;
+  final List<TopProduct> productProfitability;
   final List<ServerPerformance> serverPerformance;
 
   factory ReportSummary.fromJson(Map<String, dynamic> json) => ReportSummary(
@@ -77,6 +90,9 @@ class ReportSummary {
         receivables: (json['receivables'] as num).toDouble(),
         lowStockCount: json['lowStockCount'] as int,
         topProducts: (json['topProducts'] as List<dynamic>)
+            .map((e) => TopProduct.fromJson(e as Map<String, dynamic>))
+            .toList(),
+        productProfitability: (json['productProfitability'] as List<dynamic>)
             .map((e) => TopProduct.fromJson(e as Map<String, dynamic>))
             .toList(),
         serverPerformance: (json['serverPerformance'] as List<dynamic>)

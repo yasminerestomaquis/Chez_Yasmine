@@ -81,22 +81,25 @@ export class ReportsService {
     const purchasePriceById = new Map(products.map((p) => [p.id, p.purchasePrice?.toNumber() ?? 0]));
 
     let cogs = 0;
-    const productAgg = new Map<string, { name: string; quantity: number; revenue: number }>();
+    const productAgg = new Map<string, { name: string; quantity: number; revenue: number; cost: number }>();
     for (const sale of sales) {
       for (const item of sale.items) {
         const quantity = item.quantity.toNumber();
         const unitPrice = item.unitPrice.toNumber();
-        cogs += quantity * (purchasePriceById.get(item.productId) ?? 0);
-        const existing = productAgg.get(item.productId) ?? { name: item.name, quantity: 0, revenue: 0 };
+        const lineCost = quantity * (purchasePriceById.get(item.productId) ?? 0);
+        cogs += lineCost;
+        const existing = productAgg.get(item.productId) ?? { name: item.name, quantity: 0, revenue: 0, cost: 0 };
         existing.quantity += quantity;
         existing.revenue += quantity * unitPrice;
+        existing.cost += lineCost;
         productAgg.set(item.productId, existing);
       }
     }
-    const topProducts = [...productAgg.entries()]
-      .map(([productId, v]) => ({ productId, ...v }))
-      .sort((a, b) => b.quantity - a.quantity)
-      .slice(0, 5);
+    const withProfit = [...productAgg.entries()].map(([productId, v]) => ({ productId, ...v, profit: v.revenue - v.cost }));
+    const topProducts = [...withProfit].sort((a, b) => b.quantity - a.quantity).slice(0, 5);
+    // Bénéfice par produit (§ voir docs/api/reports.md) : même limitation que `cogs` —
+    // coût d'achat *actuel*, pas figé au moment de chaque vente historique.
+    const productProfitability = [...withProfit].sort((a, b) => b.profit - a.profit);
 
     const serverAgg = new Map<string, { total: number; salesCount: number }>();
     for (const sale of sales) {
@@ -137,6 +140,7 @@ export class ReportsService {
       receivables: receivablesAgg._sum.creditBalance?.toNumber() ?? 0,
       lowStockCount: lowStockAlerts.length,
       topProducts,
+      productProfitability,
       serverPerformance,
     };
   }
@@ -162,6 +166,9 @@ export class ReportsService {
       ['Bénéfice net (estimé)', s.netProfit],
       ['Créances clients', s.receivables],
       ['Produits en alerte de stock', s.lowStockCount],
+      ...s.productProfitability.map(
+        (p): [string, number] => [`Bénéfice — ${p.name}`, p.profit],
+      ),
     ];
     return ['"Indicateur","Valeur"', ...rows.map(([label, value]) => `"${label}",${value}`)].join('\n');
   }

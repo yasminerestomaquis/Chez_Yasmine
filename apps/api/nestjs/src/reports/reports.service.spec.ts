@@ -119,8 +119,35 @@ describe('ReportsService.summary', () => {
 
     const result = await service.summary('est-1', {});
 
-    expect(result.topProducts[0]).toEqual({ productId: 'p1', name: 'Bière', quantity: 10, revenue: 5000 });
+    expect(result.topProducts[0]).toEqual({ productId: 'p1', name: 'Bière', quantity: 10, revenue: 5000, cost: 3000, profit: 2000 });
     expect(result.topProducts[1].productId).toBe('p2');
+  });
+
+  it('computes per-product profit and ranks productProfitability by profit, uncapped', async () => {
+    (prisma.sale as any).findMany.mockResolvedValue([
+      {
+        id: 'sale-1',
+        total: new Decimal(0),
+        discount: new Decimal(0),
+        createdBy: null,
+        items: [
+          { productId: 'p1', name: 'Bière', quantity: new Decimal(2), unitPrice: new Decimal(1000) },
+          { productId: 'p2', name: 'Soda', quantity: new Decimal(10), unitPrice: new Decimal(500) },
+        ],
+      },
+    ]);
+    (prisma.product as any).findMany.mockResolvedValue([
+      { id: 'p1', purchasePrice: new Decimal(300) },
+      { id: 'p2', purchasePrice: new Decimal(450) },
+    ]);
+
+    const result = await service.summary('est-1', {});
+
+    // p1: revenue 2000, cost 600, profit 1400. p2: revenue 5000, cost 4500, profit 500.
+    expect(result.productProfitability).toEqual([
+      { productId: 'p1', name: 'Bière', quantity: 2, revenue: 2000, cost: 600, profit: 1400 },
+      { productId: 'p2', name: 'Soda', quantity: 10, revenue: 5000, cost: 4500, profit: 500 },
+    ]);
   });
 
   it('aggregates serverPerformance by createdBy, ignoring sales with no server', async () => {
