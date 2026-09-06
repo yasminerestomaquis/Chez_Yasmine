@@ -10,6 +10,7 @@ import 'config/supabase_config.dart';
 import 'customers/customers_page.dart';
 import 'expenses/expenses_page.dart';
 import 'losses/losses_page.dart';
+import 'notifications/notifications_page.dart';
 import 'pos/pos_page.dart';
 import 'purchasing/purchases_page.dart';
 import 'reports/reports_page.dart';
@@ -197,6 +198,13 @@ class _HomePageState extends State<HomePage> {
                               label: const Text('Rapports'),
                               onPressed: () => Navigator.of(context).push(
                                 MaterialPageRoute(builder: (_) => ReportsPage(establishmentId: establishment.id)),
+                              ),
+                            ),
+                            TextButton.icon(
+                              icon: const Icon(Icons.notifications_outlined),
+                              label: const Text('Notifications'),
+                              onPressed: () => Navigator.of(context).push(
+                                MaterialPageRoute(builder: (_) => NotificationsPage(establishmentId: establishment.id)),
                               ),
                             ),
                           ],

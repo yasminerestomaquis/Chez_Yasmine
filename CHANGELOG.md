@@ -42,6 +42,9 @@
 - Rapports (`apps/api/nestjs/src/reports/`) : chiffre d'affaires, remises, coût des marchandises vendues et marge, dépenses, pertes, bénéfice net estimé, créances clients, alertes de stock bas, produits les plus vendus, performance des serveurs — par jour/semaine/mois/année ou plage explicite, avec export CSV.
 - UI Flutter des rapports (`apps/web/flutter/lib/reports/`) : sélecteur de période, indicateurs, top produits, performance serveurs, export CSV.
 - `docs/api/reports.md` documentant les indicateurs, les approximations assumées, et l'export CSV-seulement (PDF/Excel reportés).
+- Notifications in-app (`apps/api/nestjs/src/notifications/`) : diffusion (à toute l'organisation ou ciblée), alertes de stock bas générées à la demande, dédoublonnées. Pas de notifications push (aucune infrastructure FCM/APNs/Web Push disponible).
+- UI Flutter des notifications (`apps/web/flutter/lib/notifications/`) : liste, diffusion, déclenchement manuel de la vérification de stock bas.
+- `docs/api/notifications.md` documentant la portée in-app-seulement et la traduction établissement → organisation.
 
 ### Décisions
 - Adoption de l'architecture v5 (Flutter + NestJS + Supabase) en remplacement du prototype v1 local (React/Vite/Dexie), conservé comme référence.
@@ -54,3 +57,5 @@
 - Un point de vente/caisse par défaut est créé paresseusement à la première clôture plutôt que d'ajouter un CRUD dédié, en l'absence de besoin multi-caisse actuel.
 - Seul l'export CSV des rapports est livré (PDF/Excel reportés, faute de dépendance de rendu choisie/testée).
 - La marge des rapports utilise le coût d'achat actuel du produit, faute de coût historique figé sur `SaleItem`.
+- Notifications in-app uniquement, pas de push, faute d'infrastructure disponible.
+- Une notification diffusée à toute l'organisation ne peut pas être marquée lue individuellement (limite du schéma, documentée).

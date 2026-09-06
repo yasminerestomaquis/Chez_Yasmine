@@ -158,7 +158,16 @@ Détail complet dans `docs/api/reports.md`.
 
 Restant avant `DONE` : vérification bout en bout une fois l'API déployée ; envisager PDF/Excel si un besoin réel se confirme.
 
-### Phase 14 — Notifications — `TODO`
+### Phase 14 — Notifications — `TESTING`
+Détail complet dans `docs/api/notifications.md`.
+- [x] `NotificationsService`/`NotificationsController` : notifications in-app uniquement (pas de push — ni FCM/APNs/Web Push, ni table de jetons dans le schéma, ni clé configurée dans cet environnement). `list`/`unreadCount`/`markAsRead` sans `@RequirePermissions` (comme `GET /auth/me`) — la vérification d'appartenance se fait dans le service via `getOrganizationId`, qui traduit aussi `establishmentId` → `organizationId` (`Notification` est rattachée à l'organisation, pas à l'établissement, contrairement à toutes les autres tables déjà exposées).
+- [x] `broadcast` (`settings.manage`) : annonce libre, ciblée ou à toute l'organisation. `generateLowStockAlerts` (`stock.manage`) : réutilise `StockMovementsService.listLowStockAlerts` (Phase 6), dédoublonne par titre non lu — pensée pour être appelée à la demande, aucun ordonnanceur/cron configuré dans cet environnement.
+- [x] **Limite documentée** : une notification diffusée (`userId` nul) ne peut pas être marquée lue individuellement — `readAt` est une colonne unique sur la ligne, pas une table de suivi par utilisateur ; `markAsRead` refuse (404) toute notification non explicitement ciblée sur l'appelant plutôt que de mentir sur son état.
+- [x] UI Flutter (`lib/notifications/`) : liste (gras si non lu), diffusion, déclenchement manuel de la vérification de stock bas. Testé (Prisma mocké côté service, 9 tests ; `flutter analyze`/`test`/`build web` ✅ côté UI).
+- [ ] **Non vérifié en conditions réelles** : round-trip HTTP complet — même limitation `DATABASE_URL` que les phases précédentes.
+
+Restant avant `DONE` : vérification bout en bout une fois l'API déployée ; brancher un vrai ordonnanceur pour `low-stock-check` si le besoin se confirme.
+
 ### Phase 15 — PWA avancée — `TODO`
 ### Phase 16 — Tests complets — `TODO`
 ### Phase 17 — Production — `TODO`
@@ -176,10 +185,11 @@ Restant avant `DONE` : vérification bout en bout une fois l'API déployée ; en
 - Clients, crédits, remboursements, et activation du paiement à crédit en caisse (Phase 11) — service testé (Prisma mocké), UI testée.
 - Dépenses, pertes valorisées, clôture de caisse, et correction transverse de la sérialisation des `Decimal` (Phase 12) — services testés (Prisma mocké), UI testée.
 - Rapports (chiffre d'affaires, marge, bénéfice net estimé, créances, alertes de stock, top produits, performance serveurs) avec export CSV (Phase 13) — service testé (Prisma mocké), UI testée.
+- Notifications in-app (diffusion, alertes de stock bas à la demande) (Phase 14) — service testé (Prisma mocké), UI testée.
 
 ## Prochaines étapes immédiates
 
 1. Résoudre l'accès en écriture au dépôt GitHub distant (`yasminerestomaquis/Chez_Yasmine`) avant tout `git push`.
 2. Premier commit + push, puis vérifier que le pipeline CI GitHub Actions passe.
 3. Renseigner le mot de passe de connexion Postgres réel dans `.env` pour vérifier tous les modules en conditions réelles et pouvoir lancer l'API NestJS localement.
-4. Démarrer la Phase 14 (Notifications).
+4. Démarrer la Phase 15 (PWA avancée).

@@ -7,6 +7,7 @@ import { CatalogModule } from './catalog/catalog.module.js';
 import { CustomersModule } from './customers/customers.module.js';
 import { ExpensesModule } from './expenses/expenses.module.js';
 import { LossesModule } from './losses/losses.module.js';
+import { NotificationsModule } from './notifications/notifications.module.js';
 import { PosModule } from './pos/pos.module.js';
 import { PrismaModule } from './prisma/prisma.module.js';
 import { PurchasingModule } from './purchasing/purchasing.module.js';
@@ -30,6 +31,7 @@ import { TablesModule } from './tables/tables.module.js';
     LossesModule,
     CashModule,
     ReportsModule,
+    NotificationsModule,
   ],
   controllers: [AppController],
   providers: [AppService],
