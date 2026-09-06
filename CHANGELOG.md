@@ -59,6 +59,7 @@
 - Accès GitHub en écriture obtenu (`gh` reconnecté au compte `yasminerestomaquis`) ; premier `git push` réussi, `main` créée sur le dépôt distant.
 - Premier run réel du pipeline CI sur GitHub Actions — a immédiatement révélé et permis de corriger deux bugs invisibles en local : `package-lock.json` incohérent (`npm ci` échouait, `tsconfck` avait `typescript` dédupliqué vers une version invalide) et `npx prisma generate` manquant après `npm ci`. CI verte après correction.
 - Mot de passe Postgres réel obtenu et placé dans `.env` — l'API NestJS a tourné en local pour la première fois du projet, avec un vrai round-trip HTTP vérifié (`SupabaseJwtGuard`, `PermissionsGuard`, trigger `handle_new_user`, tous confirmés en conditions réelles). Données de test supprimées après coup.
+- **PWA Flutter Web déployée en production** : https://chez-yasmine-two.vercel.app (Vercel, déploiement continu depuis `main`). `apps/web/flutter/vercel.json` ajouté (clone du SDK Flutter à l'installation, absent de l'image Vercel). Vérifié dans le navigateur : page de connexion réelle, bandeau d'installation PWA apparu naturellement pour la première fois (pas simulé).
 
 ### Décisions
 - Adoption de l'architecture v5 (Flutter + NestJS + Supabase) en remplacement du prototype v1 local (React/Vite/Dexie), conservé comme référence.

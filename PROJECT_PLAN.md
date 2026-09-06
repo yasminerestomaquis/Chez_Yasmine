@@ -231,10 +231,17 @@ Chacune restait au statut `TESTING` plutôt que `DONE` dans ce document parce qu
 
 Rien de tout cela n'a été contourné ni fabriqué : chaque vérification réelle est documentée à l'endroit où elle a eu lieu, et les mentions « non vérifié en conditions réelles » dans chaque section de phase ci-dessous n'ont pas été réécrites rétroactivement une par une (disproportionné) — elles restent la trace fidèle de ce qui était vérifiable *au moment de la construction* de chaque phase, la levée du blocage étant postérieure et documentée ici. Le code métier, lui, est réel, testé (191 tests au total, NestJS + Flutter), documenté, et commité phase par phase avec un historique Git complet des décisions.
 
+## Déploiement de production — PWA Flutter Web (2026-09-06)
+
+**La PWA est en ligne** : https://chez-yasmine-two.vercel.app (projet Vercel `chez-yasmine`, compte `yaminerestomaquis-1697`), déployée automatiquement à chaque push sur `main` (Git integration Vercel, indépendante du job `deploy` de `.github/workflows/ci.yml` qui reste ciblé sur un hébergeur pour l'API).
+
+- `apps/web/flutter/vercel.json` : le SDK Flutter n'est pas préinstallé sur l'image de build Vercel — `installCommand` clone la branche `stable` (superficiel) avant `pub get`, `buildCommand` invoque `flutter build web --release` par chemin relatif (chaque étape Vercel est un shell distinct, une variable `PATH` exportée dans l'une ne survit pas dans l'autre).
+- **Premier essai raté** : le tout premier déploiement (`chez-yasmine`) a été créé par un mécanisme différé côté Vercel après la connexion GitHub — hors du flux normal de création — et a servi un 404 en 3 secondes (aucun vrai build). Root Directory était pourtant déjà correctement configuré (`apps/web/flutter`) ; un simple **Redeploy** avec les Project Settings à jour a suffi, cette fois un vrai build de ~2 minutes (clonage SDK + compilation), résultat vérifié dans le navigateur : page de connexion réelle, logo, et le **bandeau d'installation PWA apparu naturellement** (première fois en conditions réelles, pas simulé comme en Phase 15).
+- **Connecteur Vercel MCP défaillant pendant cette session** : `list_projects`/`get_project` retournaient systématiquement des résultats vides/404 pour des projets pourtant bien réels et visibles dans le dashboard (confirmé par captures d'écran de l'utilisateur). Le compte lui-même avait aussi changé deux fois en cours de session (`SORO` → `yaminerestomaquis-1697`) sans action explicite. Toute la suite de l'opération (configuration Root Directory, Redeploy, suppression d'un projet orphelin `chez-yasmine-pwa` créé par une tentative en double) a donc été faite via le navigateur (Claude in Chrome, connecté à la vraie session Vercel de l'utilisateur) plutôt que via les outils MCP — à revérifier si le connecteur MCP redevient fiable dans une session future.
+- `API_URL` n'a pas été redéfini au build (`--dart-define`) : la PWA déployée pointe encore vers `http://localhost:3000`, en attendant le choix d'un hébergeur pour l'API NestJS.
+
 ## Prochaines étapes immédiates
 
-Il ne reste qu'un blocage environnemental (Docker) et une décision produit (hébergeur) :
-
-1. Choisir un hébergeur de production pour activer le job `deploy` (actuellement `if: false`, Phase 17) — décision en attente de l'utilisateur.
+1. Choisir un hébergeur de production pour l'**API NestJS** (Railway/Render/Fly.io recommandés — pas Vercel, pas adapté à un process Node persistant avec connexions Postgres) ; une fois choisi, redéployer la PWA avec `--dart-define=API_URL=<url réelle>`.
 2. Rejouer manuellement les deux scénarios E2E du prompt maître §39 maintenant que l'API tourne réellement (fait ponctuellement pour la connexion/permissions ci-dessus, pas encore pour les deux scénarios complets bout en bout : vente/paiement/stock/clôture, et coupure réseau/sync).
 3. Vérifier `docker build`/`docker-compose up` si Docker devient disponible sur cette machine.
