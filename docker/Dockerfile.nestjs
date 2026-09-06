@@ -7,6 +7,11 @@ WORKDIR /app
 COPY apps/api/nestjs/package*.json ./
 RUN npm ci
 COPY apps/api/nestjs/ ./
+# Dummy value: prisma.config.ts requires DATABASE_URL to resolve at all
+# (Prisma 7 env validation) for `prisma generate`/`npm run build`, neither of
+# which opens a real connection — same fix as .github/workflows/ci.yml.
+ENV DATABASE_URL=postgresql://user:pass@localhost:5432/db
+RUN npx prisma generate
 RUN npm run build
 
 FROM node:22-alpine AS runtime
@@ -14,6 +19,10 @@ WORKDIR /app
 ENV NODE_ENV=production
 COPY --from=build /app/package*.json ./
 RUN npm ci --omit=dev
+# The generated Prisma client engine/types live under node_modules/.prisma —
+# `npm ci` only reinstalls the @prisma/client package shim, not this
+# generated output, so it has to be copied from the build stage explicitly.
+COPY --from=build /app/node_modules/.prisma ./node_modules/.prisma
 COPY --from=build /app/dist ./dist
 EXPOSE 3000
 CMD ["node", "dist/main"]
