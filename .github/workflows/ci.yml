@@ -27,6 +27,12 @@ jobs:
           cache: npm
           cache-dependency-path: apps/api/nestjs/package-lock.json
       - run: npm ci
+      # `npm ci` alone leaves @prisma/client's generated types/runtime
+      # missing (there's no postinstall hook for it) — every command below
+      # fails to even type-check without this, found by actually running
+      # this workflow for the first time rather than assumed from local
+      # `npm run build`, which reused an already-generated client all along.
+      - run: npx prisma generate
       - run: npm run lint
       - run: npm run test
       - run: npm run build
