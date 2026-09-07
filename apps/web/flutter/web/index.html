@@ -112,10 +112,23 @@
     // fois la nouvelle version installée (comportement par défaut du
     // service worker généré par Flutter) ; "controllerchange" se déclenche
     // au moment où l'onglet bascule effectivement dessus.
+    //
+    // Piège corrigé ici : "controllerchange" se déclenche AUSSI lors de la
+    // toute première installation (le service worker généré par Flutter
+    // appelle self.clients.claim() dans son activate, donc il prend le
+    // contrôle de l'onglet déjà ouvert même quand il n'y avait encore aucune
+    // version précédente). Sans garde, le bandeau "Nouvelle version
+    // disponible" s'affichait donc dès la première visite — jamais mis à
+    // jour en réalité. On ne le montre que si l'onglet avait déjà un
+    // controller AVANT cet événement : c'est la signature d'une vraie mise à
+    // jour (l'utilisateur avait déjà l'app chargée sous une version), pas
+    // d'une première installation.
     if ('serviceWorker' in navigator) {
+      const hadControllerBeforeUpdate = Boolean(navigator.serviceWorker.controller);
       let refreshing = false;
       navigator.serviceWorker.addEventListener('controllerchange', function () {
         if (refreshing) return;
+        if (!hadControllerBeforeUpdate) return;
         document.getElementById('pwa-update-banner').classList.add('visible');
       });
       document.getElementById('pwa-update-reload').addEventListener('click', function () {

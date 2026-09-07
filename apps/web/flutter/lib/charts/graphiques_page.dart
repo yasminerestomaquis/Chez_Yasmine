@@ -1,10 +1,13 @@
 import 'package:flutter/material.dart';
 
 import 'metric_charts_tab.dart';
+import 'stock_lots_tab.dart';
 
-/// Module "Graphiques" : deux sous-modules (Recettes, Bénéfices), chacun
-/// composé de 5 graphiques (voir `MetricChartsTab`). Le filtre Année ici agit
-/// sur les deux sous-modules, comme demandé.
+/// Module "Graphiques" : trois sous-modules (Recettes, Bénéfices, Stock).
+/// Recettes et Bénéfices comptent chacun 5 graphiques (voir
+/// `MetricChartsTab`) pilotés par le filtre Année de cette page. Stock (voir
+/// `StockLotsTab`) est volontairement exclu de ce filtre : c'est une fiche de
+/// lots FIFO représentant l'état courant du stock, pas une période.
 class GraphiquesPage extends StatefulWidget {
   const GraphiquesPage({super.key, required this.establishmentId});
 
@@ -55,7 +58,7 @@ class _GraphiquesPageState extends State<GraphiquesPage> {
     final years = [for (var y = currentYear; y >= currentYear - 5; y--) y];
 
     return DefaultTabController(
-      length: 2,
+      length: 3,
       child: Scaffold(
         appBar: AppBar(
           title: const Text('Graphiques'),
@@ -75,7 +78,7 @@ class _GraphiquesPageState extends State<GraphiquesPage> {
               ),
             ),
           ],
-          bottom: const TabBar(tabs: [Tab(text: 'Recettes'), Tab(text: 'Bénéfices')]),
+          bottom: const TabBar(tabs: [Tab(text: 'Recettes'), Tab(text: 'Bénéfices'), Tab(text: 'Stock')]),
         ),
         body: TabBarView(
           children: [
@@ -95,6 +98,9 @@ class _GraphiquesPageState extends State<GraphiquesPage> {
               titles: _beneficesTitles,
               palette: _beneficesPalette,
             ),
+            // Pas de clé liée à `_year` : voir la doc de classe, cet onglet
+            // représente l'état courant du stock, pas une période.
+            StockLotsTab(establishmentId: widget.establishmentId),
           ],
         ),
       ),

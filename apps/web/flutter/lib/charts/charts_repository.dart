@@ -58,4 +58,12 @@ class ChartsRepository {
     ) as Map<String, dynamic>;
     return RankingChart.fromJson(json);
   }
+
+  Future<StockLotsChart> getStockLots({required String productId}) async {
+    final json = await _api.get(
+      '$_base/stock-lots',
+      query: _query({'productId': productId}),
+    ) as Map<String, dynamic>;
+    return StockLotsChart.fromJson(json);
+  }
 }

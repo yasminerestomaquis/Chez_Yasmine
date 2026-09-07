@@ -45,3 +45,8 @@ export class TopChartQueryDto {
   @IsString()
   to?: string;
 }
+
+export class StockLotsQueryDto {
+  @IsString()
+  productId!: string;
+}

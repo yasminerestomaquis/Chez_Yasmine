@@ -1,5 +1,6 @@
-import { Injectable } from '@nestjs/common';
+import { Injectable, NotFoundException } from '@nestjs/common';
 import { PrismaService } from '../prisma/prisma.service.js';
+import { computeFifoLots, type StockLotMovementType } from '../stock/stock-lots.js';
 import type { ChartMetric } from './dto/chart-query.dto.js';
 
 const WEEKDAY_LABELS = ['Lundi', 'Mardi', 'Mercredi', 'Jeudi', 'Vendredi', 'Samedi', 'Dimanche'];
@@ -197,6 +198,48 @@ export class ChartsService {
     }
     const items = [...agg.values()].sort((a, b) => b.value - a.value).slice(0, 10);
     return { from: from.toISOString(), to: to.toISOString(), groupBy, items };
+  }
+
+  /**
+   * Sous-module "Stock" (maquette FIFO par lots — voir docs/api/charts.md) :
+   * reconstruit les lots d'un produit à partir de son historique complet de
+   * `StockMovement`, sans aucun schéma de lot dédié. Contrairement aux
+   * autres graphiques de ce service, cette vue représente l'état COURANT du
+   * stock (tout l'historique du produit, pas une période bornée par le
+   * filtre Année de la page Graphiques) — un lot reçu il y a plusieurs
+   * années peut rester actif aujourd'hui.
+   */
+  async stockLots(establishmentId: string, productId: string) {
+    const product = await this.prisma.product.findFirst({
+      where: { id: productId, establishmentId },
+      select: { id: true, name: true },
+    });
+    if (!product) {
+      throw new NotFoundException('Produit introuvable pour cet établissement');
+    }
+
+    const movements = await this.prisma.stockMovement.findMany({
+      where: { productId },
+      orderBy: { createdAt: 'asc' },
+      select: { type: true, quantity: true, createdAt: true },
+    });
+
+    const lots = computeFifoLots(
+      movements.map((m) => ({
+        type: m.type as StockLotMovementType,
+        quantity: m.quantity.toNumber(),
+        createdAt: m.createdAt,
+      })),
+    );
+    const activeLots = lots.filter((lot) => lot.status === 'actif');
+
+    return {
+      productId: product.id,
+      productName: product.name,
+      activeLots,
+      historyLots: lots,
+      totalActiveUnits: activeLots.reduce((sum, lot) => sum + lot.remainingQuantity, 0),
+    };
   }
 }
 

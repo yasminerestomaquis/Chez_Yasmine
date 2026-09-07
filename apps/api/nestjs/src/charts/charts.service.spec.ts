@@ -4,7 +4,11 @@ import type { PrismaService } from '../prisma/prisma.service.js';
 import { ChartsService } from './charts.service.js';
 
 function makePrismaMock() {
-  return { saleItem: { findMany: vi.fn() } };
+  return {
+    saleItem: { findMany: vi.fn() },
+    product: { findFirst: vi.fn() },
+    stockMovement: { findMany: vi.fn() },
+  };
 }
 
 interface ItemOverrides {
@@ -187,5 +191,54 @@ describe('ChartsService.top', () => {
     expect(result.groupBy).toBe('product');
     expect(result.items).toHaveLength(10);
     expect(result.items[0].name).toBe('Produit 11');
+  });
+});
+
+describe('ChartsService.stockLots', () => {
+  it('throws NotFoundException when the product does not belong to this establishment', async () => {
+    const prisma = makePrismaMock();
+    const service = new ChartsService(prisma as unknown as PrismaService);
+    prisma.product.findFirst.mockResolvedValue(null);
+
+    await expect(service.stockLots('est-1', 'missing')).rejects.toThrow('Produit introuvable');
+  });
+
+  it('reconstructs FIFO lots from the movement history and separates active lots from full history', async () => {
+    const prisma = makePrismaMock();
+    const service = new ChartsService(prisma as unknown as PrismaService);
+    prisma.product.findFirst.mockResolvedValue({ id: 'p1', name: 'Bière Flag 65cl' });
+    prisma.stockMovement.findMany.mockResolvedValue([
+      { type: 'in', quantity: new Decimal(100), createdAt: new Date('2025-08-20T08:00:00Z') },
+      { type: 'in', quantity: new Decimal(150), createdAt: new Date('2025-09-05T08:00:00Z') },
+      { type: 'in', quantity: new Decimal(120), createdAt: new Date('2025-09-10T08:00:00Z') },
+      { type: 'sale', quantity: new Decimal(100), createdAt: new Date('2025-09-11T09:00:00Z') },
+      { type: 'sale', quantity: new Decimal(70), createdAt: new Date('2025-09-12T09:00:00Z') },
+    ]);
+
+    const result = await service.stockLots('est-1', 'p1');
+
+    expect(result.productId).toBe('p1');
+    expect(result.productName).toBe('Bière Flag 65cl');
+    expect(result.historyLots).toHaveLength(3);
+    expect(result.activeLots.map((l) => l.code)).toEqual(['L002', 'L003']);
+    expect(result.totalActiveUnits).toBe(200);
+    expect(prisma.stockMovement.findMany).toHaveBeenCalledWith({
+      where: { productId: 'p1' },
+      orderBy: { createdAt: 'asc' },
+      select: { type: true, quantity: true, createdAt: true },
+    });
+  });
+
+  it('returns empty lot lists and a zero total for a product with no stock movements yet', async () => {
+    const prisma = makePrismaMock();
+    const service = new ChartsService(prisma as unknown as PrismaService);
+    prisma.product.findFirst.mockResolvedValue({ id: 'p1', name: 'Nouveau produit' });
+    prisma.stockMovement.findMany.mockResolvedValue([]);
+
+    const result = await service.stockLots('est-1', 'p1');
+
+    expect(result.activeLots).toEqual([]);
+    expect(result.historyLots).toEqual([]);
+    expect(result.totalActiveUnits).toBe(0);
   });
 });

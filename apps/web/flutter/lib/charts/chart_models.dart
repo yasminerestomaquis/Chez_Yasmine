@@ -87,3 +87,59 @@ class RankingChart {
         items: (json['items'] as List<dynamic>).map((e) => RankingItem.fromJson(e as Map<String, dynamic>)).toList(),
       );
 }
+
+/// 'actif' | 'epuise' — voir apps/api/nestjs/src/stock/stock-lots.ts.
+class StockLot {
+  StockLot({
+    required this.code,
+    required this.receivedAt,
+    required this.receivedQuantity,
+    required this.consumedQuantity,
+    required this.remainingQuantity,
+    required this.status,
+  });
+
+  final String code;
+  final DateTime receivedAt;
+  final double receivedQuantity;
+  final double consumedQuantity;
+  final double remainingQuantity;
+  final String status;
+
+  bool get isActive => status == 'actif';
+
+  factory StockLot.fromJson(Map<String, dynamic> json) => StockLot(
+        code: json['code'] as String,
+        receivedAt: DateTime.parse(json['receivedAt'] as String),
+        receivedQuantity: (json['receivedQuantity'] as num).toDouble(),
+        consumedQuantity: (json['consumedQuantity'] as num).toDouble(),
+        remainingQuantity: (json['remainingQuantity'] as num).toDouble(),
+        status: json['status'] as String,
+      );
+}
+
+class StockLotsChart {
+  StockLotsChart({
+    required this.productId,
+    required this.productName,
+    required this.activeLots,
+    required this.historyLots,
+    required this.totalActiveUnits,
+  });
+
+  final String productId;
+  final String productName;
+  final List<StockLot> activeLots;
+  final List<StockLot> historyLots;
+  final double totalActiveUnits;
+
+  factory StockLotsChart.fromJson(Map<String, dynamic> json) => StockLotsChart(
+        productId: json['productId'] as String,
+        productName: json['productName'] as String,
+        activeLots:
+            (json['activeLots'] as List<dynamic>).map((e) => StockLot.fromJson(e as Map<String, dynamic>)).toList(),
+        historyLots:
+            (json['historyLots'] as List<dynamic>).map((e) => StockLot.fromJson(e as Map<String, dynamic>)).toList(),
+        totalActiveUnits: (json['totalActiveUnits'] as num).toDouble(),
+      );
+}

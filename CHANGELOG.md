@@ -74,6 +74,14 @@
   - Nouvelle dépendance Flutter **`fl_chart`** (histogrammes + courbes, pas de canal de plateforme natif, compatible Flutter Web).
   - 10 tests NestJS (`charts.service.spec.ts`) + 3 tests widget Flutter, `flutter analyze`/`build web` ✅.
 
+### Résolu (post-plan, 2026-09-07)
+- **Bug corrigé : bandeau PWA « Nouvelle version disponible » affiché dès la première visite** (`apps/web/flutter/web/index.html`) — `controllerchange` se déclenche aussi quand le service worker prend le contrôle pour la **première** fois (`clients.claim()`), pas seulement quand il en remplace un précédent ; le bandeau apparaissait donc systématiquement, même sans mise à jour réelle. Corrigé en ne montrant le bandeau que si `navigator.serviceWorker.controller` était déjà défini avant l'événement — signature d'une vraie mise à jour. Documenté dans `docs/pwa/advanced-pwa.md`.
+- **Sous-module Stock (module Graphiques)** : troisième onglet après Recettes/Bénéfices, maquette d'une fiche de gestion de stock par lots FIFO (First In, First Out) pour un produit donné (`GET /establishments/:id/charts/stock-lots?productId=`, `apps/api/nestjs/src/stock/stock-lots.ts`, `apps/web/flutter/lib/charts/stock_lots_tab.dart`).
+  - Aucun schéma de lot dédié : chaque lot est reconstruit à la volée à partir de l'historique existant des `StockMovement` — un mouvement `'in'` (réception d'achat, remboursement de vente) crée un lot indépendant ; les sorties (`'out'`, `'sale'`, `'loss'`) consomment les lots existants du plus ancien au plus récent ; un lot épuisé (0 restant) disparaît des « Lots actifs » mais reste dans l'« Historique » pour traçabilité. `'adjustment'` (quantité absolue) est traduit en lot synthétique (hausse) ou en consommation FIFO (baisse), pour que la somme des lots actifs corresponde toujours à `product.stockQuantity`.
+  - Interface : sélecteur de produit, bascule « Lots actifs (N) | Historique (N) », tableau (Lot / Date réception / Quantité reçue / Consommé / Restant / Statut), carte de synthèse du total des lots actifs — reprend fidèlement la maquette de référence fournie, palette à dominante vert délibérément distincte des autres sous-modules.
+  - **Divergence assumée** : cet onglet n'est pas affecté par le filtre Année de la page Graphiques (il représente l'état courant du stock sur tout l'historique du produit, pas une période).
+  - 8 tests (`stock-lots.spec.ts`, dont l'exemple chiffré exact de la maquette de référence) + 3 tests `ChartsService.stockLots` + 1 test widget Flutter, `flutter analyze` ✅.
+
 ### Décisions
 - Adoption de l'architecture v5 (Flutter + NestJS + Supabase) en remplacement du prototype v1 local (React/Vite/Dexie), conservé comme référence.
 - Authentification via Supabase Auth uniquement.

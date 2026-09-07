@@ -69,4 +69,19 @@ void main() {
 
     expect(find.text('Recettes journalières totales'), findsOneWidget);
   });
+
+  testWidgets('switching to the Stock tab shows its header and lot-detail chrome without an unhandled error',
+      (tester) async {
+    await pumpPage(tester);
+
+    await tester.tap(find.text('Stock'));
+    await tester.pumpAndSettle();
+
+    // Pas de backend dans ce test : CatalogRepository.listProducts() échoue,
+    // donc aucun produit à proposer — même stratégie que les filtres
+    // catégorie/produit de MetricChartsTab dans ce fichier.
+    expect(find.text('Détail d\'un produit'), findsOneWidget);
+    expect(find.text('Voir tous les lots →'), findsOneWidget);
+    expect(find.text('Aucun produit au catalogue'), findsOneWidget);
+  });
 }

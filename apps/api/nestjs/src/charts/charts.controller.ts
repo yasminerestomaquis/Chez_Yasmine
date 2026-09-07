@@ -5,6 +5,7 @@ import { SupabaseJwtGuard } from '../auth/supabase-jwt.guard.js';
 import { ChartsService } from './charts.service.js';
 import {
   MonthlyChartQueryDto,
+  StockLotsQueryDto,
   TopChartQueryDto,
   WeeklyByCategoryQueryDto,
   WeeklyByProductQueryDto,
@@ -43,5 +44,10 @@ export class ChartsController {
     const from = query.from ? new Date(query.from) : new Date(now.getFullYear(), 0, 1);
     const to = query.to ? new Date(query.to) : now;
     return this.charts.top(establishmentId, query.metric, from, to);
+  }
+
+  @Get('stock-lots')
+  stockLots(@Param('establishmentId') establishmentId: string, @Query() query: StockLotsQueryDto) {
+    return this.charts.stockLots(establishmentId, query.productId);
   }
 }
