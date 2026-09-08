@@ -1,6 +1,7 @@
 import { Injectable, Logger } from '@nestjs/common';
 import { AuthorizationService } from '../auth/authorization.service.js';
 import { PrismaService } from '../prisma/prisma.service.js';
+import { ExpensesService } from '../expenses/expenses.service.js';
 import { SalesService } from '../pos/sales.service.js';
 import { StockMovementsService } from '../stock/stock-movements.service.js';
 import type { SyncEntityType, SyncOperationDto } from './dto/sync-batch.dto.js';
@@ -9,6 +10,7 @@ import type { SyncEntityType, SyncOperationDto } from './dto/sync-batch.dto.js';
 const REQUIRED_PERMISSION: Record<SyncEntityType, string> = {
   sale: 'pos.sell',
   stock_movement: 'stock.manage',
+  expense: 'expenses.manage',
 };
 
 export interface SyncOperationResult {
@@ -27,6 +29,7 @@ export class SyncService {
     private readonly authorization: AuthorizationService,
     private readonly sales: SalesService,
     private readonly stockMovements: StockMovementsService,
+    private readonly expenses: ExpensesService,
   ) {}
 
   async processBatch(establishmentId: string, userId: string, operations: SyncOperationDto[]): Promise<SyncOperationResult[]> {
@@ -110,6 +113,8 @@ export class SyncService {
         const { productId, ...rest } = operation.payload as { productId: string };
         return this.stockMovements.create(establishmentId, productId, userId, { ...rest, id: operation.id } as any);
       }
+      case 'expense':
+        return this.expenses.create(establishmentId, { ...(operation.payload as object), id: operation.id } as any);
     }
   }
 }

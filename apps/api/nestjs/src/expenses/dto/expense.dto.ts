@@ -1,6 +1,13 @@
-import { IsDateString, IsNumber, IsOptional, IsString, Min, MinLength } from 'class-validator';
+import { IsDateString, IsIn, IsNumber, IsOptional, IsString, IsUUID, Min, MinLength } from 'class-validator';
+
+export type ExpensePeriodicity = 'one_off' | 'recurring';
 
 export class CreateExpenseDto {
+  /** Client-generated UUID — permet de rejouer sans risque une dépense saisie hors ligne (file de sync). */
+  @IsOptional()
+  @IsUUID()
+  id?: string;
+
   @IsString()
   @MinLength(1)
   label!: string;
@@ -16,6 +23,11 @@ export class CreateExpenseDto {
   @IsOptional()
   @IsDateString()
   expenseDate?: string;
+
+  /** Étiquette informative — voir docs/api/expenses.md. Ne change rien au calcul du bénéfice net. */
+  @IsOptional()
+  @IsIn(['one_off', 'recurring'])
+  periodicity?: ExpensePeriodicity;
 
   @IsOptional()
   @IsString()
@@ -40,6 +52,10 @@ export class UpdateExpenseDto {
   @IsOptional()
   @IsDateString()
   expenseDate?: string;
+
+  @IsOptional()
+  @IsIn(['one_off', 'recurring'])
+  periodicity?: ExpensePeriodicity;
 
   @IsOptional()
   @IsString()

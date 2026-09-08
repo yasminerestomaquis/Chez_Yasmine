@@ -16,15 +16,19 @@ class ExpensesRepository {
   }
 
   Future<Expense> createExpense({
+    String? id,
     required String label,
     String? category,
     required double amount,
+    ExpensePeriodicity periodicity = ExpensePeriodicity.oneOff,
     String? note,
   }) async {
     final json = await _api.post(_base, body: {
+      'id': ?id,
       'label': label,
       'category': ?category,
       'amount': amount,
+      'periodicity': periodicity.value,
       'note': ?note,
     }) as Map<String, dynamic>;
     return Expense.fromJson(json);

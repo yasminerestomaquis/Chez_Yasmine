@@ -1,6 +1,7 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import type { AuthorizationService } from '../auth/authorization.service.js';
 import type { PrismaService } from '../prisma/prisma.service.js';
+import type { ExpensesService } from '../expenses/expenses.service.js';
 import type { SalesService } from '../pos/sales.service.js';
 import type { StockMovementsService } from '../stock/stock-movements.service.js';
 import { SyncService } from './sync.service.js';
@@ -16,6 +17,7 @@ describe('SyncService.processBatch', () => {
   let authorization: { hasAllPermissions: ReturnType<typeof vi.fn> };
   let sales: { create: ReturnType<typeof vi.fn> };
   let stockMovements: { create: ReturnType<typeof vi.fn> };
+  let expenses: { create: ReturnType<typeof vi.fn> };
   let service: SyncService;
 
   beforeEach(() => {
@@ -23,11 +25,13 @@ describe('SyncService.processBatch', () => {
     authorization = { hasAllPermissions: vi.fn().mockResolvedValue(true) };
     sales = { create: vi.fn() };
     stockMovements = { create: vi.fn() };
+    expenses = { create: vi.fn() };
     service = new SyncService(
       prisma as unknown as PrismaService,
       authorization as unknown as AuthorizationService,
       sales as unknown as SalesService,
       stockMovements as unknown as StockMovementsService,
+      expenses as unknown as ExpensesService,
     );
   });
 
@@ -102,6 +106,18 @@ describe('SyncService.processBatch', () => {
 
     expect(result.status).toBe('CONFLICT');
     expect(result.error).toContain('stock insuffisant');
+  });
+
+  it('dispatches an expense operation with the operation id reused as the expense id, and marks it SYNCED', async () => {
+    prisma.syncOperation.findUnique.mockResolvedValue(null);
+    expenses.create.mockResolvedValue({ id: 'op-6', label: 'Eau' });
+
+    const [result] = await service.processBatch('est-1', 'user-1', [
+      { id: 'op-6', entityType: 'expense', deviceId: 'device-1', payload: { label: 'Eau', amount: 5000 } },
+    ]);
+
+    expect(expenses.create).toHaveBeenCalledWith('est-1', expect.objectContaining({ id: 'op-6', label: 'Eau', amount: 5000 }));
+    expect(result.status).toBe('SYNCED');
   });
 
   it('processes every operation in the batch even if one of them fails', async () => {
