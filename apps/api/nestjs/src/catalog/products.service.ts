@@ -1,4 +1,5 @@
 import { BadRequestException, Injectable, NotFoundException } from '@nestjs/common';
+import { Prisma } from '@prisma/client';
 import { PrismaService } from '../prisma/prisma.service.js';
 import type { CreateProductDto } from './dto/create-product.dto.js';
 import type { UpdateProductDto } from './dto/update-product.dto.js';
@@ -61,10 +62,34 @@ export class ProductsService {
     return this.get(establishmentId, productId);
   }
 
-  async remove(establishmentId: string, productId: string): Promise<void> {
-    const { count } = await this.prisma.product.deleteMany({ where: { id: productId, establishmentId } });
-    if (count === 0) {
-      throw new NotFoundException('Produit introuvable pour cet établissement');
+  /**
+   * Suppression physique quand c'est possible ; sinon (produit référencé par
+   * des ventes/achats/commandes/mouvements de stock historiques — ces
+   * relations ne sont volontairement pas en cascade, voir le schéma) on
+   * désactive le produit à la place (`status: 'inactive'`) plutôt que
+   * d'échouer avec une erreur de contrainte de clé étrangère brute. Un
+   * produit inactif n'apparaît plus dans le catalogue/la caisse mais son
+   * historique (ventes passées, rapports) reste intact.
+   */
+  async remove(establishmentId: string, productId: string): Promise<{ softDeleted: boolean }> {
+    try {
+      const { count } = await this.prisma.product.deleteMany({ where: { id: productId, establishmentId } });
+      if (count === 0) {
+        throw new NotFoundException('Produit introuvable pour cet établissement');
+      }
+      return { softDeleted: false };
+    } catch (error) {
+      if (error instanceof Prisma.PrismaClientKnownRequestError && error.code === 'P2003') {
+        const { count } = await this.prisma.product.updateMany({
+          where: { id: productId, establishmentId },
+          data: { status: 'inactive' },
+        });
+        if (count === 0) {
+          throw new NotFoundException('Produit introuvable pour cet établissement');
+        }
+        return { softDeleted: true };
+      }
+      throw error;
     }
   }
 

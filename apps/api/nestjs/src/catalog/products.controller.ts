@@ -1,4 +1,4 @@
-import { Body, Controller, Delete, Get, HttpCode, HttpStatus, Param, Patch, Post, UseGuards } from '@nestjs/common';
+import { Body, Controller, Delete, Get, Param, Patch, Post, UseGuards } from '@nestjs/common';
 import { PermissionsGuard } from '../auth/permissions.guard.js';
 import { RequirePermissions } from '../auth/permissions.decorator.js';
 import { SupabaseJwtGuard } from '../auth/supabase-jwt.guard.js';
@@ -41,7 +41,6 @@ export class ProductsController {
 
   @Delete(':productId')
   @RequirePermissions('products.manage')
-  @HttpCode(HttpStatus.NO_CONTENT)
   remove(@Param('establishmentId') establishmentId: string, @Param('productId') productId: string) {
     return this.products.remove(establishmentId, productId);
   }

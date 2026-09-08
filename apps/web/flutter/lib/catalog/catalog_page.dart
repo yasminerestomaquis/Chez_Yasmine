@@ -16,7 +16,9 @@ class CatalogPage extends StatefulWidget {
 
 class _CatalogPageState extends State<CatalogPage> {
   late final CatalogRepository _repository = CatalogRepository(ApiClient(), widget.establishmentId);
-  late Future<(List<Category>, List<Product>)> _future;
+  late Future<void> _future;
+  List<Category> _categories = [];
+  List<Product> _products = [];
 
   @override
   void initState() {
@@ -24,10 +26,11 @@ class _CatalogPageState extends State<CatalogPage> {
     _future = _load();
   }
 
-  Future<(List<Category>, List<Product>)> _load() async {
+  Future<void> _load() async {
     final categories = await _repository.listCategories();
     final products = await _repository.listProducts();
-    return (categories, products);
+    _categories = categories;
+    _products = products;
   }
 
   void _reload() => setState(() => _future = _load());
@@ -64,14 +67,106 @@ class _CatalogPageState extends State<CatalogPage> {
     if (saved == true) _reload();
   }
 
+  Future<void> _deleteProduct(Product product) async {
+    final confirmed = await showDialog<bool>(
+      context: context,
+      builder: (context) => AlertDialog(
+        title: const Text('Supprimer ce produit ?'),
+        content: Text('« ${product.name} » sera retiré du catalogue.'),
+        actions: [
+          TextButton(onPressed: () => Navigator.of(context).pop(false), child: const Text('Annuler')),
+          FilledButton(onPressed: () => Navigator.of(context).pop(true), child: const Text('Supprimer')),
+        ],
+      ),
+    );
+    if (confirmed != true) return;
+    try {
+      final softDeleted = await _repository.deleteProduct(product.id);
+      _reload();
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text(
+            softDeleted
+                ? '« ${product.name} » a des ventes/achats existants : il a été désactivé plutôt que supprimé.'
+                : '« ${product.name} » a été supprimé.',
+          ),
+        ),
+      );
+    } on ApiException catch (e) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text(e.message)));
+    }
+  }
+
+  Future<void> _deleteCategory(BuildContext dialogContext, Category category, StateSetter setDialogState) async {
+    final confirmed = await showDialog<bool>(
+      context: dialogContext,
+      builder: (context) => AlertDialog(
+        title: const Text('Supprimer cette catégorie ?'),
+        content: Text('« ${category.name} » sera supprimée ; les produits qui y étaient rattachés deviennent sans catégorie.'),
+        actions: [
+          TextButton(onPressed: () => Navigator.of(context).pop(false), child: const Text('Annuler')),
+          FilledButton(onPressed: () => Navigator.of(context).pop(true), child: const Text('Supprimer')),
+        ],
+      ),
+    );
+    if (confirmed != true) return;
+    try {
+      await _repository.deleteCategory(category.id);
+      _categories = _categories.where((c) => c.id != category.id).toList();
+      setDialogState(() {});
+      _reload();
+    } on ApiException catch (e) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text(e.message)));
+    }
+  }
+
+  Future<void> _manageCategories() async {
+    await showDialog<void>(
+      context: context,
+      builder: (dialogContext) => StatefulBuilder(
+        builder: (dialogContext, setDialogState) {
+          return AlertDialog(
+            title: const Text('Catégories'),
+            content: SizedBox(
+              width: 360,
+              child: _categories.isEmpty
+                  ? const Text('Aucune catégorie.')
+                  : ListView(
+                      shrinkWrap: true,
+                      children: [
+                        for (final category in _categories)
+                          ListTile(
+                            title: Text(category.name),
+                            trailing: IconButton(
+                              tooltip: 'Supprimer',
+                              icon: const Icon(Icons.delete_outline),
+                              onPressed: () => _deleteCategory(dialogContext, category, setDialogState),
+                            ),
+                          ),
+                      ],
+                    ),
+            ),
+            actions: [TextButton(onPressed: () => Navigator.of(dialogContext).pop(), child: const Text('Fermer'))],
+          );
+        },
+      ),
+    );
+  }
+
   @override
   Widget build(BuildContext context) {
     return Scaffold(
       appBar: AppBar(
         title: const Text('Catalogue'),
-        actions: [IconButton(onPressed: _addCategory, icon: const Icon(Icons.category_outlined), tooltip: 'Nouvelle catégorie')],
+        actions: [
+          IconButton(onPressed: _manageCategories, icon: const Icon(Icons.category_outlined), tooltip: 'Gérer les catégories'),
+          IconButton(onPressed: _addCategory, icon: const Icon(Icons.add), tooltip: 'Nouvelle catégorie'),
+        ],
       ),
-      body: FutureBuilder<(List<Category>, List<Product>)>(
+      body: FutureBuilder<void>(
         future: _future,
         builder: (context, snapshot) {
           if (snapshot.connectionState != ConnectionState.done) {
@@ -96,46 +191,41 @@ class _CatalogPageState extends State<CatalogPage> {
             );
           }
 
-          final (categories, products) = snapshot.data!;
-          if (products.isEmpty) {
+          if (_products.isEmpty) {
             return const Center(child: Text('Aucun produit — ajoutez-en un avec le bouton +'));
           }
 
           return GridView.builder(
             padding: const EdgeInsets.all(12),
-            gridDelegate: const SliverGridDelegateWithMaxCrossAxisExtent(maxCrossAxisExtent: 220, mainAxisExtent: 220),
-            itemCount: products.length,
+            gridDelegate: const SliverGridDelegateWithMaxCrossAxisExtent(maxCrossAxisExtent: 220, mainAxisExtent: 240),
+            itemCount: _products.length,
             itemBuilder: (context, index) {
-              final product = products[index];
+              final product = _products[index];
               return _ProductCard(
                 product: product,
                 repository: _repository,
-                onTap: () => _openProductForm(categories: categories, existing: product),
+                onTap: () => _openProductForm(categories: _categories, existing: product),
+                onDelete: () => _deleteProduct(product),
               );
             },
           );
         },
       ),
-      floatingActionButton: FutureBuilder<(List<Category>, List<Product>)>(
-        future: _future,
-        builder: (context, snapshot) {
-          final categories = snapshot.data?.$1 ?? const <Category>[];
-          return FloatingActionButton(
-            onPressed: () => _openProductForm(categories: categories),
-            child: const Icon(Icons.add),
-          );
-        },
+      floatingActionButton: FloatingActionButton(
+        onPressed: () => _openProductForm(categories: _categories),
+        child: const Icon(Icons.add),
       ),
     );
   }
 }
 
 class _ProductCard extends StatelessWidget {
-  const _ProductCard({required this.product, required this.repository, required this.onTap});
+  const _ProductCard({required this.product, required this.repository, required this.onTap, required this.onDelete});
 
   final Product product;
   final CatalogRepository repository;
   final VoidCallback onTap;
+  final VoidCallback onDelete;
 
   @override
   Widget build(BuildContext context) {
@@ -149,15 +239,30 @@ class _ProductCard extends StatelessWidget {
           crossAxisAlignment: CrossAxisAlignment.stretch,
           children: [
             Expanded(
-              child: primaryImage == null
-                  ? const ColoredBox(color: Color(0x11000000), child: Icon(Icons.local_drink_outlined, size: 40))
-                  : FutureBuilder<String>(
-                      future: repository.getImageUrl(product.id, primaryImage.id, variant: 'small'),
-                      builder: (context, snapshot) {
-                        if (!snapshot.hasData) return const ColoredBox(color: Color(0x11000000));
-                        return Image.network(snapshot.data!, fit: BoxFit.cover);
-                      },
+              child: Stack(
+                fit: StackFit.expand,
+                children: [
+                  primaryImage == null
+                      ? const ColoredBox(color: Color(0x11000000), child: Icon(Icons.local_drink_outlined, size: 40))
+                      : FutureBuilder<String>(
+                          future: repository.getImageUrl(product.id, primaryImage.id, variant: 'small'),
+                          builder: (context, snapshot) {
+                            if (!snapshot.hasData) return const ColoredBox(color: Color(0x11000000));
+                            return Image.network(snapshot.data!, fit: BoxFit.cover);
+                          },
+                        ),
+                  Positioned(
+                    top: 2,
+                    right: 2,
+                    child: IconButton(
+                      tooltip: 'Supprimer',
+                      icon: const Icon(Icons.delete_outline),
+                      style: IconButton.styleFrom(backgroundColor: Colors.white70),
+                      onPressed: onDelete,
                     ),
+                  ),
+                ],
+              ),
             ),
             Padding(
               padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 6),

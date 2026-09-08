@@ -1,4 +1,5 @@
 import { BadRequestException, NotFoundException } from '@nestjs/common';
+import { Prisma } from '@prisma/client';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import type { PrismaService } from '../prisma/prisma.service.js';
 import { ProductsService } from './products.service.js';
@@ -63,5 +64,40 @@ describe('ProductsService', () => {
     await expect(service.update('est-1', 'prod-from-another-establishment', { name: 'x' })).rejects.toBeInstanceOf(
       NotFoundException,
     );
+  });
+
+  describe('remove()', () => {
+    it('deletes the product physically when nothing references it', async () => {
+      prisma.product.deleteMany.mockResolvedValue({ count: 1 });
+      const result = await service.remove('est-1', 'prod-1');
+      expect(result).toEqual({ softDeleted: false });
+      expect(prisma.product.updateMany).not.toHaveBeenCalled();
+    });
+
+    it('throws NotFoundException when the product does not belong to the establishment', async () => {
+      prisma.product.deleteMany.mockResolvedValue({ count: 0 });
+      await expect(service.remove('est-1', 'prod-from-another-establishment')).rejects.toBeInstanceOf(NotFoundException);
+    });
+
+    it('falls back to deactivating the product when it is referenced by historical records (FK violation)', async () => {
+      prisma.product.deleteMany.mockRejectedValue(
+        new Prisma.PrismaClientKnownRequestError('Foreign key constraint failed', { code: 'P2003', clientVersion: 'test' }),
+      );
+      prisma.product.updateMany.mockResolvedValue({ count: 1 });
+
+      const result = await service.remove('est-1', 'prod-1');
+
+      expect(result).toEqual({ softDeleted: true });
+      expect(prisma.product.updateMany).toHaveBeenCalledWith({
+        where: { id: 'prod-1', establishmentId: 'est-1' },
+        data: { status: 'inactive' },
+      });
+    });
+
+    it('rethrows other Prisma errors instead of silently deactivating', async () => {
+      prisma.product.deleteMany.mockRejectedValue(new Error('connection lost'));
+      await expect(service.remove('est-1', 'prod-1')).rejects.toThrow('connection lost');
+      expect(prisma.product.updateMany).not.toHaveBeenCalled();
+    });
   });
 });

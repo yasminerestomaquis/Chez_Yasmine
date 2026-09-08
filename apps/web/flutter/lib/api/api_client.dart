@@ -62,9 +62,9 @@ class ApiClient {
     return _decode(response);
   }
 
-  Future<void> delete(String path) async {
+  Future<dynamic> delete(String path) async {
     final response = await http.delete(_uri(path), headers: _authHeaders);
-    _decode(response);
+    return _decode(response);
   }
 
   /// Upload multipart d'une image (champ `file`), utilisé par le pipeline

@@ -29,9 +29,17 @@ class ChezYasmineApp extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    // Texte noir partout dans l'application (demande explicite), quel que
+    // soit le rôle du texte (titre, corps, légende...) : `.apply` réécrit
+    // uniformément `bodyColor`/`displayColor` sur tout le `TextTheme` généré
+    // par le thème plutôt que de fixer chaque style un par un.
+    final baseTheme = ThemeData(colorScheme: ColorScheme.fromSeed(seedColor: const Color(0xFFE07A1F)));
     return MaterialApp(
       title: 'Chez Yasmine',
-      theme: ThemeData(colorScheme: ColorScheme.fromSeed(seedColor: const Color(0xFFE07A1F))),
+      theme: baseTheme.copyWith(
+        textTheme: baseTheme.textTheme.apply(bodyColor: Colors.black, displayColor: Colors.black),
+        primaryTextTheme: baseTheme.primaryTextTheme.apply(bodyColor: Colors.black, displayColor: Colors.black),
+      ),
       home: AuthGate(authenticated: (context) => const HomePage()),
     );
   }

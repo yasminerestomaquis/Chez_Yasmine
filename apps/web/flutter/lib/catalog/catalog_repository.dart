@@ -44,7 +44,14 @@ class CatalogRepository {
     return Product.fromJson(json);
   }
 
-  Future<void> deleteProduct(String productId) => _api.delete('$_base/products/$productId');
+  /// Renvoie `true` si le produit a dû être désactivé (`status: 'inactive'`)
+  /// plutôt que réellement supprimé — voir `ProductsService.remove` côté API :
+  /// un produit référencé par des ventes/achats historiques ne peut pas être
+  /// supprimé sans casser cet historique.
+  Future<bool> deleteProduct(String productId) async {
+    final json = await _api.delete('$_base/products/$productId') as Map<String, dynamic>?;
+    return json?['softDeleted'] == true;
+  }
 
   Future<ProductImage> uploadProductImage(String productId, List<int> bytes, String filename, String contentType) async {
     final json = await _api.uploadFile(
