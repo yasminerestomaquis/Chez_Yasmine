@@ -297,7 +297,7 @@ class _PhotoPicker extends StatelessWidget {
           ),
           clipBehavior: Clip.antiAlias,
           child: bytes != null
-              ? Image.memory(bytes!, fit: BoxFit.cover)
+              ? Image.memory(bytes!, fit: BoxFit.contain)
               : const Icon(Icons.image_outlined, size: 48),
         ),
         const SizedBox(height: 12),

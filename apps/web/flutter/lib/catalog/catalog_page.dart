@@ -248,7 +248,10 @@ class _ProductCard extends StatelessWidget {
                           future: repository.getImageUrl(product.id, primaryImage.id, variant: 'small'),
                           builder: (context, snapshot) {
                             if (!snapshot.hasData) return const ColoredBox(color: Color(0x11000000));
-                            return Image.network(snapshot.data!, fit: BoxFit.cover);
+                            return ColoredBox(
+                              color: const Color(0x11000000),
+                              child: Image.network(snapshot.data!, fit: BoxFit.contain),
+                            );
                           },
                         ),
                   Positioned(
