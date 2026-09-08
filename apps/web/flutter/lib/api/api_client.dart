@@ -72,10 +72,27 @@ class ApiClient {
   Future<dynamic> uploadFile(String path, {required List<int> bytes, required String filename, required String contentType}) async {
     final request = http.MultipartRequest('POST', _uri(path))
       ..headers.addAll(_authHeaders)
-      ..files.add(http.MultipartFile.fromBytes('file', bytes, filename: filename, contentType: MediaType.parse(contentType)));
+      ..files.add(
+        http.MultipartFile.fromBytes('file', bytes, filename: _safeFilename(filename), contentType: MediaType.parse(contentType)),
+      );
     final streamed = await request.send();
     final response = await http.Response.fromStream(streamed);
     return _decode(response);
+  }
+
+  /// Le nom de fichier original (caméra/galerie/sélecteur de fichiers) est
+  /// fourni par l'OS/le navigateur et peut contenir des caractères hors
+  /// Latin-1 (ex. « • », U+2022) — sur Flutter Web, le construire tel quel
+  /// dans la requête multipart fait échouer l'upload avec `Cannot convert
+  /// argument to a ByteString` (l'API navigateur sous-jacente exige un nom de
+  /// fichier ASCII/Latin-1). Le serveur renomme de toute façon le fichier en
+  /// UUID (jamais le nom fourni par le client, voir CLAUDE.md), donc son
+  /// contenu exact n'a aucune importance : ne garder que l'extension.
+  String _safeFilename(String original) {
+    final dotIndex = original.lastIndexOf('.');
+    final extension = dotIndex != -1 && dotIndex < original.length - 1 ? original.substring(dotIndex + 1) : 'jpg';
+    final safeExtension = RegExp(r'^[A-Za-z0-9]{1,5}$').hasMatch(extension) ? extension : 'jpg';
+    return 'photo.$safeExtension';
   }
 
   dynamic _decode(http.Response response) {
