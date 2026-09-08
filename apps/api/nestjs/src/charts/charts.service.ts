@@ -241,6 +241,82 @@ export class ChartsService {
       totalActiveUnits: activeLots.reduce((sum, lot) => sum + lot.remainingQuantity, 0),
     };
   }
+
+  // ── Sous-module "Dépenses" ────────────────────────────────────────────
+  //
+  // Contrairement à Recettes/Bénéfices, une dépense n'a ni produit ni
+  // catégorie de PRODUIT — seulement sa propre "nature" (Loyer, Eau, ...,
+  // voir kPredefinedExpenseCategories côté Flutter). Il n'existe donc pas
+  // de graphique "par produit" ici (4 graphiques au lieu de 5) ; "par
+  // catégorie" utilise cette nature de dépense comme clé de regroupement.
+  // Périodicité (récurrente/ponctuelle) délibérément ignorée dans ces
+  // graphiques : c'est une étiquette informative, pas un axe d'analyse
+  // demandé.
+
+  private async expenseLines(establishmentId: string, from: Date, to: Date) {
+    const expenses = await this.prisma.expense.findMany({
+      where: { establishmentId, expenseDate: { gte: from, lte: to } },
+      select: { amount: true, expenseDate: true, category: true },
+    });
+    return expenses.map((e) => ({
+      createdAt: e.expenseDate,
+      amount: e.amount.toNumber(),
+      category: e.category?.trim() || null,
+    }));
+  }
+
+  async expensesWeeklyTotal(establishmentId: string, weekStart?: string) {
+    const { from, to, monday } = this.weekRange(weekStart);
+    const lines = await this.expenseLines(establishmentId, from, to);
+    const values = emptyWeek();
+    for (const line of lines) {
+      values[weekdayIndex(line.createdAt)] += line.amount;
+    }
+    return this.buildWeekResponse(monday, [{ id: null, name: 'Total', values }]);
+  }
+
+  async expensesWeeklyByCategory(establishmentId: string, weekStart?: string, category?: string) {
+    const { from, to, monday } = this.weekRange(weekStart);
+    const lines = await this.expenseLines(establishmentId, from, to);
+    const filtered = category ? lines.filter((l) => l.category === category) : lines;
+
+    const byKey = new Map<string, WeekSeries>();
+    for (const line of filtered) {
+      const key = line.category ?? '__none__';
+      const name = line.category ?? 'Sans catégorie';
+      const entry = byKey.get(key) ?? { id: line.category, name, values: emptyWeek() };
+      entry.values[weekdayIndex(line.createdAt)] += line.amount;
+      byKey.set(key, entry);
+    }
+    const series = [...byKey.values()].sort((a, b) => sumOf(b.values) - sumOf(a.values));
+    return this.buildWeekResponse(monday, series);
+  }
+
+  async expensesMonthly(establishmentId: string, year: number) {
+    const from = new Date(year, 0, 1, 0, 0, 0, 0);
+    const to = new Date(year, 11, 31, 23, 59, 59, 999);
+    const lines = await this.expenseLines(establishmentId, from, to);
+    const values = new Array(12).fill(0) as number[];
+    for (const line of lines) {
+      values[line.createdAt.getMonth()] += line.amount;
+    }
+    return { year, months: MONTH_LABELS.map((month, i) => ({ month, value: values[i] })) };
+  }
+
+  /** Classement des natures de dépenses (§ "Top dépenses"), même plafond de 10 lignes que les autres classements de ce service. */
+  async expensesTop(establishmentId: string, from: Date, to: Date) {
+    const lines = await this.expenseLines(establishmentId, from, to);
+    const agg = new Map<string, { id: string | null; name: string; value: number }>();
+    for (const line of lines) {
+      const key = line.category ?? '__none__';
+      const name = line.category ?? 'Sans catégorie';
+      const entry = agg.get(key) ?? { id: line.category, name, value: 0 };
+      entry.value += line.amount;
+      agg.set(key, entry);
+    }
+    const items = [...agg.values()].sort((a, b) => b.value - a.value).slice(0, 10);
+    return { from: from.toISOString(), to: to.toISOString(), groupBy: 'category', items };
+  }
 }
 
 function sumOf(values: number[]): number {

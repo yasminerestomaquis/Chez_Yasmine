@@ -66,4 +66,36 @@ class ChartsRepository {
     ) as Map<String, dynamic>;
     return StockLotsChart.fromJson(json);
   }
+
+  Future<WeeklyChart> getExpensesWeekly({String? weekStart}) async {
+    final json = await _api.get(
+      '$_base/expenses/weekly',
+      query: _query({'weekStart': weekStart}),
+    ) as Map<String, dynamic>;
+    return WeeklyChart.fromJson(json);
+  }
+
+  Future<WeeklyChart> getExpensesWeeklyByCategory({String? weekStart, String? category}) async {
+    final json = await _api.get(
+      '$_base/expenses/weekly-by-category',
+      query: _query({'weekStart': weekStart, 'category': category}),
+    ) as Map<String, dynamic>;
+    return WeeklyChart.fromJson(json);
+  }
+
+  Future<MonthlyChart> getExpensesMonthly({required int year}) async {
+    final json = await _api.get(
+      '$_base/expenses/monthly',
+      query: _query({'year': '$year'}),
+    ) as Map<String, dynamic>;
+    return MonthlyChart.fromJson(json);
+  }
+
+  Future<RankingChart> getExpensesTop({String? from, String? to}) async {
+    final json = await _api.get(
+      '$_base/expenses/top',
+      query: _query({'from': from, 'to': to}),
+    ) as Map<String, dynamic>;
+    return RankingChart.fromJson(json);
+  }
 }

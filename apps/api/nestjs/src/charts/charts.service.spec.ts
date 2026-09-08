@@ -8,6 +8,15 @@ function makePrismaMock() {
     saleItem: { findMany: vi.fn() },
     product: { findFirst: vi.fn() },
     stockMovement: { findMany: vi.fn() },
+    expense: { findMany: vi.fn() },
+  };
+}
+
+function expense(overrides: { createdAt?: Date; amount?: number; category?: string | null } = {}) {
+  return {
+    expenseDate: overrides.createdAt ?? new Date('2026-09-07T10:00:00Z'),
+    amount: new Decimal(overrides.amount ?? 1000),
+    category: overrides.category === undefined ? 'Eau' : overrides.category,
   };
 }
 
@@ -240,5 +249,80 @@ describe('ChartsService.stockLots', () => {
     expect(result.activeLots).toEqual([]);
     expect(result.historyLots).toEqual([]);
     expect(result.totalActiveUnits).toBe(0);
+  });
+});
+
+describe('ChartsService — sous-module Dépenses', () => {
+  it('expensesWeeklyTotal buckets by weekday (Monday-first), same convention as weeklyTotal', async () => {
+    const prisma = makePrismaMock();
+    const service = new ChartsService(prisma as unknown as PrismaService);
+    prisma.expense.findMany.mockResolvedValue([
+      expense({ createdAt: new Date('2026-09-07T10:00:00Z'), amount: 5000 }), // Lundi
+      expense({ createdAt: new Date('2026-09-09T10:00:00Z'), amount: 3000 }), // Mercredi
+    ]);
+
+    const result = await service.expensesWeeklyTotal('est-1', '2026-09-07');
+
+    expect(result.weekStart).toBe('2026-09-07');
+    expect(result.series).toHaveLength(1);
+    expect(result.series[0].points[0]).toEqual({ day: 'Lundi', value: 5000 });
+    expect(result.series[0].points[2]).toEqual({ day: 'Mercredi', value: 3000 });
+  });
+
+  it('expensesWeeklyByCategory groups by category, "Sans catégorie" for null, sorted by total descending', async () => {
+    const prisma = makePrismaMock();
+    const service = new ChartsService(prisma as unknown as PrismaService);
+    prisma.expense.findMany.mockResolvedValue([
+      expense({ category: 'Loyer', amount: 50000 }),
+      expense({ category: 'Eau', amount: 5000 }),
+      expense({ category: null, amount: 1000 }),
+    ]);
+
+    const result = await service.expensesWeeklyByCategory('est-1', '2026-09-07');
+
+    expect(result.series.map((s) => s.name)).toEqual(['Loyer', 'Eau', 'Sans catégorie']);
+  });
+
+  it('expensesWeeklyByCategory filters to a single category when given', async () => {
+    const prisma = makePrismaMock();
+    const service = new ChartsService(prisma as unknown as PrismaService);
+    prisma.expense.findMany.mockResolvedValue([
+      expense({ category: 'Loyer', amount: 50000 }),
+      expense({ category: 'Eau', amount: 5000 }),
+    ]);
+
+    const result = await service.expensesWeeklyByCategory('est-1', '2026-09-07', 'Eau');
+
+    expect(result.series).toHaveLength(1);
+    expect(result.series[0].name).toBe('Eau');
+  });
+
+  it('expensesMonthly buckets by month for the given year', async () => {
+    const prisma = makePrismaMock();
+    const service = new ChartsService(prisma as unknown as PrismaService);
+    prisma.expense.findMany.mockResolvedValue([
+      expense({ createdAt: new Date('2026-01-15T10:00:00Z'), amount: 50000 }),
+      expense({ createdAt: new Date('2026-03-02T10:00:00Z'), amount: 20000 }),
+    ]);
+
+    const result = await service.expensesMonthly('est-1', 2026);
+
+    expect(result.months[0]).toEqual({ month: 'Janvier', value: 50000 });
+    expect(result.months[1]).toEqual({ month: 'Février', value: 0 });
+    expect(result.months[2]).toEqual({ month: 'Mars', value: 20000 });
+  });
+
+  it('expensesTop ranks categories by total amount, capped at 10', async () => {
+    const prisma = makePrismaMock();
+    const service = new ChartsService(prisma as unknown as PrismaService);
+    prisma.expense.findMany.mockResolvedValue(
+      Array.from({ length: 12 }, (_, i) => expense({ category: `Cat${i}`, amount: 100 + i })),
+    );
+
+    const result = await service.expensesTop('est-1', new Date('2026-01-01'), new Date('2026-12-31'));
+
+    expect(result.groupBy).toBe('category');
+    expect(result.items).toHaveLength(10);
+    expect(result.items[0].name).toBe('Cat11');
   });
 });

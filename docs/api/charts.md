@@ -11,9 +11,13 @@ GET /establishments/:establishmentId/charts/weekly-by-product?metric=&weekStart=
 GET /establishments/:establishmentId/charts/monthly?metric=revenue|profit&year=YYYY
 GET /establishments/:establishmentId/charts/top?metric=revenue|profit&from=&to=
 GET /establishments/:establishmentId/charts/stock-lots?productId=
+GET /establishments/:establishmentId/charts/expenses/weekly?weekStart=YYYY-MM-DD
+GET /establishments/:establishmentId/charts/expenses/weekly-by-category?weekStart=&category=
+GET /establishments/:establishmentId/charts/expenses/monthly?year=YYYY
+GET /establishments/:establishmentId/charts/expenses/top?from=&to=
 ```
 
-`metric` est obligatoire partout où il apparaît : `revenue` pour les graphiques "Recettes", `profit` pour "Bénéfices". `stock-lots` n'a pas de `metric` — voir la section dédiée, ce n'est pas un graphique Recettes/Bénéfices.
+`metric` est obligatoire sur les routes Recettes/Bénéfices : `revenue` ou `profit`. `stock-lots` et les routes `expenses/*` n'ont pas de `metric` — une seule grandeur possible dans chaque cas (voir leurs sections dédiées).
 
 ## Définitions retenues (à lire avant toute autre chose)
 
@@ -81,19 +85,33 @@ Maquette demandée pour une fiche de gestion de stock par lots (First In, First 
 
 **Divergence assumée avec le reste du module** : cette vue n'est PAS bornée par le filtre Année de `GraphiquesPage` — elle prend tout l'historique du produit, parce qu'elle représente l'état *courant* du stock, pas une période. Un lot reçu il y a plusieurs années peut rester actif aujourd'hui ; y appliquer un filtre Année casserait la lecture du stock réellement disponible.
 
+## Sous-module Dépenses — 4 graphiques, pas 5 (`GET /charts/expenses/*`)
+
+Décision explicite de l'utilisateur (2026-09-08) : plutôt que de forcer les dépenses dans les graphiques Recettes/Bénéfices existants (une dépense n'a ni produit ni catégorie de *produit* — seulement sa propre nature, Loyer/Eau/... voir `docs/api/expenses.md`), un sous-module séparé les regroupe. Il compte **4** graphiques, pas 5 : pas de "par produit", une dépense n'étant rattachée à aucun produit.
+
+- `GET /charts/expenses/weekly` : total journalier (Lundi→Dimanche d'une semaine choisie), même résolution du lundi que les routes `weekly` existantes (`weekRange`/`buildWeekResponse` réutilisées telles quelles).
+- `GET /charts/expenses/weekly-by-category` : idem, ventilé par nature de dépense (`category`, `"Sans catégorie"` si absente) ; `category` en query filtre à une seule nature.
+- `GET /charts/expenses/monthly?year=` : 12 mois de l'année demandée.
+- `GET /charts/expenses/top?from=&to=` : classement des natures de dépenses par montant total, plafonné à 10 comme les autres classements de ce module (`groupBy` toujours `"category"` ici, pas de branche `"product"` possible).
+
+Les réponses reprennent exactement les mêmes formes que Recettes/Bénéfices (`WeeklyChart`/`MonthlyChart`/`RankingChart`) — aucun nouveau modèle Dart n'a donc été nécessaire côté Flutter, seulement 4 nouvelles méthodes sur `ChartsRepository`.
+
+**Suit le filtre Année** de `GraphiquesPage` (contrairement à Stock) : une dépense a une date précise, comme une vente, donc une vue annuelle a un sens métier direct ici.
+
 ## Frontend Flutter (`lib/charts/`)
 
-- `graphiques_page.dart` : page du module, filtre **Année** global (affecte Recettes et Bénéfices, pas Stock — voir plus haut), `TabBar` Recettes/Bénéfices/Stock.
+- `graphiques_page.dart` : page du module, filtre **Année** global (affecte Recettes, Bénéfices et Dépenses ; pas Stock — voir plus haut), `TabBar` Recettes/Bénéfices/Stock/Dépenses.
 - `metric_charts_tab.dart` : les 5 graphiques d'un sous-module — un seul widget paramétré par `metric`/`titles`/`palette`, utilisé deux fois (Recettes et Bénéfices) plutôt que dupliqué, puisque la structure est rigoureusement identique. Chaque changement d'année recrée l'onglet via une `ValueKey('<prefix>-<year>')` plutôt qu'un `didUpdateWidget` — plus simple et réinitialise proprement filtres/semaine/mois du Top en même temps.
 - `weekly_bar_chart.dart`, `monthly_line_chart.dart`, `ranking_bar_chart.dart` : widgets de rendu réutilisés par les deux sous-modules, chacun coloré via `baseColor`/`color` — une couleur différente par graphique, comme demandé (bleu/sarcelle/indigo/vert/orangé pour Recettes, violet/rose/marron/ambre/cyan pour Bénéfices). Quand un graphique affiche plusieurs séries (catégories/produits non filtrés), chaque série reprend une nuance de la couleur du graphique plutôt qu'une palette sans rapport.
 - Le classement ("Top") est rendu en barres **horizontales** plutôt que verticales : c'est le seul des 5 graphiques que la demande ne décrit pas explicitement comme "histogrammes verticaux", et une liste classée de noms de longueur variable reste plus lisible ainsi.
 - Filtre catégorie (graphiques 2/7) : liste déroulante "Toutes les catégories" + chaque catégorie, rechargée via `CatalogRepository.listCategories()` déjà existant. Filtre produit (graphiques 3/8) : liste déroulante de produits individuels (pas d'option "tous", pour éviter un histogramme à dizaines de séries illisible), défaut au premier produit du catalogue.
 - Nouvelle dépendance : **`fl_chart`** (histogrammes + courbes), seule bibliothèque de graphiques Flutter significativement utilisée qui ne dépend d'aucun canal de plateforme natif (fonctionne donc sur Flutter Web) et reste activement maintenue.
 - `stock_lots_tab.dart` : sous-module Stock — sélecteur de produit, bascule « Lots actifs (N) | Historique (N) » (un `InkWell` à indicateur de soulignement plutôt qu'un vrai `TabBar` imbriqué, plus simple pour deux options), `DataTable` des lots (colonnes Lot / Date réception / Quantité reçue / Consommé / Restant / Statut) et carte de synthèse du total. Palette dédiée à dominante vert, délibérément distincte du bleu/violet de Recettes/Bénéfices, comme demandé dans la maquette de référence. Le lien « Voir tous les lots → » bascule simplement vers l'onglet Historique (pas d'écran séparé — cette maquette ne couvre qu'une fiche produit).
+- `expense_charts_tab.dart` : sous-module Dépenses — 4 cartes (pas 5, voir plus haut), filtre catégorie limité aux 8 natures prédéfinies (`kPredefinedExpenseCategories`, `lib/expenses/expense_models.dart`) plutôt qu'aux catégories réellement présentes en base, pour rester cohérent avec le menu déroulant du formulaire de saisie. Palette dédiée à dominante rouge/bordeaux (sortie d'argent), délibérément distincte des trois autres sous-modules.
 
 ## Vérifications effectuées
 
-- `ChartsService` : 13 tests (Prisma mocké, sans mock pour la logique de bucketing/lots elle-même) — bucketing par jour de semaine (lundi en premier, contrairement à `Date.getDay()`), résolution du lundi à partir de n'importe quel jour de la semaine visée, calcul du bénéfice (marge brute), filtrage/tri par catégorie et par produit, bucketing mensuel, classement plafonné à 10 avec le bon regroupement selon `metric`, reconstruction des lots FIFO (dont un cas 404 produit hors établissement).
+- `ChartsService` : 18 tests (Prisma mocké, sans mock pour la logique de bucketing/lots elle-même) — bucketing par jour de semaine (lundi en premier, contrairement à `Date.getDay()`), résolution du lundi à partir de n'importe quel jour de la semaine visée, calcul du bénéfice (marge brute), filtrage/tri par catégorie et par produit, bucketing mensuel, classement plafonné à 10 avec le bon regroupement selon `metric`, reconstruction des lots FIFO (dont un cas 404 produit hors établissement), bucketing/regroupement/classement des dépenses (mêmes garanties que Recettes/Bénéfices).
 - `computeFifoLots` (`stock-lots.spec.ts`) : 8 tests, dont l'exemple chiffré exact de la maquette de référence (L001 épuisé, L002/L003 actifs, total 200) — ordre FIFO sur plusieurs lots, tri chronologique d'une entrée désordonnée, ajustements positif/négatif/neutre, numérotation séquentielle des lots.
-- UI Flutter (`lib/charts/`) : `flutter analyze` ✅ (0 issue), 4 tests widget — affichage des 5 titres de chaque sous-module sans erreur non gérée, bascule d'onglet, changement d'année (recrée les deux onglets sans crash), bascule vers l'onglet Stock (en-tête + état "aucun produit" sans backend en test). `flutter build web` ✅.
+- UI Flutter (`lib/charts/`) : `flutter analyze` ✅ (0 issue), 6 tests widget — affichage des 5 titres de chaque sous-module sans erreur non gérée, bascule d'onglet, changement d'année (recrée les onglets sans crash), bascule vers l'onglet Stock (en-tête + état "aucun produit" sans backend en test), bascule vers l'onglet Dépenses (4 titres, absence de "par produit"), filtre catégorie du sous-module Dépenses. `flutter build web` ✅.
 - **Non vérifié en conditions réelles** : round-trip HTTP complet contre l'API de production avec de vraies ventes/achats historiques — à faire à l'occasion d'une prochaine vérification en conditions réelles, comme pour la majorité des modules de ce projet avant leur premier passage en revue de production.

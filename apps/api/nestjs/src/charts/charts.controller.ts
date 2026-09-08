@@ -11,6 +11,12 @@ import {
   WeeklyByProductQueryDto,
   WeeklyChartQueryDto,
 } from './dto/chart-query.dto.js';
+import {
+  ExpenseMonthlyQueryDto,
+  ExpenseTopQueryDto,
+  ExpenseWeeklyByCategoryQueryDto,
+  ExpenseWeeklyQueryDto,
+} from './dto/expense-chart-query.dto.js';
 
 @Controller('establishments/:establishmentId/charts')
 @UseGuards(SupabaseJwtGuard, PermissionsGuard)
@@ -49,5 +55,31 @@ export class ChartsController {
   @Get('stock-lots')
   stockLots(@Param('establishmentId') establishmentId: string, @Query() query: StockLotsQueryDto) {
     return this.charts.stockLots(establishmentId, query.productId);
+  }
+
+  @Get('expenses/weekly')
+  expensesWeekly(@Param('establishmentId') establishmentId: string, @Query() query: ExpenseWeeklyQueryDto) {
+    return this.charts.expensesWeeklyTotal(establishmentId, query.weekStart);
+  }
+
+  @Get('expenses/weekly-by-category')
+  expensesWeeklyByCategory(
+    @Param('establishmentId') establishmentId: string,
+    @Query() query: ExpenseWeeklyByCategoryQueryDto,
+  ) {
+    return this.charts.expensesWeeklyByCategory(establishmentId, query.weekStart, query.category);
+  }
+
+  @Get('expenses/monthly')
+  expensesMonthly(@Param('establishmentId') establishmentId: string, @Query() query: ExpenseMonthlyQueryDto) {
+    return this.charts.expensesMonthly(establishmentId, query.year ? Number(query.year) : new Date().getFullYear());
+  }
+
+  @Get('expenses/top')
+  expensesTop(@Param('establishmentId') establishmentId: string, @Query() query: ExpenseTopQueryDto) {
+    const now = new Date();
+    const from = query.from ? new Date(query.from) : new Date(now.getFullYear(), 0, 1);
+    const to = query.to ? new Date(query.to) : now;
+    return this.charts.expensesTop(establishmentId, from, to);
   }
 }

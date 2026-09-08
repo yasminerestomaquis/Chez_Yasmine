@@ -84,4 +84,34 @@ void main() {
     expect(find.text('Voir tous les lots →'), findsOneWidget);
     expect(find.text('Aucun produit au catalogue'), findsOneWidget);
   });
+
+  testWidgets('switching to the Dépenses tab shows its four chart titles (no "par produit") without an unhandled error',
+      (tester) async {
+    await pumpPage(tester);
+
+    await tester.tap(find.text('Dépenses'));
+    await tester.pumpAndSettle();
+
+    expect(find.text('Dépenses journalières totales'), findsOneWidget);
+    expect(find.text('Dépenses journalières totales par catégorie'), findsOneWidget);
+    expect(find.text('Top dépenses'), findsOneWidget);
+    expect(find.text('Dépenses mensuelles'), findsOneWidget);
+    // Contrairement à Recettes/Bénéfices, pas de graphique "par produit" —
+    // une dépense n'est rattachée à aucun produit.
+    expect(find.textContaining('par produit'), findsNothing);
+  });
+
+  testWidgets('the Dépenses category filter offers the predefined categories', (tester) async {
+    await pumpPage(tester);
+
+    await tester.tap(find.text('Dépenses'));
+    await tester.pumpAndSettle();
+
+    expect(find.text('Toutes les catégories'), findsOneWidget);
+    await tester.tap(find.text('Toutes les catégories'));
+    await tester.pumpAndSettle();
+
+    expect(find.text('Loyer').hitTestable(), findsOneWidget);
+    expect(find.text('Bouteilles de gaz').hitTestable(), findsOneWidget);
+  });
 }
