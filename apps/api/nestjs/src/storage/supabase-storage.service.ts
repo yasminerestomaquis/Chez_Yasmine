@@ -19,6 +19,20 @@ export class SupabaseStorageService {
     if (!supabaseUrl || !anonKey) {
       throw new InternalServerErrorException('SUPABASE_URL / SUPABASE_ANON_KEY ne sont pas configurés');
     }
+    // DIAGNOSTIC TEMPORAIRE (à retirer) : localise un caractère hors Latin-1
+    // sans jamais révéler la valeur des secrets eux-mêmes.
+    for (const [label, value] of [
+      ['SUPABASE_URL', supabaseUrl],
+      ['SUPABASE_ANON_KEY', anonKey],
+      ['accessToken', accessToken],
+    ] as const) {
+      for (let i = 0; i < value.length; i++) {
+        const code = value.charCodeAt(i);
+        if (code > 255) {
+          throw new InternalServerErrorException(`DIAG: ${label} a un caractère hors Latin-1 à l'index ${i}, code ${code}, longueur totale ${value.length}`);
+        }
+      }
+    }
     return createClient(supabaseUrl, anonKey, {
       global: { headers: { Authorization: `Bearer ${accessToken}` } },
       auth: { persistSession: false, autoRefreshToken: false },
