@@ -1,10 +1,14 @@
 import { Injectable } from '@nestjs/common';
 import { PrismaService } from '../prisma/prisma.service.js';
+import { ActivityNotifierService } from '../notifications/activity-notifier.service.js';
 import type { CreateCashClosingDto } from './dto/create-cash-closing.dto.js';
 
 @Injectable()
 export class CashService {
-  constructor(private readonly prisma: PrismaService) {}
+  constructor(
+    private readonly prisma: PrismaService,
+    private readonly activityNotifier: ActivityNotifierService,
+  ) {}
 
   /**
    * PointOfSale/CashRegister exist in the schema (Phase 3) but no module
@@ -61,7 +65,13 @@ export class CashService {
       },
     });
 
-    return { ...closing, difference: dto.countedAmount - expectedAmount };
+    const difference = dto.countedAmount - expectedAmount;
+    await this.activityNotifier.notify(
+      establishmentId,
+      'Clôture de caisse',
+      `Montant compté : ${dto.countedAmount.toLocaleString('fr-FR')} FCFA — écart : ${difference.toLocaleString('fr-FR')} FCFA`,
+    );
+    return { ...closing, difference };
   }
 
   async list(establishmentId: string) {

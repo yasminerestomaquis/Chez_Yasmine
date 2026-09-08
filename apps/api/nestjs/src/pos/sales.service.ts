@@ -1,12 +1,16 @@
 import { BadRequestException, ConflictException, Injectable, NotFoundException } from '@nestjs/common';
 import { PrismaService } from '../prisma/prisma.service.js';
+import { ActivityNotifierService } from '../notifications/activity-notifier.service.js';
 import { applyCreditSale } from './credit-math.js';
 import type { CreateSaleDto } from './dto/create-sale.dto.js';
 import { computeCartTotals, validatePayments, type CartLine } from './pos-math.js';
 
 @Injectable()
 export class SalesService {
-  constructor(private readonly prisma: PrismaService) {}
+  constructor(
+    private readonly prisma: PrismaService,
+    private readonly activityNotifier: ActivityNotifierService,
+  ) {}
 
   async create(establishmentId: string, userId: string, dto: CreateSaleDto) {
     // Idempotent replay: a client-supplied id lets the same offline sale be
@@ -81,7 +85,7 @@ export class SalesService {
       orderToClose = { id: order.id, tableId: order.tableId };
     }
 
-    return this.prisma.$transaction(async (tx) => {
+    const sale = await this.prisma.$transaction(async (tx) => {
       for (const item of dto.items) {
         await tx.product.update({ where: { id: item.productId }, data: { stockQuantity: { decrement: item.quantity } } });
         await tx.stockMovement.create({
@@ -128,6 +132,8 @@ export class SalesService {
 
       return sale;
     });
+    await this.activityNotifier.notify(establishmentId, 'Nouvelle vente', `${totals.total.toLocaleString('fr-FR')} FCFA`);
+    return sale;
   }
 
   async get(establishmentId: string, saleId: string) {

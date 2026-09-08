@@ -2,7 +2,10 @@ import { BadRequestException, NotFoundException } from '@nestjs/common';
 import { Decimal } from '@prisma/client';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import type { PrismaService } from '../prisma/prisma.service.js';
+import type { ActivityNotifierService } from '../notifications/activity-notifier.service.js';
 import { StockMovementsService } from './stock-movements.service.js';
+
+const activityNotifierMock = { notify: vi.fn() } as unknown as ActivityNotifierService;
 
 function makePrismaMock() {
   return {
@@ -17,8 +20,9 @@ describe('StockMovementsService', () => {
   let service: StockMovementsService;
 
   beforeEach(() => {
+    vi.mocked(activityNotifierMock.notify).mockClear();
     prisma = makePrismaMock();
-    service = new StockMovementsService(prisma as unknown as PrismaService);
+    service = new StockMovementsService(prisma as unknown as PrismaService, activityNotifierMock);
   });
 
   it('throws NotFoundException when the product does not belong to the establishment', async () => {
@@ -37,7 +41,7 @@ describe('StockMovementsService', () => {
   });
 
   it('applies a valid "in" movement: updates the product total and records the movement in one transaction', async () => {
-    prisma.product.findFirst.mockResolvedValue({ id: 'prod-1', stockQuantity: new Decimal(10) });
+    prisma.product.findFirst.mockResolvedValue({ id: 'prod-1', name: 'Bière Flag', stockQuantity: new Decimal(10) });
     prisma.product.update.mockResolvedValue({});
     prisma.stockMovement.create.mockResolvedValue({ id: 'mvt-1' });
 
@@ -48,6 +52,11 @@ describe('StockMovementsService', () => {
       data: { productId: 'prod-1', type: 'in', quantity: 5, reason: 'Réception', createdBy: 'user-1' },
     });
     expect(prisma.$transaction).toHaveBeenCalledTimes(1);
+    expect(activityNotifierMock.notify).toHaveBeenCalledWith(
+      'est-1',
+      'Mouvement de stock',
+      expect.stringContaining('Bière Flag'),
+    );
   });
 
   it('replays an already-recorded movement idempotently, never touching the product again', async () => {

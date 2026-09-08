@@ -2,7 +2,10 @@ import { BadRequestException, ConflictException, NotFoundException } from '@nest
 import { Decimal } from '@prisma/client';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import type { PrismaService } from '../prisma/prisma.service.js';
+import type { ActivityNotifierService } from '../notifications/activity-notifier.service.js';
 import { SalesService } from './sales.service.js';
+
+const activityNotifierMock = { notify: vi.fn() } as unknown as ActivityNotifierService;
 
 function makePrismaMock() {
   const prisma: Record<string, unknown> = {
@@ -31,8 +34,9 @@ describe('SalesService.create', () => {
   let service: SalesService;
 
   beforeEach(() => {
+    vi.mocked(activityNotifierMock.notify).mockClear();
     prisma = makePrismaMock();
-    service = new SalesService(prisma as unknown as PrismaService);
+    service = new SalesService(prisma as unknown as PrismaService, activityNotifierMock);
   });
 
   it('replays an already-created sale idempotently, never touching products/stock again', async () => {
@@ -48,6 +52,7 @@ describe('SalesService.create', () => {
     expect(result).toBe(alreadyCreated);
     expect(prisma.product.findMany).not.toHaveBeenCalled();
     expect(prisma.$transaction).not.toHaveBeenCalled();
+    expect(activityNotifierMock.notify).not.toHaveBeenCalled();
   });
 
   it('rejects a product that does not belong to the establishment', async () => {
@@ -108,6 +113,7 @@ describe('SalesService.create', () => {
       expect.objectContaining({ data: expect.objectContaining({ subtotal: 3000, discount: 0, total: 3000 }) }),
     );
     expect(prisma.credit.create).not.toHaveBeenCalled();
+    expect(activityNotifierMock.notify).toHaveBeenCalledWith('est-1', 'Nouvelle vente', expect.stringContaining('3'));
   });
 
   it('rejects checking out an order that is already closed', async () => {
@@ -186,7 +192,7 @@ describe('SalesService.refund', () => {
 
   beforeEach(() => {
     prisma = makePrismaMock();
-    service = new SalesService(prisma as unknown as PrismaService);
+    service = new SalesService(prisma as unknown as PrismaService, activityNotifierMock);
   });
 
   it('throws NotFoundException for a sale outside the establishment', async () => {

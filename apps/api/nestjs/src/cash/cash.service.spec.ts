@@ -1,7 +1,10 @@
 import { Decimal } from '@prisma/client';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import type { PrismaService } from '../prisma/prisma.service.js';
+import type { ActivityNotifierService } from '../notifications/activity-notifier.service.js';
 import { CashService } from './cash.service.js';
+
+const activityNotifierMock = { notify: vi.fn() } as unknown as ActivityNotifierService;
 
 function makePrismaMock() {
   const prisma: Record<string, unknown> = {
@@ -19,8 +22,24 @@ describe('CashService.close', () => {
   let service: CashService;
 
   beforeEach(() => {
+    vi.mocked(activityNotifierMock.notify).mockClear();
     prisma = makePrismaMock();
-    service = new CashService(prisma as unknown as PrismaService);
+    service = new CashService(prisma as unknown as PrismaService, activityNotifierMock);
+  });
+
+  it('notifies the organization of the closing, with the counted amount and the difference', async () => {
+    (prisma.pointOfSale as any).findFirst.mockResolvedValue({ id: 'pos-1', cashRegisters: [{ id: 'reg-1' }] });
+    (prisma.payment as any).aggregate.mockResolvedValue({ _sum: { amount: new Decimal(20000) } });
+    (prisma.expense as any).aggregate.mockResolvedValue({ _sum: { amount: new Decimal(0) } });
+    (prisma.cashClosing as any).create.mockResolvedValue({ id: 'closing-1', expectedAmount: new Decimal(20000), countedAmount: new Decimal(19000) });
+
+    await service.close('est-1', 'user-1', { openedAt: '2026-09-05T06:00:00.000Z', countedAmount: 19000 });
+
+    expect(activityNotifierMock.notify).toHaveBeenCalledWith(
+      'est-1',
+      'Clôture de caisse',
+      expect.stringContaining('19'),
+    );
   });
 
   it('creates a default point of sale and register on first use', async () => {
@@ -81,7 +100,7 @@ describe('CashService.list', () => {
 
   beforeEach(() => {
     prisma = makePrismaMock();
-    service = new CashService(prisma as unknown as PrismaService);
+    service = new CashService(prisma as unknown as PrismaService, activityNotifierMock);
   });
 
   it('adds a computed difference field to each closing', async () => {

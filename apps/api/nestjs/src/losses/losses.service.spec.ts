@@ -2,7 +2,10 @@ import { BadRequestException, NotFoundException } from '@nestjs/common';
 import { Decimal } from '@prisma/client';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import type { PrismaService } from '../prisma/prisma.service.js';
+import type { ActivityNotifierService } from '../notifications/activity-notifier.service.js';
 import { LossesService } from './losses.service.js';
+
+const activityNotifierMock = { notify: vi.fn() } as unknown as ActivityNotifierService;
 
 function makePrismaMock() {
   const prisma: Record<string, unknown> = {
@@ -19,8 +22,9 @@ describe('LossesService.create', () => {
   let service: LossesService;
 
   beforeEach(() => {
+    vi.mocked(activityNotifierMock.notify).mockClear();
     prisma = makePrismaMock();
-    service = new LossesService(prisma as unknown as PrismaService);
+    service = new LossesService(prisma as unknown as PrismaService, activityNotifierMock);
   });
 
   it('returns the existing loss unchanged on idempotent replay, without touching stock', async () => {
@@ -49,7 +53,7 @@ describe('LossesService.create', () => {
   });
 
   it('decrements stock, writes a loss stock movement, and records the Loss row in one transaction', async () => {
-    (prisma.product as any).findFirst.mockResolvedValue({ id: 'p1', stockQuantity: new Decimal(10) });
+    (prisma.product as any).findFirst.mockResolvedValue({ id: 'p1', name: 'Poulet Braisé', stockQuantity: new Decimal(10) });
     (prisma.loss as any).create.mockResolvedValue({ id: 'loss-1', productId: 'p1', quantity: 4 });
 
     await service.create('est-1', 'user-1', { id: 'loss-1', productId: 'p1', quantity: 4, reason: 'Casse' });
@@ -61,6 +65,17 @@ describe('LossesService.create', () => {
     expect(prisma.loss.create).toHaveBeenCalledWith({
       data: { id: 'loss-1', establishmentId: 'est-1', productId: 'p1', quantity: 4, reason: 'Casse', createdBy: 'user-1' },
     });
+    expect(activityNotifierMock.notify).toHaveBeenCalledWith(
+      'est-1',
+      'Perte enregistrée',
+      expect.stringContaining('Poulet Braisé'),
+    );
+  });
+
+  it('does not notify on idempotent replay of an already-recorded loss', async () => {
+    (prisma.loss as any).findFirst.mockResolvedValue({ id: 'loss-1' });
+    await service.create('est-1', 'user-1', { id: 'loss-1', productId: 'p1', quantity: 2 });
+    expect(activityNotifierMock.notify).not.toHaveBeenCalled();
   });
 });
 
@@ -69,8 +84,9 @@ describe('LossesService.list', () => {
   let service: LossesService;
 
   beforeEach(() => {
+    vi.mocked(activityNotifierMock.notify).mockClear();
     prisma = makePrismaMock();
-    service = new LossesService(prisma as unknown as PrismaService);
+    service = new LossesService(prisma as unknown as PrismaService, activityNotifierMock);
   });
 
   it('computes estimatedValue from quantity * purchasePrice, defaulting to 0 when purchasePrice is unset', async () => {

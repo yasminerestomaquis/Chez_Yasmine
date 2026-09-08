@@ -1,11 +1,15 @@
 import { BadRequestException, Injectable, NotFoundException } from '@nestjs/common';
 import { PrismaService } from '../prisma/prisma.service.js';
+import { ActivityNotifierService } from '../notifications/activity-notifier.service.js';
 import { applyStockMovement } from '../stock/stock-math.js';
 import type { CreateLossDto } from './dto/create-loss.dto.js';
 
 @Injectable()
 export class LossesService {
-  constructor(private readonly prisma: PrismaService) {}
+  constructor(
+    private readonly prisma: PrismaService,
+    private readonly activityNotifier: ActivityNotifierService,
+  ) {}
 
   /**
    * Records a stock loss for accounting purposes: writes both a
@@ -32,7 +36,7 @@ export class LossesService {
       throw new BadRequestException(error instanceof Error ? error.message : 'Perte invalide');
     }
 
-    return this.prisma.$transaction(async (tx) => {
+    const loss = await this.prisma.$transaction(async (tx) => {
       await tx.product.update({ where: { id: product.id }, data: { stockQuantity: nextQuantity } });
       await tx.stockMovement.create({
         data: { productId: product.id, type: 'loss', quantity: dto.quantity, reason: dto.reason, createdBy: userId },
@@ -41,6 +45,12 @@ export class LossesService {
         data: { id: dto.id, establishmentId, productId: product.id, quantity: dto.quantity, reason: dto.reason, createdBy: userId },
       });
     });
+    await this.activityNotifier.notify(
+      establishmentId,
+      'Perte enregistrée',
+      `${product.name} — ${dto.quantity}${dto.reason ? ` (${dto.reason})` : ''}`,
+    );
+    return loss;
   }
 
   async list(establishmentId: string) {

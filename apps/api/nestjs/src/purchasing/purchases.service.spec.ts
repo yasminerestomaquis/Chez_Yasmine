@@ -2,7 +2,10 @@ import { BadRequestException, ConflictException, NotFoundException } from '@nest
 import { Decimal } from '@prisma/client';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import type { PrismaService } from '../prisma/prisma.service.js';
+import type { ActivityNotifierService } from '../notifications/activity-notifier.service.js';
 import { PurchasesService } from './purchases.service.js';
+
+const activityNotifierMock = { notify: vi.fn() } as unknown as ActivityNotifierService;
 
 function makePrismaMock() {
   const prisma: Record<string, unknown> = {
@@ -21,7 +24,7 @@ describe('PurchasesService.create', () => {
 
   beforeEach(() => {
     prisma = makePrismaMock();
-    service = new PurchasesService(prisma as unknown as PrismaService);
+    service = new PurchasesService(prisma as unknown as PrismaService, activityNotifierMock);
   });
 
   it('rejects a supplier from another establishment', async () => {
@@ -62,8 +65,9 @@ describe('PurchasesService.receive', () => {
   let service: PurchasesService;
 
   beforeEach(() => {
+    vi.mocked(activityNotifierMock.notify).mockClear();
     prisma = makePrismaMock();
-    service = new PurchasesService(prisma as unknown as PrismaService);
+    service = new PurchasesService(prisma as unknown as PrismaService, activityNotifierMock);
   });
 
   it('throws NotFoundException for a purchase outside the establishment', async () => {
@@ -85,7 +89,13 @@ describe('PurchasesService.receive', () => {
         { productId: 'p2', quantity: new Decimal(5) },
       ],
     });
-    (prisma.purchase as any).update.mockResolvedValue({ id: 'purchase-1', status: 'received' });
+    (prisma.purchase as any).update.mockResolvedValue({
+      id: 'purchase-1',
+      status: 'received',
+      total: new Decimal(1000),
+      items: [{ productId: 'p1' }, { productId: 'p2' }],
+      supplier: { name: 'Brasseries du Sud' },
+    });
 
     await service.receive('est-1', 'purchase-1', 'user-1');
 
@@ -97,6 +107,11 @@ describe('PurchasesService.receive', () => {
     expect(prisma.purchase.update).toHaveBeenCalledWith(
       expect.objectContaining({ where: { id: 'purchase-1' }, data: { status: 'received' } }),
     );
+    expect(activityNotifierMock.notify).toHaveBeenCalledWith(
+      'est-1',
+      'Achat reçu',
+      expect.stringContaining('Brasseries du Sud'),
+    );
   });
 });
 
@@ -106,7 +121,7 @@ describe('PurchasesService.cancel', () => {
 
   beforeEach(() => {
     prisma = makePrismaMock();
-    service = new PurchasesService(prisma as unknown as PrismaService);
+    service = new PurchasesService(prisma as unknown as PrismaService, activityNotifierMock);
   });
 
   it('rejects cancelling a purchase that has already been received', async () => {

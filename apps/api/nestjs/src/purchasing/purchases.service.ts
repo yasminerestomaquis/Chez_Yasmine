@@ -1,10 +1,14 @@
 import { BadRequestException, ConflictException, Injectable, NotFoundException } from '@nestjs/common';
 import { PrismaService } from '../prisma/prisma.service.js';
+import { ActivityNotifierService } from '../notifications/activity-notifier.service.js';
 import type { CreatePurchaseDto } from './dto/create-purchase.dto.js';
 
 @Injectable()
 export class PurchasesService {
-  constructor(private readonly prisma: PrismaService) {}
+  constructor(
+    private readonly prisma: PrismaService,
+    private readonly activityNotifier: ActivityNotifierService,
+  ) {}
 
   list(establishmentId: string) {
     return this.prisma.purchase.findMany({
@@ -64,7 +68,7 @@ export class PurchasesService {
       throw new ConflictException('Cet achat a déjà été reçu ou annulé');
     }
 
-    return this.prisma.$transaction(async (tx) => {
+    const received = await this.prisma.$transaction(async (tx) => {
       for (const item of purchase.items) {
         const quantity = item.quantity.toNumber();
         await tx.product.update({ where: { id: item.productId }, data: { stockQuantity: { increment: quantity } } });
@@ -78,6 +82,12 @@ export class PurchasesService {
         include: { items: true, supplier: true },
       });
     });
+    await this.activityNotifier.notify(
+      establishmentId,
+      'Achat reçu',
+      `${received.supplier?.name ?? 'Fournisseur non renseigné'} — ${received.total.toNumber().toLocaleString('fr-FR')} FCFA (${received.items.length} article(s))`,
+    );
+    return received;
   }
 
   async cancel(establishmentId: string, purchaseId: string) {

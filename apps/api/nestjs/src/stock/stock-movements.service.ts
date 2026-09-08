@@ -1,11 +1,17 @@
 import { BadRequestException, Injectable, NotFoundException } from '@nestjs/common';
 import { PrismaService } from '../prisma/prisma.service.js';
+import { ActivityNotifierService } from '../notifications/activity-notifier.service.js';
 import type { CreateStockMovementDto } from './dto/create-stock-movement.dto.js';
 import { applyStockMovement, isLowStock } from './stock-math.js';
 
+const MOVEMENT_TYPE_LABELS: Record<string, string> = { in: 'Entrée', out: 'Sortie', adjustment: 'Correction' };
+
 @Injectable()
 export class StockMovementsService {
-  constructor(private readonly prisma: PrismaService) {}
+  constructor(
+    private readonly prisma: PrismaService,
+    private readonly activityNotifier: ActivityNotifierService,
+  ) {}
 
   private async getProductOrThrow(establishmentId: string, productId: string) {
     const product = await this.prisma.product.findFirst({ where: { id: productId, establishmentId } });
@@ -37,6 +43,11 @@ export class StockMovementsService {
         data: { id: dto.id, productId, type: dto.type, quantity: dto.quantity, reason: dto.reason, createdBy: userId },
       }),
     ]);
+    await this.activityNotifier.notify(
+      establishmentId,
+      'Mouvement de stock',
+      `${MOVEMENT_TYPE_LABELS[dto.type] ?? dto.type} — ${product.name} : ${dto.quantity}${dto.reason ? ` (${dto.reason})` : ''}`,
+    );
     return movement;
   }
 
