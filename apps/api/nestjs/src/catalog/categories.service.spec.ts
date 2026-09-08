@@ -33,7 +33,17 @@ describe('CategoriesService', () => {
   it('create() attaches the establishmentId from the route, not the body', async () => {
     prisma.category.create.mockResolvedValue({ id: 'cat-1' });
     await service.create('est-1', { name: 'Boissons' });
-    expect(prisma.category.create).toHaveBeenCalledWith({ data: { establishmentId: 'est-1', name: 'Boissons' } });
+    expect(prisma.category.create).toHaveBeenCalledWith({
+      data: { establishmentId: 'est-1', name: 'Boissons', hasVariablePricing: undefined },
+    });
+  });
+
+  it('create() passes hasVariablePricing through when provided', async () => {
+    prisma.category.create.mockResolvedValue({ id: 'cat-1' });
+    await service.create('est-1', { name: 'Poulets', hasVariablePricing: true });
+    expect(prisma.category.create).toHaveBeenCalledWith({
+      data: { establishmentId: 'est-1', name: 'Poulets', hasVariablePricing: true },
+    });
   });
 
   it('update() throws NotFoundException when the category does not belong to the establishment', async () => {

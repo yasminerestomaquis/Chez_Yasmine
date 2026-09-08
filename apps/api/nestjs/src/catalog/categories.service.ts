@@ -16,7 +16,9 @@ export class CategoriesService {
   }
 
   create(establishmentId: string, dto: CreateCategoryDto) {
-    return this.prisma.category.create({ data: { establishmentId, name: dto.name } });
+    return this.prisma.category.create({
+      data: { establishmentId, name: dto.name, hasVariablePricing: dto.hasVariablePricing },
+    });
   }
 
   async update(establishmentId: string, categoryId: string, dto: UpdateCategoryDto) {

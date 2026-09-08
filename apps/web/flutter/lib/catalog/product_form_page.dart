@@ -13,11 +13,20 @@ import 'models.dart';
 /// requis par le prompt maître §18 : prendre une photo, choisir dans la
 /// galerie, importer un fichier, ou utiliser l'image générique.
 class ProductFormPage extends StatefulWidget {
-  const ProductFormPage({super.key, required this.repository, required this.categories, this.existing});
+  const ProductFormPage({
+    super.key,
+    required this.repository,
+    required this.categories,
+    this.existing,
+    this.initialCategoryId,
+  });
 
   final CatalogRepository repository;
   final List<Category> categories;
   final Product? existing;
+  /// Pré-remplit la catégorie quand le formulaire s'ouvre depuis le
+  /// sous-module d'une catégorie du Catalogue.
+  final String? initialCategoryId;
 
   @override
   State<ProductFormPage> createState() => _ProductFormPageState();
@@ -54,11 +63,21 @@ class _ProductFormPageState extends State<ProductFormPage> {
     _barcodeController = TextEditingController(text: p?.barcode ?? '');
     _unitController = TextEditingController(text: p?.unit ?? '');
     _purchasePriceController = TextEditingController(text: p?.purchasePrice?.toString() ?? '');
-    _salePriceController = TextEditingController(text: p?.salePrice.toString() ?? '');
+    _salePriceController = TextEditingController(text: p?.salePrice?.toString() ?? '');
     _vatRateController = TextEditingController(text: p?.vatRate?.toString() ?? '');
     _minStockController = TextEditingController(text: p?.minStock?.toString() ?? '');
     _initialStockController = TextEditingController(text: '0');
-    _categoryId = p?.categoryId;
+    _categoryId = p?.categoryId ?? widget.initialCategoryId;
+  }
+
+  /// Vrai quand la catégorie sélectionnée n'a pas de prix fixe (ex. Poulets,
+  /// Poissons, Plats africains) : le prix d'achat/de vente ne se saisit pas
+  /// ici — voir docs/api/catalog.md.
+  bool get _isVariablePricing {
+    for (final c in widget.categories) {
+      if (c.id == _categoryId) return c.hasVariablePricing;
+    }
+    return false;
   }
 
   @override
@@ -144,8 +163,9 @@ class _ProductFormPageState extends State<ProductFormPage> {
         if (_referenceController.text.trim().isNotEmpty) 'reference': _referenceController.text.trim(),
         if (_barcodeController.text.trim().isNotEmpty) 'barcode': _barcodeController.text.trim(),
         if (_unitController.text.trim().isNotEmpty) 'unit': _unitController.text.trim(),
-        if (_parseNumber(_purchasePriceController.text) != null) 'purchasePrice': _parseNumber(_purchasePriceController.text),
-        'salePrice': _parseNumber(_salePriceController.text),
+        if (!_isVariablePricing && _parseNumber(_purchasePriceController.text) != null)
+          'purchasePrice': _parseNumber(_purchasePriceController.text),
+        if (!_isVariablePricing) 'salePrice': _parseNumber(_salePriceController.text),
         if (_parseNumber(_vatRateController.text) != null) 'vatRate': _parseNumber(_vatRateController.text),
         if (_parseNumber(_minStockController.text) != null) 'minStock': _parseNumber(_minStockController.text),
         if (!_isEditing) 'stockQuantity': _parseNumber(_initialStockController.text) ?? 0,
@@ -211,24 +231,44 @@ class _ProductFormPageState extends State<ProductFormPage> {
             const SizedBox(height: 12),
             TextFormField(controller: _unitController, decoration: const InputDecoration(labelText: 'Unité (ex : bouteille, portion)')),
             const SizedBox(height: 12),
-            Row(children: [
-              Expanded(
-                child: TextFormField(
-                  controller: _purchasePriceController,
-                  keyboardType: const TextInputType.numberWithOptions(decimal: true),
-                  decoration: const InputDecoration(labelText: "Prix d'achat"),
+            if (_isVariablePricing)
+              const Card(
+                child: Padding(
+                  padding: EdgeInsets.all(12),
+                  child: Row(
+                    children: [
+                      Icon(Icons.info_outline),
+                      SizedBox(width: 12),
+                      Expanded(
+                        child: Text(
+                          'Catégorie à prix variable : pas de prix d\'achat/de vente fixe ici. '
+                          'Le prix de vente se saisit en caisse à chaque vente ; le prix d\'achat '
+                          'correspond à la dépense « Marché » du module Dépenses.',
+                        ),
+                      ),
+                    ],
+                  ),
                 ),
-              ),
-              const SizedBox(width: 12),
-              Expanded(
-                child: TextFormField(
-                  controller: _salePriceController,
-                  keyboardType: const TextInputType.numberWithOptions(decimal: true),
-                  decoration: const InputDecoration(labelText: 'Prix de vente (FCFA) *'),
-                  validator: (v) => _parseNumber(v ?? '') == null ? 'Requis' : null,
+              )
+            else
+              Row(children: [
+                Expanded(
+                  child: TextFormField(
+                    controller: _purchasePriceController,
+                    keyboardType: const TextInputType.numberWithOptions(decimal: true),
+                    decoration: const InputDecoration(labelText: "Prix d'achat"),
+                  ),
                 ),
-              ),
-            ]),
+                const SizedBox(width: 12),
+                Expanded(
+                  child: TextFormField(
+                    controller: _salePriceController,
+                    keyboardType: const TextInputType.numberWithOptions(decimal: true),
+                    decoration: const InputDecoration(labelText: 'Prix de vente (FCFA) *'),
+                    validator: (v) => _parseNumber(v ?? '') == null ? 'Requis' : null,
+                  ),
+                ),
+              ]),
             const SizedBox(height: 12),
             Row(children: [
               Expanded(

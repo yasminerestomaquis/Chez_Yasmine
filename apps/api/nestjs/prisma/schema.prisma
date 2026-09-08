@@ -159,6 +159,11 @@ model Category {
   id              String   @id @default(uuid())
   establishmentId String   @map("establishment_id")
   name            String
+  /// Vrai pour les catégories sans prix fixe (ex. Poulets, Poissons, Plats
+  /// africains) : prix d'achat/de vente non saisis dans le catalogue — le
+  /// prix de vente se saisit en caisse à la vente, l'achat est suivi via la
+  /// dépense "Marché" (module Dépenses).
+  hasVariablePricing Boolean @default(false) @map("has_variable_pricing")
   createdAt       DateTime @default(now()) @map("created_at")
 
   establishment Establishment @relation(fields: [establishmentId], references: [id], onDelete: Cascade)
@@ -195,7 +200,9 @@ model Product {
   qrCode          String?  @map("qr_code")
   unit            String?
   purchasePrice   Decimal? @map("purchase_price") @db.Decimal(12, 2)
-  salePrice       Decimal  @map("sale_price") @db.Decimal(12, 2)
+  /// Nul quand la catégorie a hasVariablePricing = true — le prix se saisit
+  /// alors en caisse à chaque vente (voir SaleItemDto.unitPrice).
+  salePrice       Decimal? @map("sale_price") @db.Decimal(12, 2)
   vatRate         Decimal  @default(0) @map("vat_rate") @db.Decimal(5, 2)
   minStock        Decimal  @default(0) @map("min_stock") @db.Decimal(12, 2)
   stockQuantity   Decimal  @default(0) @map("stock_quantity") @db.Decimal(12, 2)

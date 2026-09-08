@@ -21,11 +21,15 @@ function makePrismaMock() {
   return prisma;
 }
 
-const product = (over: Partial<{ id: string; name: string; salePrice: number; stockQuantity: number }> = {}) => ({
+const product = (
+  over: Partial<{ id: string; name: string; salePrice: number | null; stockQuantity: number }> = {},
+) => ({
   id: over.id ?? 'p1',
   establishmentId: 'est-1',
   name: over.name ?? 'Bière 65cl',
-  salePrice: new Decimal(over.salePrice ?? 1000),
+  // salePrice: null simule une catégorie à prix variable (ex. Poulets,
+  // Poissons, Plats africains) — voir docs/api/catalog.md.
+  salePrice: over.salePrice === null ? null : new Decimal(over.salePrice ?? 1000),
   stockQuantity: new Decimal(over.stockQuantity ?? 20),
 });
 
@@ -114,6 +118,56 @@ describe('SalesService.create', () => {
     );
     expect(prisma.credit.create).not.toHaveBeenCalled();
     expect(activityNotifierMock.notify).toHaveBeenCalledWith('est-1', 'Nouvelle vente', expect.stringContaining('3'));
+  });
+
+  describe('variable-pricing products (ex. Poulets, Poissons, Plats africains)', () => {
+    it('rejects the sale when the cashier did not enter a price', async () => {
+      (prisma.product as any).findMany.mockResolvedValue([product({ salePrice: null })]);
+      await expect(
+        service.create('est-1', 'user-1', {
+          items: [{ productId: 'p1', quantity: 1 }],
+          payments: [{ method: 'cash', amount: 1500 }],
+        } as any),
+      ).rejects.toBeInstanceOf(BadRequestException);
+      expect(prisma.$transaction).not.toHaveBeenCalled();
+    });
+
+    it('uses the cashier-entered unitPrice for totals and the recorded sale item', async () => {
+      (prisma.product as any).findMany.mockResolvedValue([product({ salePrice: null })]);
+      (prisma.sale as any).create.mockResolvedValue({ id: 'sale-1', items: [], payments: [] });
+
+      await service.create('est-1', 'user-1', {
+        items: [{ productId: 'p1', quantity: 2, unitPrice: 1500 }],
+        payments: [{ method: 'cash', amount: 3000 }],
+      } as any);
+
+      expect(prisma.sale.create).toHaveBeenCalledWith(
+        expect.objectContaining({
+          data: expect.objectContaining({
+            total: 3000,
+            items: { create: [expect.objectContaining({ productId: 'p1', quantity: 2, unitPrice: 1500 })] },
+          }),
+        }),
+      );
+    });
+
+    it('ignores any client-sent unitPrice for a fixed-price product (server stays the source of truth)', async () => {
+      (prisma.product as any).findMany.mockResolvedValue([product({ salePrice: 1000 })]);
+      (prisma.sale as any).create.mockResolvedValue({ id: 'sale-1', items: [], payments: [] });
+
+      await service.create('est-1', 'user-1', {
+        items: [{ productId: 'p1', quantity: 1, unitPrice: 1 }], // tentative de prix cassé, ignorée
+        payments: [{ method: 'cash', amount: 1000 }],
+      } as any);
+
+      expect(prisma.sale.create).toHaveBeenCalledWith(
+        expect.objectContaining({
+          data: expect.objectContaining({
+            items: { create: [expect.objectContaining({ unitPrice: 1000 })] },
+          }),
+        }),
+      );
+    });
   });
 
   it('rejects checking out an order that is already closed', async () => {

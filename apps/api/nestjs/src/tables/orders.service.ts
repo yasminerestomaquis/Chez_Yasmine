@@ -62,6 +62,15 @@ export class OrdersService {
     if (!product) {
       throw new BadRequestException("Le produit indiqué n'appartient pas à cet établissement");
     }
+    // Catégorie à prix variable (docs/api/catalog.md) : pas de prix fixe à
+    // reprendre ici — les additions de table ne proposent pas encore de
+    // saisie de prix (contrairement à la Caisse), donc ces produits ne
+    // peuvent pas y être ajoutés pour l'instant.
+    if (product.salePrice == null) {
+      throw new BadRequestException(
+        `${product.name} a un prix variable : ajoutez-le depuis la Caisse plutôt que depuis une addition de table`,
+      );
+    }
     return this.prisma.orderItem.create({
       data: { orderId: order.id, productId: product.id, quantity: dto.quantity, unitPrice: product.salePrice },
     });

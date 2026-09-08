@@ -20,7 +20,7 @@ Reprise et adaptée du prototype v1 déjà validé :
 
 ## `SalesService.create`
 
-1. Recharge les produits **depuis la base**, jamais depuis les prix envoyés par le client — le prix de vente appliqué est toujours `product.salePrice` au moment de la vente.
+1. Recharge les produits **depuis la base**, jamais depuis les prix envoyés par le client — le prix de vente appliqué est toujours `product.salePrice` au moment de la vente, **sauf** pour un produit d'une catégorie à prix variable (`Category.hasVariablePricing`, ex. Poulets/Poissons/Plats africains — voir `docs/api/catalog.md`) : `product.salePrice` y est `null` en catalogue, donc le caissier saisit un prix dans l'UI (`PosPage._promptManualPrice`), transmis en `SaleItemDto.unitPrice` ; le serveur l'exige dans ce cas (`BadRequestException` sinon) et l'ignore pour tout autre produit — le client ne devient jamais source de vérité sur le prix d'un produit à prix fixe, défense en profondeur cohérente avec le reste de l'application (CLAUDE.md, « le client n'est jamais une source de confiance »).
 2. Vérifie le stock disponible pour chaque ligne *avant* d'ouvrir une transaction (échoue vite, sans effet de bord).
 3. Calcule les totaux et valide le paiement (fonctions pures ci-dessus).
 4. Si un paiement `credit` est présent, vérifie le plafond de crédit du client *avant* la transaction.
@@ -41,6 +41,6 @@ Une vente n'est **jamais supprimée**, seulement marquée `voidedAt` (colonne aj
 ## Vérifications effectuées
 
 - `pos-math.ts`/`credit-math.ts` : **testés en conditions réelles** (fonctions pures, sans mock) — 19 tests (totaux de panier, remises, validation de paiement, plafond de crédit, remboursement).
-- `SalesService` : testé avec Prisma mocké — refus avant transaction (stock insuffisant, paiement invalide, crédit sans client, plafond dépassé), vente cash complète (stock décrémenté, mouvement `sale` créé), vente à crédit (solde client mis à jour, `Credit` créé), remboursement (restock, `voidedAt`, réversion du crédit).
+- `SalesService` : testé avec Prisma mocké — refus avant transaction (stock insuffisant, paiement invalide, crédit sans client, plafond dépassé), vente cash complète (stock décrémenté, mouvement `sale` créé), vente à crédit (solde client mis à jour, `Credit` créé), remboursement (restock, `voidedAt`, réversion du crédit), produit à prix variable (refus sans `unitPrice`, prix saisi repris dans les totaux et le `SaleItem`, `unitPrice` client ignoré pour un produit à prix fixe).
 - UI Flutter : un vrai bug de dépassement visuel (`RenderFlex overflowed`) a été détecté par les tests widget sur le sélecteur de méthode de paiement et corrigé (`isExpanded: true`) — pas seulement un souci de test, un défaut réel qui aurait été visible à l'écran. 3 tests sur le dialogue de paiement (activation du bouton, paiement mixte, suppression d'une ligne).
 - **Non vérifié en conditions réelles** : round-trip HTTP complet — même limitation `DATABASE_URL` que les phases précédentes.

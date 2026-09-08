@@ -30,6 +30,18 @@ GET    /establishments/:establishmentId/products/:productId/images/:imageId/url?
 
 UI Flutter ([lib/catalog/catalog_page.dart](../../apps/web/flutter/lib/catalog/catalog_page.dart)) : bouton de suppression sur chaque vignette produit (confirmation, puis message adapté selon `softDeleted`), et un dialogue « Gérer les catégories » (icône dans l'AppBar) listant les catégories avec un bouton de suppression chacune.
 
+## Sous-modules par catégorie et catégories à prix variable (2026-09-08)
+
+Le Catalogue affiche désormais une grille de sous-modules — un par catégorie, plus « Sans catégorie » s'il existe des produits sans catégorie — plutôt qu'une liste plate de tous les produits ; un tap ouvre la liste des produits de cette catégorie (UI Flutter : [lib/catalog/catalog_page.dart](../../apps/web/flutter/lib/catalog/catalog_page.dart), `_buildCategoryGrid`/`_buildProductGrid`).
+
+`Category.hasVariablePricing` (migration `20260908220000_add_category_variable_pricing.sql`) marque une catégorie sans prix fixe — décision explicite de l'utilisateur (2026-09-08), initialement pour Poulets, Poissons, Plats africains, mais la liste des catégories reste ouverte : n'importe quelle catégorie peut être basculée en « Prix variable » via la case à cocher du dialogue de création/édition de catégorie (« Gérer les catégories »). Pour un produit dont la catégorie a `hasVariablePricing = true` :
+
+- **Catalogue** : `ProductsService.create`/`update` ignorent silencieusement tout `purchasePrice`/`salePrice` envoyé par le client et les forcent à `null` — jamais de prix fixe stocké. `Product.salePrice` est donc désormais nullable (`UpdateProductDto`/`CreateProductDto` en tiennent compte : `salePrice` optionnel, mais requis côté service si la catégorie n'est *pas* à prix variable, avec `BadRequestException` sinon). Le formulaire Flutter ([lib/catalog/product_form_page.dart](../../apps/web/flutter/lib/catalog/product_form_page.dart)) masque les champs de prix pour ces catégories et affiche une note explicative à la place.
+- **Caisse** : le prix de vente se saisit à chaque vente (voir `docs/api/pos.md`), jamais fixé dans le catalogue.
+- **Achat** : pas de prix d'achat par produit — le coût correspond à la dépense journalière « Marché » du module Dépenses (voir `docs/api/expenses.md`), qui compte déjà dans le calcul du bénéfice net comme toute autre dépense.
+- **Additions de table** : `OrdersService.addItem` rejette (400) l'ajout d'un produit à prix variable — cette UI ne propose pas encore de saisie de prix (contrairement à la Caisse) ; ces produits doivent être vendus depuis la Caisse pour l'instant.
+- **Rapports** (`docs/api/reports.md`) : `purchasePrice` nul contribue 0 au coût des marchandises vendues (cogs) par produit — cohérent avec le fait que le coût réel est capté au niveau agrégé via la dépense « Marché », pas par produit.
+
 ## Isolation multi-tenant côté NestJS
 
 Prisma se connecte directement à Postgres via `DATABASE_URL` (rôle propriétaire de la base) — **il contourne RLS**, contrairement à un appel PostgREST anon/authenticated. `PermissionsGuard` vérifie l'appartenance à l'établissement, mais chaque requête Prisma des services `CategoriesService`/`ProductsService`/`ProductImagesService` filtre *explicitement* par `establishmentId` — ce n'est jamais automatique à cette couche. `ProductsService` vérifie en plus qu'un `categoryId`/`supplierId` fourni appartient bien au même établissement avant de l'associer à un produit (protection contre le rattachement croisé entre établissements).

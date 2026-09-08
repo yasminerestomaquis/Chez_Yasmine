@@ -29,6 +29,10 @@ export class ProductsService {
 
   async create(establishmentId: string, dto: CreateProductDto) {
     await this.assertReferencesBelongToEstablishment(establishmentId, dto.categoryId, dto.supplierId);
+    const hasVariablePricing = await this.categoryHasVariablePricing(establishmentId, dto.categoryId);
+    if (!hasVariablePricing && dto.salePrice == null) {
+      throw new BadRequestException('Le prix de vente est requis pour cette catégorie');
+    }
     return this.prisma.product.create({
       data: {
         establishmentId,
@@ -40,8 +44,12 @@ export class ProductsService {
         barcode: dto.barcode,
         qrCode: dto.qrCode,
         unit: dto.unit,
-        purchasePrice: dto.purchasePrice,
-        salePrice: dto.salePrice,
+        // Catégorie à prix variable (ex. Poulets/Poissons/Plats africains) :
+        // jamais de prix d'achat/de vente dans le catalogue, quoi qu'envoie
+        // le client — prix de vente saisi en caisse, achat suivi via la
+        // dépense "Marché" (voir docs/api/catalog.md).
+        purchasePrice: hasVariablePricing ? null : dto.purchasePrice,
+        salePrice: hasVariablePricing ? null : dto.salePrice,
         vatRate: dto.vatRate,
         minStock: dto.minStock,
         stockQuantity: dto.stockQuantity ?? 0,
@@ -51,10 +59,28 @@ export class ProductsService {
   }
 
   async update(establishmentId: string, productId: string, dto: UpdateProductDto) {
+    const existing = await this.prisma.product.findFirst({ where: { id: productId, establishmentId } });
+    if (!existing) {
+      throw new NotFoundException('Produit introuvable pour cet établissement');
+    }
     await this.assertReferencesBelongToEstablishment(establishmentId, dto.categoryId, dto.supplierId);
+    const effectiveCategoryId = dto.categoryId !== undefined ? dto.categoryId : existing.categoryId;
+    const hasVariablePricing = await this.categoryHasVariablePricing(establishmentId, effectiveCategoryId);
+
+    const data: Prisma.ProductUpdateManyMutationInput = { ...dto };
+    if (hasVariablePricing) {
+      data.purchasePrice = null;
+      data.salePrice = null;
+    } else {
+      const nextSalePrice = dto.salePrice !== undefined ? dto.salePrice : existing.salePrice?.toNumber();
+      if (nextSalePrice == null) {
+        throw new BadRequestException('Le prix de vente est requis pour cette catégorie');
+      }
+    }
+
     const { count } = await this.prisma.product.updateMany({
       where: { id: productId, establishmentId },
-      data: dto,
+      data,
     });
     if (count === 0) {
       throw new NotFoundException('Produit introuvable pour cet établissement');
@@ -91,6 +117,12 @@ export class ProductsService {
       }
       throw error;
     }
+  }
+
+  private async categoryHasVariablePricing(establishmentId: string, categoryId?: string | null): Promise<boolean> {
+    if (!categoryId) return false;
+    const category = await this.prisma.category.findFirst({ where: { id: categoryId, establishmentId } });
+    return category?.hasVariablePricing ?? false;
   }
 
   private async assertReferencesBelongToEstablishment(

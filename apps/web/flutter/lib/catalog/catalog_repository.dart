@@ -17,8 +17,19 @@ class CatalogRepository {
     return json.map((e) => Category.fromJson(e as Map<String, dynamic>)).toList();
   }
 
-  Future<Category> createCategory(String name) async {
-    final json = await _api.post('$_base/categories', body: {'name': name}) as Map<String, dynamic>;
+  Future<Category> createCategory(String name, {bool hasVariablePricing = false}) async {
+    final json = await _api.post('$_base/categories', body: {
+      'name': name,
+      'hasVariablePricing': hasVariablePricing,
+    }) as Map<String, dynamic>;
+    return Category.fromJson(json);
+  }
+
+  Future<Category> updateCategory(String categoryId, {String? name, bool? hasVariablePricing}) async {
+    final json = await _api.patch('$_base/categories/$categoryId', body: {
+      'name': ?name,
+      'hasVariablePricing': ?hasVariablePricing,
+    }) as Map<String, dynamic>;
     return Category.fromJson(json);
   }
 

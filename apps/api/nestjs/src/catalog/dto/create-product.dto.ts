@@ -38,9 +38,11 @@ export class CreateProductDto {
   @Min(0)
   purchasePrice?: number;
 
+  /** Optionnel : nul quand la catégorie a hasVariablePricing = true — voir ProductsService.create. */
+  @IsOptional()
   @IsNumber()
   @Min(0)
-  salePrice!: number;
+  salePrice?: number;
 
   @IsOptional()
   @IsNumber()

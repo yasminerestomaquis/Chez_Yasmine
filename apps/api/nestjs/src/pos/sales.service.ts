@@ -38,9 +38,21 @@ export class SalesService {
       }
     }
 
-    const lines: CartLine[] = dto.items.map((item) => ({
+    // Un produit à prix fixe ignore tout unitPrice envoyé par le client (le
+    // serveur reste seul juge du prix) ; un produit à prix variable (aucun
+    // salePrice en catalogue) exige que le caissier l'ait saisi en caisse.
+    const unitPriceByItemIndex = dto.items.map((item) => {
+      const product = productById.get(item.productId)!;
+      if (product.salePrice != null) return product.salePrice.toNumber();
+      if (item.unitPrice == null) {
+        throw new BadRequestException(`Prix de vente requis pour ${product.name} (catégorie à prix variable)`);
+      }
+      return item.unitPrice;
+    });
+
+    const lines: CartLine[] = dto.items.map((item, index) => ({
       productId: item.productId,
-      unitPrice: productById.get(item.productId)!.salePrice.toNumber(),
+      unitPrice: unitPriceByItemIndex[index],
       quantity: item.quantity,
     }));
 
@@ -106,11 +118,11 @@ export class SalesService {
           total: totals.total,
           createdBy: userId,
           items: {
-            create: dto.items.map((item) => ({
+            create: dto.items.map((item, index) => ({
               productId: item.productId,
               name: productById.get(item.productId)!.name,
               quantity: item.quantity,
-              unitPrice: productById.get(item.productId)!.salePrice,
+              unitPrice: unitPriceByItemIndex[index],
             })),
           },
           payments: { create: dto.payments.map((p) => ({ method: p.method, amount: p.amount })) },

@@ -38,10 +38,12 @@ class _OrderDetailPageState extends State<OrderDetailPage> {
       builder: (_) => SimpleDialog(
         title: const Text('Ajouter un produit'),
         children: [
-          for (final product in products.where((p) => p.status == 'active'))
+          // Catégorie à prix variable (ex. Poulets/Poissons/Plats africains) :
+          // pas encore de saisie de prix ici — à ajouter depuis la Caisse.
+          for (final product in products.where((p) => p.status == 'active' && p.salePrice != null))
             SimpleDialogOption(
               onPressed: () => Navigator.of(context).pop(product),
-              child: Text('${product.name} — ${product.salePrice.toStringAsFixed(0)} FCFA'),
+              child: Text('${product.name} — ${product.salePrice!.toStringAsFixed(0)} FCFA'),
             ),
         ],
       ),

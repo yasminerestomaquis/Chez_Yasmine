@@ -19,6 +19,8 @@ class _CatalogPageState extends State<CatalogPage> {
   late Future<void> _future;
   List<Category> _categories = [];
   List<Product> _products = [];
+  Category? _selectedCategory;
+  bool _showUncategorized = false;
 
   @override
   void initState() {
@@ -36,21 +38,10 @@ class _CatalogPageState extends State<CatalogPage> {
   void _reload() => setState(() => _future = _load());
 
   Future<void> _addCategory() async {
-    final controller = TextEditingController();
-    final name = await showDialog<String>(
-      context: context,
-      builder: (context) => AlertDialog(
-        title: const Text('Nouvelle catégorie'),
-        content: TextField(controller: controller, decoration: const InputDecoration(labelText: 'Nom')),
-        actions: [
-          TextButton(onPressed: () => Navigator.of(context).pop(), child: const Text('Annuler')),
-          FilledButton(onPressed: () => Navigator.of(context).pop(controller.text.trim()), child: const Text('Créer')),
-        ],
-      ),
-    );
-    if (name == null || name.isEmpty) return;
+    final result = await _showCategoryDialog(title: 'Nouvelle catégorie');
+    if (result == null) return;
     try {
-      await _repository.createCategory(name);
+      await _repository.createCategory(result.name, hasVariablePricing: result.hasVariablePricing);
       _reload();
     } on ApiException catch (e) {
       if (!mounted) return;
@@ -58,10 +49,79 @@ class _CatalogPageState extends State<CatalogPage> {
     }
   }
 
-  Future<void> _openProductForm({required List<Category> categories, Product? existing}) async {
+  Future<void> _editCategory(BuildContext dialogContext, Category category, StateSetter setDialogState) async {
+    final result = await _showCategoryDialog(
+      title: 'Modifier la catégorie',
+      initialName: category.name,
+      initialHasVariablePricing: category.hasVariablePricing,
+    );
+    if (result == null) return;
+    try {
+      final updated = await _repository.updateCategory(
+        category.id,
+        name: result.name,
+        hasVariablePricing: result.hasVariablePricing,
+      );
+      _categories = [for (final c in _categories) if (c.id == category.id) updated else c];
+      setDialogState(() {});
+      _reload();
+    } on ApiException catch (e) {
+      if (!dialogContext.mounted) return;
+      ScaffoldMessenger.of(dialogContext).showSnackBar(SnackBar(content: Text(e.message)));
+    }
+  }
+
+  Future<_CategoryFormResult?> _showCategoryDialog({
+    required String title,
+    String? initialName,
+    bool initialHasVariablePricing = false,
+  }) {
+    final controller = TextEditingController(text: initialName ?? '');
+    var hasVariablePricing = initialHasVariablePricing;
+    return showDialog<_CategoryFormResult>(
+      context: context,
+      builder: (context) => StatefulBuilder(
+        builder: (context, setState) => AlertDialog(
+          title: Text(title),
+          content: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              TextField(controller: controller, autofocus: true, decoration: const InputDecoration(labelText: 'Nom')),
+              CheckboxListTile(
+                contentPadding: EdgeInsets.zero,
+                controlAffinity: ListTileControlAffinity.leading,
+                value: hasVariablePricing,
+                onChanged: (v) => setState(() => hasVariablePricing = v ?? false),
+                title: const Text('Prix variable'),
+                subtitle: const Text('Pas de prix fixe : saisi en caisse à chaque vente (ex. Poulets, Poissons, Plats africains).'),
+              ),
+            ],
+          ),
+          actions: [
+            TextButton(onPressed: () => Navigator.of(context).pop(), child: const Text('Annuler')),
+            FilledButton(
+              onPressed: () {
+                final name = controller.text.trim();
+                if (name.isEmpty) return;
+                Navigator.of(context).pop(_CategoryFormResult(name: name, hasVariablePricing: hasVariablePricing));
+              },
+              child: const Text('Valider'),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
+  Future<void> _openProductForm({required List<Category> categories, Product? existing, String? initialCategoryId}) async {
     final saved = await Navigator.of(context).push<bool>(
       MaterialPageRoute(
-        builder: (_) => ProductFormPage(repository: _repository, categories: categories, existing: existing),
+        builder: (_) => ProductFormPage(
+          repository: _repository,
+          categories: categories,
+          existing: existing,
+          initialCategoryId: initialCategoryId,
+        ),
       ),
     );
     if (saved == true) _reload();
@@ -140,6 +200,8 @@ class _CatalogPageState extends State<CatalogPage> {
                         for (final category in _categories)
                           ListTile(
                             title: Text(category.name),
+                            subtitle: category.hasVariablePricing ? const Text('Prix variable') : null,
+                            onTap: () => _editCategory(dialogContext, category, setDialogState),
                             trailing: IconButton(
                               tooltip: 'Supprimer',
                               icon: const Icon(Icons.delete_outline),
@@ -156,11 +218,26 @@ class _CatalogPageState extends State<CatalogPage> {
     );
   }
 
+  bool get _inCategoryView => _selectedCategory != null || _showUncategorized;
+
+  void _openCategory(Category? category, {bool uncategorized = false}) {
+    setState(() {
+      _selectedCategory = category;
+      _showUncategorized = uncategorized;
+    });
+  }
+
+  void _backToCategories() => setState(() {
+        _selectedCategory = null;
+        _showUncategorized = false;
+      });
+
   @override
   Widget build(BuildContext context) {
     return Scaffold(
       appBar: AppBar(
-        title: const Text('Catalogue'),
+        leading: _inCategoryView ? BackButton(onPressed: _backToCategories) : null,
+        title: Text(_selectedCategory?.name ?? (_showUncategorized ? 'Sans catégorie' : 'Catalogue')),
         actions: [
           IconButton(onPressed: _manageCategories, icon: const Icon(Icons.category_outlined), tooltip: 'Gérer les catégories'),
           IconButton(onPressed: _addCategory, icon: const Icon(Icons.add), tooltip: 'Nouvelle catégorie'),
@@ -191,32 +268,117 @@ class _CatalogPageState extends State<CatalogPage> {
             );
           }
 
-          if (_products.isEmpty) {
+          if (_products.isEmpty && _categories.isEmpty) {
             return const Center(child: Text('Aucun produit — ajoutez-en un avec le bouton +'));
           }
 
-          return GridView.builder(
-            padding: const EdgeInsets.all(12),
-            gridDelegate: const SliverGridDelegateWithMaxCrossAxisExtent(maxCrossAxisExtent: 220, mainAxisExtent: 240),
-            itemCount: _products.length,
-            itemBuilder: (context, index) {
-              final product = _products[index];
-              return _ProductCard(
-                product: product,
-                repository: _repository,
-                onTap: () => _openProductForm(categories: _categories, existing: product),
-                onDelete: () => _deleteProduct(product),
-              );
-            },
-          );
+          if (!_inCategoryView) {
+            return _buildCategoryGrid();
+          }
+
+          final products = _selectedCategory != null
+              ? _products.where((p) => p.categoryId == _selectedCategory!.id).toList()
+              : _products.where((p) => p.categoryId == null).toList();
+
+          if (products.isEmpty) {
+            return const Center(child: Text('Aucun produit dans cette catégorie — ajoutez-en un avec le bouton +'));
+          }
+
+          return _buildProductGrid(products);
         },
       ),
       floatingActionButton: FloatingActionButton(
-        onPressed: () => _openProductForm(categories: _categories),
+        onPressed: () => _openProductForm(categories: _categories, initialCategoryId: _selectedCategory?.id),
         child: const Icon(Icons.add),
       ),
     );
   }
+
+  Widget _buildCategoryGrid() {
+    final uncategorizedCount = _products.where((p) => p.categoryId == null).length;
+    return GridView.builder(
+      padding: const EdgeInsets.all(12),
+      gridDelegate: const SliverGridDelegateWithMaxCrossAxisExtent(maxCrossAxisExtent: 220, mainAxisExtent: 100),
+      itemCount: _categories.length + (uncategorizedCount > 0 ? 1 : 0),
+      itemBuilder: (context, index) {
+        if (index < _categories.length) {
+          final category = _categories[index];
+          final count = _products.where((p) => p.categoryId == category.id).length;
+          return _CategoryTile(
+            name: category.name,
+            count: count,
+            hasVariablePricing: category.hasVariablePricing,
+            onTap: () => _openCategory(category),
+          );
+        }
+        return _CategoryTile(
+          name: 'Sans catégorie',
+          count: uncategorizedCount,
+          hasVariablePricing: false,
+          onTap: () => _openCategory(null, uncategorized: true),
+        );
+      },
+    );
+  }
+
+  Widget _buildProductGrid(List<Product> products) {
+    return GridView.builder(
+      padding: const EdgeInsets.all(12),
+      gridDelegate: const SliverGridDelegateWithMaxCrossAxisExtent(maxCrossAxisExtent: 220, mainAxisExtent: 240),
+      itemCount: products.length,
+      itemBuilder: (context, index) {
+        final product = products[index];
+        return _ProductCard(
+          product: product,
+          repository: _repository,
+          onTap: () => _openProductForm(categories: _categories, existing: product),
+          onDelete: () => _deleteProduct(product),
+        );
+      },
+    );
+  }
+}
+
+class _CategoryTile extends StatelessWidget {
+  const _CategoryTile({required this.name, required this.count, required this.hasVariablePricing, required this.onTap});
+
+  final String name;
+  final int count;
+  final bool hasVariablePricing;
+  final VoidCallback onTap;
+
+  @override
+  Widget build(BuildContext context) {
+    return Card(
+      clipBehavior: Clip.antiAlias,
+      child: InkWell(
+        onTap: onTap,
+        child: Padding(
+          padding: const EdgeInsets.all(12),
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            mainAxisAlignment: MainAxisAlignment.center,
+            children: [
+              Text(name, maxLines: 1, overflow: TextOverflow.ellipsis, style: const TextStyle(fontWeight: FontWeight.w600, fontSize: 16)),
+              const SizedBox(height: 4),
+              Text('$count produit${count > 1 ? 's' : ''}'),
+              if (hasVariablePricing) ...[
+                const SizedBox(height: 4),
+                const Text('Prix variable', style: TextStyle(fontStyle: FontStyle.italic)),
+              ],
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+}
+
+class _CategoryFormResult {
+  const _CategoryFormResult({required this.name, required this.hasVariablePricing});
+
+  final String name;
+  final bool hasVariablePricing;
 }
 
 class _ProductCard extends StatelessWidget {
@@ -274,7 +436,7 @@ class _ProductCard extends StatelessWidget {
                 mainAxisSize: MainAxisSize.min,
                 children: [
                   Text(product.name, maxLines: 1, overflow: TextOverflow.ellipsis, style: const TextStyle(fontWeight: FontWeight.w600)),
-                  Text('${product.salePrice.toStringAsFixed(0)} FCFA'),
+                  Text(product.salePrice != null ? '${product.salePrice!.toStringAsFixed(0)} FCFA' : 'Prix variable'),
                 ],
               ),
             ),

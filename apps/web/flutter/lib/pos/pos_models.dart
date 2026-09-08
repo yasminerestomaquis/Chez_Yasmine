@@ -2,12 +2,16 @@ import '../catalog/models.dart';
 
 /// A line in the cart being built at the register — not yet a Sale.
 class CartLine {
-  CartLine({required this.product, required this.quantity});
+  CartLine({required this.product, required this.quantity, this.manualUnitPrice});
 
   final Product product;
   int quantity;
+  /// Saisi par le caissier pour un produit à prix variable (`product.salePrice`
+  /// nul, ex. Poulets/Poissons/Plats africains) — voir `PosPage._addToCart`.
+  final double? manualUnitPrice;
 
-  double get lineTotal => product.salePrice * quantity;
+  double get unitPrice => manualUnitPrice ?? product.salePrice ?? 0;
+  double get lineTotal => unitPrice * quantity;
 }
 
 class SaleItemResult {

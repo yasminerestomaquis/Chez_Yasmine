@@ -52,7 +52,17 @@ class _PosPageState extends State<PosPage> {
 
   double get _subtotal => _cart.fold(0, (sum, line) => sum + line.lineTotal);
 
-  void _addToCart(Product product) {
+  Future<void> _addToCart(Product product) async {
+    // Catégorie à prix variable (ex. Poulets/Poissons/Plats africains) :
+    // aucun prix par défaut à proposer — le caissier le saisit à chaque
+    // ajout, une ligne distincte par prix saisi (deux pièces de poulet
+    // peuvent valoir des prix différents le même jour).
+    if (product.salePrice == null) {
+      final price = await _promptManualPrice(product);
+      if (price == null) return;
+      setState(() => _cart.add(CartLine(product: product, quantity: 1, manualUnitPrice: price)));
+      return;
+    }
     setState(() {
       final existing = _cart.where((l) => l.product.id == product.id).firstOrNull;
       if (existing != null) {
@@ -61,6 +71,37 @@ class _PosPageState extends State<PosPage> {
         _cart.add(CartLine(product: product, quantity: 1));
       }
     });
+  }
+
+  Future<double?> _promptManualPrice(Product product) async {
+    final controller = TextEditingController();
+    return showDialog<double>(
+      context: context,
+      builder: (context) => AlertDialog(
+        title: Text('Prix de vente — ${product.name}'),
+        content: TextField(
+          controller: controller,
+          autofocus: true,
+          keyboardType: const TextInputType.numberWithOptions(decimal: true),
+          decoration: const InputDecoration(labelText: 'Prix (FCFA)'),
+          onSubmitted: (_) {
+            final value = double.tryParse(controller.text.trim().replaceAll(',', '.'));
+            if (value != null && value > 0) Navigator.of(context).pop(value);
+          },
+        ),
+        actions: [
+          TextButton(onPressed: () => Navigator.of(context).pop(), child: const Text('Annuler')),
+          FilledButton(
+            onPressed: () {
+              final value = double.tryParse(controller.text.trim().replaceAll(',', '.'));
+              if (value == null || value <= 0) return;
+              Navigator.of(context).pop(value);
+            },
+            child: const Text('Ajouter'),
+          ),
+        ],
+      ),
+    );
   }
 
   void _changeQuantity(CartLine line, int delta) {
@@ -77,7 +118,13 @@ class _PosPageState extends State<PosPage> {
     if (outcome == null) return;
 
     final saleId = const Uuid().v4();
-    final items = _cart.map((l) => {'productId': l.product.id, 'quantity': l.quantity}).toList();
+    final items = _cart
+        .map((l) => {
+              'productId': l.product.id,
+              'quantity': l.quantity,
+              if (l.manualUnitPrice != null) 'unitPrice': l.manualUnitPrice,
+            })
+        .toList();
     final payments = outcome.lines.map((p) => {'method': p.method, 'amount': p.amount}).toList();
 
     setState(() => _isCharging = true);
@@ -193,7 +240,7 @@ class _PosPageState extends State<PosPage> {
                                   children: [
                                     Text(product.name, maxLines: 2, overflow: TextOverflow.ellipsis, textAlign: TextAlign.center),
                                     const SizedBox(height: 4),
-                                    Text('${product.salePrice.toStringAsFixed(0)} FCFA'),
+                                    Text(product.salePrice != null ? '${product.salePrice!.toStringAsFixed(0)} FCFA' : 'Prix variable'),
                                   ],
                                 ),
                               ),
@@ -218,7 +265,7 @@ class _PosPageState extends State<PosPage> {
                                 for (final line in _cart)
                                   ListTile(
                                     title: Text(line.product.name),
-                                    subtitle: Text('${line.product.salePrice.toStringAsFixed(0)} FCFA x ${line.quantity}'),
+                                    subtitle: Text('${line.unitPrice.toStringAsFixed(0)} FCFA x ${line.quantity}'),
                                     trailing: Row(
                                       mainAxisSize: MainAxisSize.min,
                                       children: [

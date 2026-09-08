@@ -15,18 +15,28 @@ void main() {
   });
 
   final repository = CatalogRepository(ApiClient(), 'establishment-1');
-  final categories = [Category(id: 'cat-1', name: 'Boissons')];
+  final categories = [
+    Category(id: 'cat-1', name: 'Boissons'),
+    Category(id: 'cat-2', name: 'Poulets', hasVariablePricing: true),
+  ];
 
   // The form is a long ListView — a tall test viewport avoids relying on
   // scrolling to reach fields further down, since ListView only builds
   // what's visible.
-  Future<void> pumpForm(WidgetTester tester, {Product? existing}) async {
+  Future<void> pumpForm(WidgetTester tester, {Product? existing, String? initialCategoryId}) async {
     tester.view.physicalSize = const Size(800, 3000);
     tester.view.devicePixelRatio = 1;
     addTearDown(tester.view.resetPhysicalSize);
     addTearDown(tester.view.resetDevicePixelRatio);
     await tester.pumpWidget(
-      MaterialApp(home: ProductFormPage(repository: repository, categories: categories, existing: existing)),
+      MaterialApp(
+        home: ProductFormPage(
+          repository: repository,
+          categories: categories,
+          existing: existing,
+          initialCategoryId: initialCategoryId,
+        ),
+      ),
     );
   }
 
@@ -70,5 +80,29 @@ void main() {
     expect(find.text('Bière 65cl'), findsOneWidget);
     expect(find.text('Enregistrer'), findsOneWidget);
     expect(find.text('Stock initial'), findsNothing);
+  });
+
+  testWidgets('a variable-pricing category hides the purchase/sale price fields', (tester) async {
+    await pumpForm(tester, initialCategoryId: 'cat-2');
+
+    expect(find.text("Prix d'achat"), findsNothing);
+    expect(find.text('Prix de vente (FCFA) *'), findsNothing);
+    expect(find.textContaining('Catégorie à prix variable'), findsOneWidget);
+  });
+
+  testWidgets('switching to a variable-pricing category no longer requires a sale price to submit', (tester) async {
+    await pumpForm(tester);
+
+    await tester.enterText(find.widgetWithText(TextFormField, 'Nom *'), 'Poulet braisé');
+    await tester.tap(find.byType(DropdownButtonFormField<String>));
+    await tester.pumpAndSettle();
+    await tester.tap(find.text('Poulets').last);
+    await tester.pumpAndSettle();
+
+    expect(find.text('Prix de vente (FCFA) *'), findsNothing);
+    await tester.tap(find.text('Créer le produit'));
+    await tester.pump();
+
+    expect(find.text('Requis'), findsNothing);
   });
 }

@@ -10,6 +10,9 @@ const List<String> kPredefinedExpenseCategories = [
   'Entretien',
   'Bouteilles de gaz',
   'Charbon',
+  // Achat journalier (marché) des produits à prix variable du Catalogue
+  // (ex. Poulets, Poissons, Plats africains) — voir docs/api/catalog.md.
+  'Marché',
 ];
 
 /// 'one_off' | 'recurring' — étiquette informative uniquement (voir

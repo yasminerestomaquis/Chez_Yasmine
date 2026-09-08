@@ -81,6 +81,16 @@ describe('OrdersService.addItem', () => {
       data: { orderId: 'order-1', productId: 'p1', quantity: 2, unitPrice: new Decimal(1500) },
     });
   });
+
+  it('rejects a variable-pricing product (ex. Poulets, Poissons, Plats africains) — no price entry here yet', async () => {
+    (prisma.order as any).findFirst.mockResolvedValue({ id: 'order-1', status: 'open' });
+    (prisma.product as any).findFirst.mockResolvedValue({ id: 'p1', name: 'Poulet braisé', salePrice: null });
+
+    await expect(service.addItem('est-1', 'order-1', { productId: 'p1', quantity: 1 })).rejects.toBeInstanceOf(
+      BadRequestException,
+    );
+    expect(prisma.orderItem.create).not.toHaveBeenCalled();
+  });
 });
 
 describe('OrdersService.transfer', () => {
