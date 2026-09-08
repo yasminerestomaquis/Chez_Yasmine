@@ -226,26 +226,11 @@ class _PosPageState extends State<PosPage> {
                     Expanded(
                       child: GridView.builder(
                         padding: const EdgeInsets.all(8),
-                        gridDelegate: const SliverGridDelegateWithMaxCrossAxisExtent(maxCrossAxisExtent: 160, mainAxisExtent: 110),
+                        gridDelegate: const SliverGridDelegateWithMaxCrossAxisExtent(maxCrossAxisExtent: 160, mainAxisExtent: 150),
                         itemCount: products.length,
                         itemBuilder: (context, index) {
                           final product = products[index];
-                          return Card(
-                            child: InkWell(
-                              onTap: () => _addToCart(product),
-                              child: Padding(
-                                padding: const EdgeInsets.all(8),
-                                child: Column(
-                                  mainAxisAlignment: MainAxisAlignment.center,
-                                  children: [
-                                    Text(product.name, maxLines: 2, overflow: TextOverflow.ellipsis, textAlign: TextAlign.center),
-                                    const SizedBox(height: 4),
-                                    Text(product.salePrice != null ? '${product.salePrice!.toStringAsFixed(0)} FCFA' : 'Prix variable'),
-                                  ],
-                                ),
-                              ),
-                            ),
-                          );
+                          return _PosProductTile(product: product, repository: _catalog, onTap: () => _addToCart(product));
                         },
                       ),
                     ),
@@ -308,6 +293,55 @@ class _PosPageState extends State<PosPage> {
             ),
           ),
         ],
+      ),
+    );
+  }
+}
+
+class _PosProductTile extends StatelessWidget {
+  const _PosProductTile({required this.product, required this.repository, required this.onTap});
+
+  final Product product;
+  final CatalogRepository repository;
+  final VoidCallback onTap;
+
+  @override
+  Widget build(BuildContext context) {
+    final primaryImage = product.images.where((i) => i.isPrimary).firstOrNull ?? product.images.firstOrNull;
+
+    return Card(
+      clipBehavior: Clip.antiAlias,
+      child: InkWell(
+        onTap: onTap,
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.stretch,
+          children: [
+            Expanded(
+              child: primaryImage == null
+                  ? const ColoredBox(color: Color(0x11000000), child: Icon(Icons.local_drink_outlined, size: 28))
+                  : FutureBuilder<String>(
+                      future: repository.getImageUrl(product.id, primaryImage.id, variant: 'thumbnail'),
+                      builder: (context, snapshot) {
+                        if (!snapshot.hasData) return const ColoredBox(color: Color(0x11000000));
+                        return ColoredBox(
+                          color: const Color(0x11000000),
+                          child: Image.network(snapshot.data!, fit: BoxFit.contain),
+                        );
+                      },
+                    ),
+            ),
+            Padding(
+              padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 4),
+              child: Column(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  Text(product.name, maxLines: 1, overflow: TextOverflow.ellipsis, textAlign: TextAlign.center),
+                  Text(product.salePrice != null ? '${product.salePrice!.toStringAsFixed(0)} FCFA' : 'Prix variable'),
+                ],
+              ),
+            ),
+          ],
+        ),
       ),
     );
   }
