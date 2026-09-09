@@ -33,6 +33,14 @@ Le service d'e-mail gratuit et partagé de Supabase a un quota très bas (`email
 
 Le lien est copié dans le presse-papiers côté Flutter (`Clipboard.setData`) — **jamais envoyé par le serveur à la place de l'appelant** : c'est le Propriétaire/Gérant qui le transmet lui-même par le canal de son choix (WhatsApp, SMS, son propre e-mail...), cohérent avec le principe que Claude ne crée ni n'envoie jamais un compte/message à un tiers en autonomie.
 
+## Après le clic sur le lien : `needs_password_setup` et `SetPasswordPage`
+
+Un lien d'invitation (envoyé par e-mail ou copié) connecte directement la personne à l'application — c'est le fonctionnement standard des liens magiques Supabase — mais elle n'a encore jamais choisi de mot de passe : sans rien de plus, elle n'aurait aucun moyen de se reconnecter une fois cette première session expirée.
+
+`UsersService.inviteMetadata` pose `needs_password_setup: true` dans les métadonnées de l'invitation (en plus de `invited_establishment_id`/`invited_role_id`, ci-dessus). `AuthGate` ([lib/auth/auth_gate.dart](../../apps/web/flutter/lib/auth/auth_gate.dart)) le lit sur `currentUser.userMetadata` : tant que ce drapeau vaut `true`, il affiche `SetPasswordPage` ([lib/auth/set_password_page.dart](../../apps/web/flutter/lib/auth/set_password_page.dart)) à la place de l'application. Ce formulaire (mot de passe + confirmation, 6 caractères minimum, même règle que `SignUpPage`) appelle `Supabase.instance.client.auth.updateUser(UserAttributes(password: ..., data: {'needs_password_setup': false}))` — l'événement `onAuthStateChange` qui en résulte fait automatiquement réévaluer `AuthGate`, qui bascule alors vers l'application normale, sans navigation manuelle à coder.
+
+Fonctionne à l'identique pour les deux chemins d'invitation (e-mail et lien copié), puisque les deux passent par la même méthode `inviteMetadata`. N'affecte jamais l'auto-inscription normale (`SignUpPage`), qui ne pose pas ce drapeau.
+
 ## Limite connue : un e-mail déjà enregistré
 
 Si l'adresse a déjà un compte Supabase (propriétaire d'un autre établissement, par exemple), `inviteUserByEmail` échoue — rattacher un utilisateur *existant* à un établissement supplémentaire n'est pas pris en charge (`ConflictException` avec un message clair plutôt qu'un échec silencieux). À construire si le besoin se présente.
@@ -46,4 +54,4 @@ Si l'adresse a déjà un compte Supabase (propriétaire d'un autre établissemen
 - `UsersService.invite`/`generateInviteLink` : 9 tests (Prisma + `AuthorizationService` + `SupabaseAdminService` mockés) — rôle introuvable, rôle d'une autre organisation, protection anti-élévation (bloque/autorise selon les permissions, y compris réutilisée par `generateInviteLink`), invitation réussie (métadonnées correctes transmises), e-mail déjà enregistré (`ConflictException`), autre erreur Supabase (`BadRequestException`), `generateInviteLink` n'appelle jamais le chemin d'envoi d'e-mail.
 - `flutter analyze`/`flutter test`/`flutter build web` ✅.
 - **Vérifié en conditions réelles** (2026-09-09, compte de démonstration jetable, jamais le compte réel de l'utilisateur) : `POST .../users/invite` atteint bien l'API Supabase (clé `service_role` correctement configurée sur Render) — bloqué uniquement par le quota d'e-mail gratuit de Supabase (`email rate limit exceeded`), confirmant que la seule limite restante est celle documentée ci-dessus, pas un défaut de l'implémentation. Le déclencheur `handle_new_user` a été vérifié directement en base (simulation d'une ligne `auth.users` avec les métadonnées d'invitation) : l'utilisateur simulé a bien été rattaché à l'établissement existant avec le rôle choisi, **sans créer de nouvelle organisation**. Toutes les données de test ont été supprimées après vérification.
-- **Non vérifié en conditions réelles** : `POST .../users/invite-link` (ajoutée après cette vérification) et la réception effective d'un e-mail/lien par une vraie boîte de réception.
+- **Non vérifié en conditions réelles** : `POST .../users/invite-link`, `SetPasswordPage` (ajoutées après cette vérification), et la réception effective d'un e-mail/lien par une vraie boîte de réception.

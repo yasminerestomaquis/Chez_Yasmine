@@ -64,8 +64,18 @@ export class UsersService {
     return { email: dto.email, roleId: dto.roleId, roleName: role.name, link };
   }
 
-  private inviteMetadata(establishmentId: string, dto: InviteUserDto): Record<string, string> {
-    return { invited_establishment_id: establishmentId, invited_role_id: dto.roleId, full_name: dto.fullName ?? '' };
+  private inviteMetadata(establishmentId: string, dto: InviteUserDto): Record<string, string | boolean> {
+    return {
+      invited_establishment_id: establishmentId,
+      invited_role_id: dto.roleId,
+      full_name: dto.fullName ?? '',
+      // Levé par SetPasswordPage (apps/web/flutter/lib/auth/) une fois que
+      // la personne invitée a choisi un mot de passe — jusque-là, AuthGate
+      // affiche cet écran plutôt que l'application (elle est connectée via
+      // le lien à usage unique, mais n'a encore aucun moyen de se
+      // reconnecter ensuite).
+      needs_password_setup: true,
+    };
   }
 
   private translateSupabaseError(error: unknown): ConflictException | BadRequestException {

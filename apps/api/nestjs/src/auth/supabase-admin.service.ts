@@ -34,7 +34,7 @@ export class SupabaseAdminService {
    * Lève une erreur brute (message Supabase tel quel) — UsersService décide
    * du type d'exception HTTP renvoyé.
    */
-  async inviteUserByEmail(email: string, metadata: Record<string, string>): Promise<void> {
+  async inviteUserByEmail(email: string, metadata: Record<string, string | boolean>): Promise<void> {
     const { error } = await this.getClient().auth.admin.inviteUserByEmail(email, { data: metadata });
     if (error) {
       throw new Error(error.message);
@@ -49,7 +49,7 @@ export class SupabaseAdminService {
    * lui-même par le canal de son choix (jamais Claude qui l'envoie à sa
    * place).
    */
-  async generateInviteLink(email: string, metadata: Record<string, string>): Promise<string> {
+  async generateInviteLink(email: string, metadata: Record<string, string | boolean>): Promise<string> {
     const { data, error } = await this.getClient().auth.admin.generateLink({
       type: 'invite',
       email,

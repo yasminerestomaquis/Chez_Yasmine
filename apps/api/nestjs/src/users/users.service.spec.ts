@@ -76,6 +76,7 @@ describe('UsersService.invite', () => {
       invited_establishment_id: 'est-1',
       invited_role_id: 'role-x',
       full_name: '',
+      needs_password_setup: true,
     });
     expect(result).toEqual({ email: 'a@b.com', roleId: 'role-x', roleName: 'Caissier' });
   });
@@ -130,6 +131,7 @@ describe('UsersService.generateInviteLink', () => {
       invited_establishment_id: 'est-1',
       invited_role_id: 'role-x',
       full_name: '',
+      needs_password_setup: true,
     });
     expect(supabaseAdmin.inviteUserByEmail).not.toHaveBeenCalled();
     expect(result).toEqual({
