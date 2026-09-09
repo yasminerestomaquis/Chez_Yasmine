@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart' show Clipboard, ClipboardData;
+import 'package:supabase_flutter/supabase_flutter.dart';
 
 import '../api/api_client.dart';
 import 'user_models.dart';
@@ -125,6 +126,64 @@ class _UsersPageState extends State<UsersPage> {
     }
   }
 
+  String? get _currentUserId => Supabase.instance.client.auth.currentUser?.id;
+
+  Future<void> _changeRole(TeamMember member, List<RoleOption> roles) async {
+    String roleId = member.roleId;
+    final confirmed = await showDialog<bool>(
+      context: context,
+      builder: (context) => StatefulBuilder(
+        builder: (context, setDialogState) => AlertDialog(
+          title: Text('Modifier le rôle — ${member.fullName ?? member.userId}'),
+          content: DropdownButtonFormField<String>(
+            initialValue: roleId,
+            isExpanded: true,
+            decoration: const InputDecoration(labelText: 'Rôle'),
+            items: [for (final role in roles) DropdownMenuItem(value: role.id, child: Text(role.name))],
+            onChanged: (value) => setDialogState(() => roleId = value ?? roleId),
+          ),
+          actions: [
+            TextButton(onPressed: () => Navigator.of(context).pop(false), child: const Text('Annuler')),
+            FilledButton(onPressed: () => Navigator.of(context).pop(true), child: const Text('Valider')),
+          ],
+        ),
+      ),
+    );
+    if (confirmed != true) return;
+    try {
+      await _repository.changeRole(member.membershipId, roleId);
+      _reload();
+    } on ApiException catch (e) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text(e.message)));
+    }
+  }
+
+  Future<void> _removeMember(TeamMember member) async {
+    final confirmed = await showDialog<bool>(
+      context: context,
+      builder: (context) => AlertDialog(
+        title: const Text('Retirer cet utilisateur ?'),
+        content: Text(
+          '« ${member.fullName ?? member.userId} » perdra son accès à cet établissement. '
+          "Son compte n'est pas supprimé — il pourra rester utilisable sur un autre établissement.",
+        ),
+        actions: [
+          TextButton(onPressed: () => Navigator.of(context).pop(false), child: const Text('Annuler')),
+          FilledButton(onPressed: () => Navigator.of(context).pop(true), child: const Text('Retirer')),
+        ],
+      ),
+    );
+    if (confirmed != true) return;
+    try {
+      await _repository.removeMember(member.membershipId);
+      _reload();
+    } on ApiException catch (e) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text(e.message)));
+    }
+  }
+
   @override
   Widget build(BuildContext context) {
     return Scaffold(
@@ -159,7 +218,24 @@ class _UsersPageState extends State<UsersPage> {
                 ListTile(
                   leading: const Icon(Icons.person_outline),
                   title: Text(member.fullName?.isNotEmpty == true ? member.fullName! : '(nom non renseigné)'),
-                  subtitle: Text(member.roleName),
+                  subtitle: Text(member.userId == _currentUserId ? '${member.roleName} (vous)' : member.roleName),
+                  trailing: member.userId == _currentUserId
+                      ? null
+                      : Row(
+                          mainAxisSize: MainAxisSize.min,
+                          children: [
+                            IconButton(
+                              tooltip: 'Modifier le rôle',
+                              icon: const Icon(Icons.edit_outlined),
+                              onPressed: () => _changeRole(member, roles),
+                            ),
+                            IconButton(
+                              tooltip: 'Retirer',
+                              icon: const Icon(Icons.person_remove_outlined),
+                              onPressed: () => _removeMember(member),
+                            ),
+                          ],
+                        ),
                 ),
             ],
           );

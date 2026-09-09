@@ -1,9 +1,10 @@
-import { Body, Controller, Get, Param, Post, Req, UseGuards } from '@nestjs/common';
+import { Body, Controller, Delete, Get, HttpCode, HttpStatus, Param, Patch, Post, Req, UseGuards } from '@nestjs/common';
 import type { Request } from 'express';
 import { PermissionsGuard } from '../auth/permissions.guard.js';
 import { RequirePermissions } from '../auth/permissions.decorator.js';
 import { SupabaseJwtGuard } from '../auth/supabase-jwt.guard.js';
 import { InviteUserDto } from './dto/invite-user.dto.js';
+import { UpdateUserRoleDto } from './dto/update-user-role.dto.js';
 import { UsersService } from './users.service.js';
 
 @Controller('establishments/:establishmentId')
@@ -34,5 +35,25 @@ export class UsersController {
     @Body() dto: InviteUserDto,
   ) {
     return this.users.generateInviteLink(establishmentId, request.user!.sub, dto);
+  }
+
+  @Patch('users/:membershipId')
+  changeRole(
+    @Req() request: Request,
+    @Param('establishmentId') establishmentId: string,
+    @Param('membershipId') membershipId: string,
+    @Body() dto: UpdateUserRoleDto,
+  ) {
+    return this.users.changeRole(establishmentId, request.user!.sub, membershipId, dto);
+  }
+
+  @Delete('users/:membershipId')
+  @HttpCode(HttpStatus.NO_CONTENT)
+  removeMember(
+    @Req() request: Request,
+    @Param('establishmentId') establishmentId: string,
+    @Param('membershipId') membershipId: string,
+  ) {
+    return this.users.removeMember(establishmentId, request.user!.sub, membershipId);
   }
 }

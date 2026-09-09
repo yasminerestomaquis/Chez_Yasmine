@@ -35,4 +35,13 @@ class UsersRepository {
     }) as Map<String, dynamic>;
     return json['link'] as String;
   }
+
+  Future<void> changeRole(String membershipId, String roleId) {
+    return _api.patch('$_base/users/$membershipId', body: {'roleId': roleId});
+  }
+
+  /// Retire l'utilisateur de cet établissement (révoque son affectation) —
+  /// ne supprime jamais son compte Supabase, qui peut appartenir à d'autres
+  /// établissements.
+  Future<void> removeMember(String membershipId) => _api.delete('$_base/users/$membershipId');
 }

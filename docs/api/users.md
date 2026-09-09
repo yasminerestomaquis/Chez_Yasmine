@@ -5,11 +5,15 @@
 Toutes scopées par établissement, protégées par `SupabaseJwtGuard` + `PermissionsGuard` + `@RequirePermissions('users.manage')` :
 
 ```
-GET  /establishments/:establishmentId/users              liste l'équipe (nom, rôle)
-GET  /establishments/:establishmentId/roles              rôles assignables (système + propres à l'organisation)
-POST /establishments/:establishmentId/users/invite       { email, roleId, fullName? } — envoie l'e-mail Supabase
-POST /establishments/:establishmentId/users/invite-link  { email, roleId, fullName? } — renvoie { link }, aucun e-mail envoyé
+GET    /establishments/:establishmentId/users                    liste l'équipe (nom, rôle)
+GET    /establishments/:establishmentId/roles                    rôles assignables (système + propres à l'organisation)
+POST   /establishments/:establishmentId/users/invite              { email, roleId, fullName? } — envoie l'e-mail Supabase
+POST   /establishments/:establishmentId/users/invite-link         { email, roleId, fullName? } — renvoie { link }, aucun e-mail envoyé
+PATCH  /establishments/:establishmentId/users/:membershipId       { roleId } — change le rôle d'un membre déjà affecté
+DELETE /establishments/:establishmentId/users/:membershipId       retire un membre de l'établissement (ne supprime pas son compte)
 ```
+
+`:membershipId` est l'id de l'affectation (`UserEstablishmentRole.id`, renvoyé par `GET .../users`), pas l'id de l'utilisateur — un même utilisateur pourrait en théorie avoir plusieurs affectations.
 
 ## Pourquoi une invitation, pas une simple création de compte
 
@@ -41,17 +45,26 @@ Un lien d'invitation (envoyé par e-mail ou copié) connecte directement la pers
 
 Fonctionne à l'identique pour les deux chemins d'invitation (e-mail et lien copié), puisque les deux passent par la même méthode `inviteMetadata`. N'affecte jamais l'auto-inscription normale (`SignUpPage`), qui ne pose pas ce drapeau.
 
+## Retirer un membre / changer son rôle (2026-09-09)
+
+`UsersService.removeMember`/`changeRole` réutilisent la même protection anti-élévation que l'invitation (`assertCallerOutranks`, extrait de `assertRoleAssignable`), appliquée cette fois au rôle **actuel** du membre visé : impossible de retirer ou de rétrograder quelqu'un dont le rôle accorde une permission que l'appelant n'a pas lui-même — un Gérant ne peut donc pas retirer ni rétrograder un Propriétaire. `changeRole` valide en plus le **nouveau** rôle de la même façon (double vérification : ancien rôle et nouveau rôle).
+
+Trois garde-fous supplémentaires, spécifiques à ces deux opérations :
+- **Impossible de se retirer soi-même** ni de modifier son propre rôle (`BadRequestException`) — évite un verrouillage accidentel.
+- **Impossible de retirer/rétrograder le dernier membre ayant encore `users.manage`** sur l'établissement (`assertKeepsAtLeastOneUserManager`, `ConflictException`) — sans ce garde-fou, un établissement pourrait se retrouver sans personne capable d'inviter ou de gérer qui que ce soit, un état qui ne serait réparable que manuellement en base.
+- `removeMember` ne supprime **que** l'affectation (`UserEstablishmentRole`) — jamais le compte Supabase Auth lui-même, qui peut appartenir à d'autres établissements.
+
 ## Limite connue : un e-mail déjà enregistré
 
 Si l'adresse a déjà un compte Supabase (propriétaire d'un autre établissement, par exemple), `inviteUserByEmail` échoue — rattacher un utilisateur *existant* à un établissement supplémentaire n'est pas pris en charge (`ConflictException` avec un message clair plutôt qu'un échec silencieux). À construire si le besoin se présente.
 
 ## UI Flutter (`lib/users/`)
 
-`UsersPage` : liste de l'équipe (nom, rôle) + bouton "Inviter" ouvrant un dialogue e-mail/nom complet (optionnel)/rôle (menu déroulant des rôles assignables), avec deux actions : **Inviter** (e-mail Supabase) et **Copier le lien** (`invite-link`, copié dans le presse-papiers via `Clipboard.setData`). Comme le reste de l'application, l'onglet Utilisateurs n'est pas masqué selon la permission — un refus serveur s'affiche normalement en cas de 403.
+`UsersPage` : liste de l'équipe (nom, rôle) + bouton "Inviter" ouvrant un dialogue e-mail/nom complet (optionnel)/rôle (menu déroulant des rôles assignables), avec deux actions : **Inviter** (e-mail Supabase) et **Copier le lien** (`invite-link`, copié dans le presse-papiers via `Clipboard.setData`). Chaque ligne de l'équipe porte deux actions — **Modifier le rôle** et **Retirer** — masquées sur sa propre ligne (`member.userId == Supabase.instance.client.auth.currentUser?.id`), en plus du refus serveur déjà en place pour toute tentative malgré tout. Comme le reste de l'application, l'onglet Utilisateurs n'est pas masqué selon la permission — un refus serveur s'affiche normalement en cas de 403.
 
 ## Vérifications effectuées
 
-- `UsersService.invite`/`generateInviteLink` : 9 tests (Prisma + `AuthorizationService` + `SupabaseAdminService` mockés) — rôle introuvable, rôle d'une autre organisation, protection anti-élévation (bloque/autorise selon les permissions, y compris réutilisée par `generateInviteLink`), invitation réussie (métadonnées correctes transmises), e-mail déjà enregistré (`ConflictException`), autre erreur Supabase (`BadRequestException`), `generateInviteLink` n'appelle jamais le chemin d'envoi d'e-mail.
+- `UsersService` : 18 tests (Prisma + `AuthorizationService` + `SupabaseAdminService` mockés) — `invite`/`generateInviteLink` : rôle introuvable, rôle d'une autre organisation, protection anti-élévation, invitation réussie (métadonnées correctes transmises), e-mail déjà enregistré (`ConflictException`), autre erreur Supabase (`BadRequestException`) ; `removeMember`/`changeRole` : membre introuvable, auto-retrait/auto-modification refusés, protection anti-élévation sur le rôle actuel et le nouveau rôle, dernier gestionnaire d'utilisateurs protégé, opération réussie.
 - `flutter analyze`/`flutter test`/`flutter build web` ✅.
 - **Vérifié en conditions réelles** (2026-09-09, compte de démonstration jetable, jamais le compte réel de l'utilisateur) : `POST .../users/invite` atteint bien l'API Supabase (clé `service_role` correctement configurée sur Render) — bloqué uniquement par le quota d'e-mail gratuit de Supabase (`email rate limit exceeded`), confirmant que la seule limite restante est celle documentée ci-dessus, pas un défaut de l'implémentation. Le déclencheur `handle_new_user` a été vérifié directement en base (simulation d'une ligne `auth.users` avec les métadonnées d'invitation) : l'utilisateur simulé a bien été rattaché à l'établissement existant avec le rôle choisi, **sans créer de nouvelle organisation**. Toutes les données de test ont été supprimées après vérification.
 - **`SetPasswordPage` vérifiée en conditions réelles** (2026-09-09, compte de démonstration jetable) : connexion avec `needs_password_setup: true` → écran affiché immédiatement à la place de l'application ; mot de passe validé → bascule automatique vers l'application (`onAuthStateChange`, sans navigation manuelle) ; déconnexion puis reconnexion avec le nouveau mot de passe → accès direct à l'application, sans réafficher l'écran. Données de test supprimées après vérification.

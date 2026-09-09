@@ -1,8 +1,17 @@
-import { BadRequestException, ConflictException, ForbiddenException, Injectable } from '@nestjs/common';
+import { BadRequestException, ConflictException, ForbiddenException, Injectable, NotFoundException } from '@nestjs/common';
 import { AuthorizationService } from '../auth/authorization.service.js';
 import { SupabaseAdminService } from '../auth/supabase-admin.service.js';
 import { PrismaService } from '../prisma/prisma.service.js';
 import type { InviteUserDto } from './dto/invite-user.dto.js';
+import type { UpdateUserRoleDto } from './dto/update-user-role.dto.js';
+
+const ROLE_WITH_PERMISSIONS_INCLUDE = {
+  rolePermissions: { select: { permission: { select: { code: true } } } },
+} as const;
+
+type RoleWithPermissions = { id: string; name: string; isSystem: boolean; organizationId: string | null } & {
+  rolePermissions: { permission: { code: string } }[];
+};
 
 @Injectable()
 export class UsersService {
@@ -64,6 +73,81 @@ export class UsersService {
     return { email: dto.email, roleId: dto.roleId, roleName: role.name, link };
   }
 
+  /**
+   * Retire un utilisateur de cet établissement (supprime son affectation de
+   * rôle) — ne touche jamais à son compte Supabase Auth lui-même, qui peut
+   * appartenir à d'autres établissements. Refuse : de se retirer soi-même, de
+   * retirer quelqu'un dont le rôle accorde une permission que l'appelant n'a
+   * pas lui-même (même protection anti-élévation que l'invitation, appliquée
+   * ici en sens inverse), et de retirer le dernier membre pouvant encore
+   * gérer les utilisateurs de cet établissement (ce qui rendrait le module
+   * Utilisateurs définitivement inaccessible pour tout le monde).
+   */
+  async removeMember(establishmentId: string, callerId: string, membershipId: string): Promise<void> {
+    const membership = await this.findMembershipOrThrow(establishmentId, membershipId);
+    if (membership.userId === callerId) {
+      throw new BadRequestException('Vous ne pouvez pas vous retirer vous-même de cet établissement');
+    }
+    await this.assertCallerOutranks(establishmentId, callerId, membership.role);
+    if (this.hasPermission(membership.role, 'users.manage')) {
+      await this.assertKeepsAtLeastOneUserManager(establishmentId, membershipId);
+    }
+    await this.prisma.userEstablishmentRole.delete({ where: { id: membershipId } });
+  }
+
+  /**
+   * Change le rôle d'un utilisateur déjà membre de cet établissement.
+   * L'appelant doit dominer (au sens des permissions) à la fois le rôle
+   * actuel et le nouveau rôle — sinon un Gérant pourrait, par exemple,
+   * rétrograder un Propriétaire sans avoir lui-même ce niveau d'accès.
+   */
+  async changeRole(establishmentId: string, callerId: string, membershipId: string, dto: UpdateUserRoleDto) {
+    const membership = await this.findMembershipOrThrow(establishmentId, membershipId);
+    if (membership.userId === callerId) {
+      throw new BadRequestException('Vous ne pouvez pas modifier votre propre rôle');
+    }
+    await this.assertCallerOutranks(establishmentId, callerId, membership.role);
+    const newRole = await this.assertRoleAssignable(establishmentId, callerId, dto.roleId);
+    if (this.hasPermission(membership.role, 'users.manage') && !this.hasPermission(newRole, 'users.manage')) {
+      await this.assertKeepsAtLeastOneUserManager(establishmentId, membershipId);
+    }
+    return this.prisma.userEstablishmentRole.update({
+      where: { id: membershipId },
+      data: { roleId: dto.roleId },
+      include: { user: { select: { fullName: true } }, role: { select: { id: true, name: true } } },
+    });
+  }
+
+  private async findMembershipOrThrow(establishmentId: string, membershipId: string) {
+    const membership = await this.prisma.userEstablishmentRole.findFirst({
+      where: { id: membershipId, establishmentId },
+      include: { role: { include: ROLE_WITH_PERMISSIONS_INCLUDE } },
+    });
+    if (!membership) {
+      throw new NotFoundException('Utilisateur introuvable pour cet établissement');
+    }
+    return membership;
+  }
+
+  private hasPermission(role: RoleWithPermissions, code: string): boolean {
+    return role.rolePermissions.some((rp) => rp.permission.code === code);
+  }
+
+  private async assertKeepsAtLeastOneUserManager(establishmentId: string, excludingMembershipId: string): Promise<void> {
+    const remaining = await this.prisma.userEstablishmentRole.count({
+      where: {
+        establishmentId,
+        id: { not: excludingMembershipId },
+        role: { rolePermissions: { some: { permission: { code: 'users.manage' } } } },
+      },
+    });
+    if (remaining === 0) {
+      throw new ConflictException(
+        'Impossible : il ne resterait plus personne pouvant gérer les utilisateurs sur cet établissement',
+      );
+    }
+  }
+
   private inviteMetadata(establishmentId: string, dto: InviteUserDto): Record<string, string | boolean> {
     return {
       invited_establishment_id: establishmentId,
@@ -94,11 +178,8 @@ export class UsersService {
    * établissement — sinon un Gérant pourrait inviter un pair avec un rôle
    * plus puissant que le sien (ex. Propriétaire).
    */
-  private async assertRoleAssignable(establishmentId: string, callerId: string, roleId: string) {
-    const role = await this.prisma.role.findFirst({
-      where: { id: roleId },
-      include: { rolePermissions: { select: { permission: { select: { code: true } } } } },
-    });
+  private async assertRoleAssignable(establishmentId: string, callerId: string, roleId: string): Promise<RoleWithPermissions> {
+    const role = await this.prisma.role.findFirst({ where: { id: roleId }, include: ROLE_WITH_PERMISSIONS_INCLUDE });
     if (!role) {
       throw new BadRequestException('Rôle introuvable');
     }
@@ -106,15 +187,19 @@ export class UsersService {
     if (!role.isSystem && role.organizationId !== establishment.organizationId) {
       throw new BadRequestException("Ce rôle n'appartient pas à cette organisation");
     }
+    await this.assertCallerOutranks(establishmentId, callerId, role);
+    return role;
+  }
 
+  /** Le cœur de la protection anti-élévation, réutilisé pour affecter un rôle comme pour en retirer un. */
+  private async assertCallerOutranks(establishmentId: string, callerId: string, role: RoleWithPermissions): Promise<void> {
     const targetPermissions = role.rolePermissions.map((rp) => rp.permission.code);
     const callerPermissions = await this.authorization.getPermissionCodes(callerId, establishmentId);
     const missing = targetPermissions.filter((code) => !callerPermissions.has(code));
     if (missing.length > 0) {
       throw new ForbiddenException(
-        `Vous ne pouvez pas affecter le rôle « ${role.name} » : il accorde des permissions que vous n'avez pas vous-même (${missing.join(', ')})`,
+        `Vous ne pouvez pas affecter ou retirer le rôle « ${role.name} » : il accorde des permissions que vous n'avez pas vous-même (${missing.join(', ')})`,
       );
     }
-    return role;
   }
 }
