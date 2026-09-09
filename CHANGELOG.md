@@ -2,6 +2,14 @@
 
 ## [Unreleased]
 
+### Ajouté (post-plan, 2026-09-09) — Module Utilisateurs (invitation)
+- **Nouveau module Utilisateurs** (`lib/users/`, `apps/api/nestjs/src/users/`) : liste de l'équipe de l'établissement + bouton "Inviter" (e-mail, nom, rôle) — voir `docs/api/users.md` pour le détail complet.
+- `SupabaseAdminService` (nouveau, clé `service_role`, jamais exposée au client) déclenche `auth.admin.inviteUserByEmail` — la personne invitée reçoit un e-mail et choisit elle-même son mot de passe ; Claude ne crée ni ne manipule jamais de compte/mot de passe pour un tiers.
+- Migration `20260909120000_admin_invite_bootstrap.sql` : le trigger `handle_new_user` détecte une invitation admin (métadonnées `invited_establishment_id`/`invited_role_id`) et rattache directement l'utilisateur à l'établissement/rôle choisis, sans créer d'organisation fantôme comme le ferait une auto-inscription normale.
+- **Protection anti-élévation de privilèges** : impossible d'affecter un rôle accordant une permission que l'appelant n'a pas lui-même (générique, pas de cas spécial par nom de rôle) — un Gérant ne peut par exemple pas inviter quelqu'un en Propriétaire.
+- Nécessite une variable d'environnement Render supplémentaire (`SUPABASE_SERVICE_ROLE_KEY`) pour fonctionner en production — non configurée automatiquement (pas d'accès au tableau de bord Render).
+- 6 nouveaux tests NestJS. `flutter analyze`/lint backend propres.
+
 ### Ajouté (post-plan, 2026-09-09) — Catalogue par casier + refonte du module Achats
 - **Catégories à prix par casier** (`Category.hasCasePricing`, migration `20260909070000_add_purchase_case_ordering.sql`) : décision explicite de l'utilisateur pour Bières, Vins, Sucreries — activable sur n'importe quelle catégorie via « Prix par casier » dans « Gérer les catégories », liste ouverte (même mécanisme que les catégories à prix variable).
 - **Catalogue** : pour ces catégories, le formulaire produit remplace Référence par **Nbre de bouteilles par casier** et Code-barres par **Prix d'achat par casier** ; le champ Prix d'achat est renommé **« Prix d'achat par bouteille »** partout dans l'UI (toutes catégories).

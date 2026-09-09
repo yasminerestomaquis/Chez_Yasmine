@@ -17,6 +17,7 @@ import 'purchasing/purchases_page.dart';
 import 'reports/reports_page.dart';
 import 'stock/stock_page.dart';
 import 'tables/floor_plan_page.dart';
+import 'users/users_page.dart';
 
 Future<void> main() async {
   WidgetsFlutterBinding.ensureInitialized();
@@ -214,6 +215,13 @@ class _HomePageState extends State<HomePage> {
                               label: const Text('Notifications'),
                               onPressed: () => Navigator.of(context).push(
                                 MaterialPageRoute(builder: (_) => NotificationsPage(establishmentId: establishment.id)),
+                              ),
+                            ),
+                            TextButton.icon(
+                              icon: const Icon(Icons.manage_accounts_outlined),
+                              label: const Text('Utilisateurs'),
+                              onPressed: () => Navigator.of(context).push(
+                                MaterialPageRoute(builder: (_) => UsersPage(establishmentId: establishment.id)),
                               ),
                             ),
                             TextButton.icon(

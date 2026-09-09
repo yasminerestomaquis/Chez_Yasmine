@@ -16,6 +16,7 @@ import { ReportsModule } from './reports/reports.module.js';
 import { StockModule } from './stock/stock.module.js';
 import { SyncModule } from './sync/sync.module.js';
 import { TablesModule } from './tables/tables.module.js';
+import { UsersModule } from './users/users.module.js';
 
 @Module({
   imports: [
@@ -34,6 +35,7 @@ import { TablesModule } from './tables/tables.module.js';
     ReportsModule,
     NotificationsModule,
     ChartsModule,
+    UsersModule,
   ],
   controllers: [AppController],
   providers: [AppService],

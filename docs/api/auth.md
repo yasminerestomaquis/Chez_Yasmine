@@ -17,7 +17,7 @@ Flutter ──(Authorization: Bearer <jwt>)──> NestJS ──(vérifie via JW
 2. crée le `user_profiles` correspondant ;
 3. affecte le rôle système **Propriétaire** (toutes permissions) sur cet établissement.
 
-Portée volontairement limitée à l'auto-inscription du propriétaire (cas d'usage MVP mono-établissement). Inviter un utilisateur supplémentaire dans une organisation existante est un flux distinct, non traité ici — à construire côté NestJS (`service_role`) en Phase 4.1/5.
+Portée volontairement limitée à l'auto-inscription du propriétaire (cas d'usage MVP mono-établissement). Inviter un utilisateur supplémentaire dans une organisation existante est un flux distinct — voir `docs/api/users.md` (module Utilisateurs, 2026-09-09) pour comment ce même trigger a été étendu (sans changer son comportement pour l'auto-inscription) afin de rattacher un utilisateur invité à l'établissement existant plutôt que de lui créer une organisation fantôme.
 
 Vérifié en conditions réelles le 2026-09-05 (compte de test créé puis supprimé) : organisation, établissement, profil et rôle Propriétaire correctement créés par le trigger.
 
