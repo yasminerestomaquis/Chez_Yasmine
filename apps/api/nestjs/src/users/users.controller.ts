@@ -47,6 +47,15 @@ export class UsersController {
     return this.users.changeRole(establishmentId, request.user!.sub, membershipId, dto);
   }
 
+  @Post('users/:membershipId/recovery-link')
+  generateRecoveryLink(
+    @Req() request: Request,
+    @Param('establishmentId') establishmentId: string,
+    @Param('membershipId') membershipId: string,
+  ) {
+    return this.users.generateRecoveryLink(establishmentId, request.user!.sub, membershipId);
+  }
+
   @Delete('users/:membershipId')
   @HttpCode(HttpStatus.NO_CONTENT)
   removeMember(

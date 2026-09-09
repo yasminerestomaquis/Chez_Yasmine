@@ -184,6 +184,28 @@ class _UsersPageState extends State<UsersPage> {
     }
   }
 
+  /// Génère un lien de réinitialisation de mot de passe et le copie dans le
+  /// presse-papiers — jamais envoyé automatiquement : c'est vous qui le
+  /// transmettez à la personne concernée. Elle choisit alors elle-même son
+  /// nouveau mot de passe en cliquant dessus (SetPasswordPage).
+  Future<void> _resetPassword(TeamMember member) async {
+    try {
+      final link = await _repository.generateRecoveryLink(member.membershipId);
+      await Clipboard.setData(ClipboardData(text: link));
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text(
+            'Lien de réinitialisation copié — transmettez-le à ${member.fullName ?? member.userId} par le canal de votre choix.',
+          ),
+        ),
+      );
+    } on ApiException catch (e) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text(e.message)));
+    }
+  }
+
   @override
   Widget build(BuildContext context) {
     return Scaffold(
@@ -219,23 +241,28 @@ class _UsersPageState extends State<UsersPage> {
                   leading: const Icon(Icons.person_outline),
                   title: Text(member.fullName?.isNotEmpty == true ? member.fullName! : '(nom non renseigné)'),
                   subtitle: Text(member.userId == _currentUserId ? '${member.roleName} (vous)' : member.roleName),
-                  trailing: member.userId == _currentUserId
-                      ? null
-                      : Row(
-                          mainAxisSize: MainAxisSize.min,
-                          children: [
-                            IconButton(
-                              tooltip: 'Modifier le rôle',
-                              icon: const Icon(Icons.edit_outlined),
-                              onPressed: () => _changeRole(member, roles),
-                            ),
-                            IconButton(
-                              tooltip: 'Retirer',
-                              icon: const Icon(Icons.person_remove_outlined),
-                              onPressed: () => _removeMember(member),
-                            ),
-                          ],
+                  trailing: Row(
+                    mainAxisSize: MainAxisSize.min,
+                    children: [
+                      IconButton(
+                        tooltip: 'Réinitialiser le mot de passe',
+                        icon: const Icon(Icons.password_outlined),
+                        onPressed: () => _resetPassword(member),
+                      ),
+                      if (member.userId != _currentUserId) ...[
+                        IconButton(
+                          tooltip: 'Modifier le rôle',
+                          icon: const Icon(Icons.edit_outlined),
+                          onPressed: () => _changeRole(member, roles),
                         ),
+                        IconButton(
+                          tooltip: 'Retirer',
+                          icon: const Icon(Icons.person_remove_outlined),
+                          onPressed: () => _removeMember(member),
+                        ),
+                      ],
+                    ],
+                  ),
                 ),
             ],
           );

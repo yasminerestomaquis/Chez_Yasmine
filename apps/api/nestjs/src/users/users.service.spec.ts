@@ -278,3 +278,56 @@ describe('UsersService.changeRole', () => {
     expect(result).toEqual({ id: 'membership-1', roleId: 'role-Caissier' });
   });
 });
+
+describe('UsersService.generateRecoveryLink', () => {
+  let prisma: ReturnType<typeof makePrismaMock>;
+  let authorization: { getPermissionCodes: ReturnType<typeof vi.fn> };
+  let supabaseAdmin: { generateRecoveryLink: ReturnType<typeof vi.fn> };
+  let service: UsersService;
+
+  beforeEach(() => {
+    prisma = makePrismaMock();
+    authorization = { getPermissionCodes: vi.fn() };
+    supabaseAdmin = { generateRecoveryLink: vi.fn() };
+    service = new UsersService(
+      prisma as unknown as PrismaService,
+      authorization as unknown as AuthorizationService,
+      supabaseAdmin as unknown as SupabaseAdminService,
+    );
+  });
+
+  it('throws NotFoundException when the membership does not belong to the establishment', async () => {
+    prisma.userEstablishmentRole.findFirst.mockResolvedValue(null);
+    await expect(service.generateRecoveryLink('est-1', 'caller-1', 'membership-x')).rejects.toThrow(NotFoundException);
+    expect(supabaseAdmin.generateRecoveryLink).not.toHaveBeenCalled();
+  });
+
+  it('rejects generating a link for a member whose role outranks the caller', async () => {
+    prisma.userEstablishmentRole.findFirst.mockResolvedValue(membership('Propriétaire', ['roles.manage']));
+    authorization.getPermissionCodes.mockResolvedValue(new Set(['products.manage']));
+    await expect(
+      service.generateRecoveryLink('est-1', 'caller-1', 'membership-1'),
+    ).rejects.toBeInstanceOf(ForbiddenException);
+    expect(supabaseAdmin.generateRecoveryLink).not.toHaveBeenCalled();
+  });
+
+  it('generates a link for the underlying auth user id, not the membership id', async () => {
+    prisma.userEstablishmentRole.findFirst.mockResolvedValue(membership('Serveur', ['pos.sell'], { userId: 'target-user' }));
+    authorization.getPermissionCodes.mockResolvedValue(new Set(['pos.sell']));
+    supabaseAdmin.generateRecoveryLink.mockResolvedValue('https://example.supabase.co/auth/v1/verify?type=recovery&token=abc');
+
+    const result = await service.generateRecoveryLink('est-1', 'caller-1', 'membership-1');
+
+    expect(supabaseAdmin.generateRecoveryLink).toHaveBeenCalledWith('target-user');
+    expect(result).toEqual({ link: 'https://example.supabase.co/auth/v1/verify?type=recovery&token=abc' });
+  });
+
+  it('translates a Supabase error the same way as invite()', async () => {
+    prisma.userEstablishmentRole.findFirst.mockResolvedValue(membership('Serveur', ['pos.sell']));
+    authorization.getPermissionCodes.mockResolvedValue(new Set(['pos.sell']));
+    supabaseAdmin.generateRecoveryLink.mockRejectedValue(new Error('User not found'));
+    await expect(
+      service.generateRecoveryLink('est-1', 'caller-1', 'membership-1'),
+    ).rejects.toBeInstanceOf(BadRequestException);
+  });
+});

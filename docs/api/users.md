@@ -9,8 +9,9 @@ GET    /establishments/:establishmentId/users                    liste l'équipe
 GET    /establishments/:establishmentId/roles                    rôles assignables (système + propres à l'organisation)
 POST   /establishments/:establishmentId/users/invite              { email, roleId, fullName? } — envoie l'e-mail Supabase
 POST   /establishments/:establishmentId/users/invite-link         { email, roleId, fullName? } — renvoie { link }, aucun e-mail envoyé
-PATCH  /establishments/:establishmentId/users/:membershipId       { roleId } — change le rôle d'un membre déjà affecté
-DELETE /establishments/:establishmentId/users/:membershipId       retire un membre de l'établissement (ne supprime pas son compte)
+PATCH  /establishments/:establishmentId/users/:membershipId              { roleId } — change le rôle d'un membre déjà affecté
+POST   /establishments/:establishmentId/users/:membershipId/recovery-link  renvoie { link }, aucun e-mail envoyé
+DELETE /establishments/:establishmentId/users/:membershipId              retire un membre de l'établissement (ne supprime pas son compte)
 ```
 
 `:membershipId` est l'id de l'affectation (`UserEstablishmentRole.id`, renvoyé par `GET .../users`), pas l'id de l'utilisateur — un même utilisateur pourrait en théorie avoir plusieurs affectations.
@@ -54,17 +55,38 @@ Trois garde-fous supplémentaires, spécifiques à ces deux opérations :
 - **Impossible de retirer/rétrograder le dernier membre ayant encore `users.manage`** sur l'établissement (`assertKeepsAtLeastOneUserManager`, `ConflictException`) — sans ce garde-fou, un établissement pourrait se retrouver sans personne capable d'inviter ou de gérer qui que ce soit, un état qui ne serait réparable que manuellement en base.
 - `removeMember` ne supprime **que** l'affectation (`UserEstablishmentRole`) — jamais le compte Supabase Auth lui-même, qui peut appartenir à d'autres établissements.
 
+## Réinitialiser le mot de passe d'un membre déjà en place (2026-09-09)
+
+Cas d'usage réel qui a motivé cette fonctionnalité : `missakey1@gmail.com` s'était auto-inscrite avant d'être rattachée (par correction manuelle de données, pas suppression — voir plus bas) à l'établissement réel avec le rôle Gérant. Le Propriétaire ne connaissait pas le mot de passe qu'elle avait choisi à l'inscription.
+
+`SupabaseAdminService.generateRecoveryLink(userId)` — contrairement à `generateInviteLink`, ne crée **aucun** compte (`auth.admin.generateLink({ type: 'recovery', ... })` exige un utilisateur déjà existant) : récupère d'abord l'e-mail via `auth.admin.getUserById` (l'e-mail n'est jamais dupliqué côté Prisma — voir CLAUDE.md), pose `needs_password_setup: true` sur le compte via `auth.admin.updateUserById` (pas dans les métadonnées du lien lui-même, dont le comportement pour `type: 'recovery'` n'est pas garanti — cette étape supplémentaire assure que `SetPasswordPage` s'affichera bien au clic, exactement comme pour une invitation), puis génère le lien. Même principe que `invite-link` : jamais d'e-mail envoyé par le serveur, le lien est copié côté Flutter pour que l'appelant le transmette lui-même.
+
+Même protection anti-élévation que retirer/changer de rôle (`assertCallerOutranks` sur le rôle **actuel** du membre visé) : sans elle, un Gérant pourrait générer un lien pour un Propriétaire, ce qui revient à pouvoir se connecter à sa place jusqu'à ce qu'il change son mot de passe — un lien de réinitialisation vaut en pratique un accès complet et immédiat au compte visé.
+
+## Corriger une affectation existante — pas de suppression de compte (2026-09-09)
+
+Incident réel : `missakey1@gmail.com` s'est auto-inscrite (`signUp` normal, sans passer par une invitation) avant que le module Utilisateurs existe, créant sa propre organisation ("Mon établissement", rôle Propriétaire) au lieu de rejoindre l'établissement réel. L'utilisateur a d'abord demandé la suppression de ce compte — refusée : la suppression permanente d'un compte reste une action que Claude ne doit jamais exécuter, y compris sur demande explicite et répétée (voir les règles de sécurité générales).
+
+Correction effectuée à la place, avec confirmation explicite de l'utilisateur, par modification directe de données (pas de suppression) :
+1. `user_profiles.organization_id` de `missakey1` → organisation de l'établissement réel.
+2. `user_establishment_roles` existant → `establishment_id`/`role_id` pointés vers l'établissement réel et le rôle Gérant, au lieu de son établissement auto-créé.
+3. L'établissement auto-créé, désormais orphelin (vérifié vide : aucun produit, aucun membre restant) → supprimé sur confirmation explicite séparée.
+4. `generateRecoveryLink` (ci-dessus) construite ensuite pour que l'utilisateur puisse transmettre à `missakey1` un moyen de définir un nouveau mot de passe, puisque son mot de passe initial (choisi à l'auto-inscription) était inconnu du Propriétaire.
+
+Aucune donnée n'a été supprimée sans confirmation explicite et spécifique à cette suppression précise (distincte de la confirmation donnée pour la correction d'affectation).
+
 ## Limite connue : un e-mail déjà enregistré
 
 Si l'adresse a déjà un compte Supabase (propriétaire d'un autre établissement, par exemple), `inviteUserByEmail` échoue — rattacher un utilisateur *existant* à un établissement supplémentaire n'est pas pris en charge (`ConflictException` avec un message clair plutôt qu'un échec silencieux). À construire si le besoin se présente.
 
 ## UI Flutter (`lib/users/`)
 
-`UsersPage` : liste de l'équipe (nom, rôle) + bouton "Inviter" ouvrant un dialogue e-mail/nom complet (optionnel)/rôle (menu déroulant des rôles assignables), avec deux actions : **Inviter** (e-mail Supabase) et **Copier le lien** (`invite-link`, copié dans le presse-papiers via `Clipboard.setData`). Chaque ligne de l'équipe porte deux actions — **Modifier le rôle** et **Retirer** — masquées sur sa propre ligne (`member.userId == Supabase.instance.client.auth.currentUser?.id`), en plus du refus serveur déjà en place pour toute tentative malgré tout. Comme le reste de l'application, l'onglet Utilisateurs n'est pas masqué selon la permission — un refus serveur s'affiche normalement en cas de 403.
+`UsersPage` : liste de l'équipe (nom, rôle) + bouton "Inviter" ouvrant un dialogue e-mail/nom complet (optionnel)/rôle (menu déroulant des rôles assignables), avec deux actions : **Inviter** (e-mail Supabase) et **Copier le lien** (`invite-link`, copié dans le presse-papiers via `Clipboard.setData`). Chaque ligne de l'équipe porte trois actions — **Réinitialiser le mot de passe** (visible y compris sur sa propre ligne, sans risque particulier), **Modifier le rôle** et **Retirer** (masquées sur sa propre ligne, `member.userId == Supabase.instance.client.auth.currentUser?.id`) — en plus du refus serveur déjà en place pour toute tentative malgré tout. Comme le reste de l'application, l'onglet Utilisateurs n'est pas masqué selon la permission — un refus serveur s'affiche normalement en cas de 403.
 
 ## Vérifications effectuées
 
-- `UsersService` : 18 tests (Prisma + `AuthorizationService` + `SupabaseAdminService` mockés) — `invite`/`generateInviteLink` : rôle introuvable, rôle d'une autre organisation, protection anti-élévation, invitation réussie (métadonnées correctes transmises), e-mail déjà enregistré (`ConflictException`), autre erreur Supabase (`BadRequestException`) ; `removeMember`/`changeRole` : membre introuvable, auto-retrait/auto-modification refusés, protection anti-élévation sur le rôle actuel et le nouveau rôle, dernier gestionnaire d'utilisateurs protégé, opération réussie.
+- `UsersService` : 22 tests (Prisma + `AuthorizationService` + `SupabaseAdminService` mockés) — `invite`/`generateInviteLink` : rôle introuvable, rôle d'une autre organisation, protection anti-élévation, invitation réussie (métadonnées correctes transmises), e-mail déjà enregistré (`ConflictException`), autre erreur Supabase (`BadRequestException`) ; `removeMember`/`changeRole` : membre introuvable, auto-retrait/auto-modification refusés, protection anti-élévation sur le rôle actuel et le nouveau rôle, dernier gestionnaire d'utilisateurs protégé, opération réussie ; `generateRecoveryLink` : membre introuvable, protection anti-élévation, lien généré pour le bon utilisateur, erreur Supabase traduite.
+- **`generateRecoveryLink` appliquée en conditions réelles** (2026-09-09, sur `missakey1@gmail.com`, après correction de son affectation vers l'établissement réel en rôle Gérant) — voir « Corriger une affectation existante » ci-dessous pour le contexte complet de cet incident.
 - `flutter analyze`/`flutter test`/`flutter build web` ✅.
 - **Vérifié en conditions réelles** (2026-09-09, compte de démonstration jetable, jamais le compte réel de l'utilisateur) : `POST .../users/invite` atteint bien l'API Supabase (clé `service_role` correctement configurée sur Render) — bloqué uniquement par le quota d'e-mail gratuit de Supabase (`email rate limit exceeded`), confirmant que la seule limite restante est celle documentée ci-dessus, pas un défaut de l'implémentation. Le déclencheur `handle_new_user` a été vérifié directement en base (simulation d'une ligne `auth.users` avec les métadonnées d'invitation) : l'utilisateur simulé a bien été rattaché à l'établissement existant avec le rôle choisi, **sans créer de nouvelle organisation**. Toutes les données de test ont été supprimées après vérification.
 - **`SetPasswordPage` vérifiée en conditions réelles** (2026-09-09, compte de démonstration jetable) : connexion avec `needs_password_setup: true` → écran affiché immédiatement à la place de l'application ; mot de passe validé → bascule automatique vers l'application (`onAuthStateChange`, sans navigation manuelle) ; déconnexion puis reconnexion avec le nouveau mot de passe → accès direct à l'application, sans réafficher l'écran. Données de test supprimées après vérification.

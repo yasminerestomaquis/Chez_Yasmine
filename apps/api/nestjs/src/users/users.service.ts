@@ -111,11 +111,33 @@ export class UsersService {
     if (this.hasPermission(membership.role, 'users.manage') && !this.hasPermission(newRole, 'users.manage')) {
       await this.assertKeepsAtLeastOneUserManager(establishmentId, membershipId);
     }
-    return this.prisma.userEstablishmentRole.update({
+    const result = await this.prisma.userEstablishmentRole.update({
       where: { id: membershipId },
       data: { roleId: dto.roleId },
       include: { user: { select: { fullName: true } }, role: { select: { id: true, name: true } } },
     });
+    return result;
+  }
+
+  /**
+   * Génère un lien de réinitialisation de mot de passe pour un membre déjà
+   * en place (mot de passe oublié, ou — comme pour missakey1@gmail.com le
+   * 2026-09-09 — un mot de passe initial que le Propriétaire ne connaît
+   * pas). Même protection anti-élévation que retirer/changer de rôle : sans
+   * elle, un Gérant pourrait générer un lien pour un Propriétaire, ce qui
+   * revient à pouvoir se connecter à sa place jusqu'à ce qu'il change son
+   * mot de passe. Jamais Claude qui envoie ce lien — toujours l'appelant,
+   * par le canal de son choix (voir docs/api/users.md).
+   */
+  async generateRecoveryLink(establishmentId: string, callerId: string, membershipId: string): Promise<{ link: string }> {
+    const membership = await this.findMembershipOrThrow(establishmentId, membershipId);
+    await this.assertCallerOutranks(establishmentId, callerId, membership.role);
+    try {
+      const link = await this.supabaseAdmin.generateRecoveryLink(membership.userId);
+      return { link };
+    } catch (error) {
+      throw this.translateSupabaseError(error);
+    }
   }
 
   private async findMembershipOrThrow(establishmentId: string, membershipId: string) {

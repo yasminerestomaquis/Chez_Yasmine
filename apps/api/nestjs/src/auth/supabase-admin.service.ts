@@ -60,4 +60,33 @@ export class SupabaseAdminService {
     }
     return data.properties.action_link;
   }
+
+  /**
+   * Génère un lien de réinitialisation de mot de passe pour un utilisateur
+   * *déjà existant* (contrairement à generateInviteLink, ne crée aucun
+   * compte) — même principe : ne passe jamais par le mailer de Supabase,
+   * renvoie le lien pour que l'appelant le transmette lui-même. Pose
+   * `needs_password_setup: true` sur le compte cible *avant* de générer le
+   * lien (jamais dans les métadonnées du lien lui-même, dont le
+   * comportement pour type: 'recovery' n'est pas garanti) pour que
+   * SetPasswordPage s'affiche bien au clic, comme pour une invitation.
+   */
+  async generateRecoveryLink(userId: string): Promise<string> {
+    const client = this.getClient();
+    const { data: userData, error: userError } = await client.auth.admin.getUserById(userId);
+    if (userError || !userData.user?.email) {
+      throw new Error(userError?.message ?? 'Utilisateur introuvable');
+    }
+    const { error: updateError } = await client.auth.admin.updateUserById(userId, {
+      user_metadata: { ...userData.user.user_metadata, needs_password_setup: true },
+    });
+    if (updateError) {
+      throw new Error(updateError.message);
+    }
+    const { data, error } = await client.auth.admin.generateLink({ type: 'recovery', email: userData.user.email });
+    if (error || !data.properties?.action_link) {
+      throw new Error(error?.message ?? 'Lien non généré');
+    }
+    return data.properties.action_link;
+  }
 }

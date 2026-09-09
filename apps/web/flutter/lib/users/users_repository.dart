@@ -40,6 +40,14 @@ class UsersRepository {
     return _api.patch('$_base/users/$membershipId', body: {'roleId': roleId});
   }
 
+  /// Génère un lien de réinitialisation de mot de passe pour un membre déjà
+  /// en place, sans passer par l'e-mail de Supabase — même principe que
+  /// [generateInviteLink] : à copier/transmettre soi-même.
+  Future<String> generateRecoveryLink(String membershipId) async {
+    final json = await _api.post('$_base/users/$membershipId/recovery-link') as Map<String, dynamic>;
+    return json['link'] as String;
+  }
+
   /// Retire l'utilisateur de cet établissement (révoque son affectation) —
   /// ne supprime jamais son compte Supabase, qui peut appartenir à d'autres
   /// établissements.
