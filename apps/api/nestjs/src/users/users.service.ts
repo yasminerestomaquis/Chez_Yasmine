@@ -35,15 +35,58 @@ export class UsersService {
    * avec `dto.roleId` — voir la migration `20260909120000_admin_invite_bootstrap.sql`
    * pour la partie qui évite qu'une invitation crée une organisation fantôme
    * (comme le ferait une inscription normale).
-   *
+   */
+  async invite(establishmentId: string, callerId: string, dto: InviteUserDto) {
+    const role = await this.assertRoleAssignable(establishmentId, callerId, dto.roleId);
+    try {
+      await this.supabaseAdmin.inviteUserByEmail(dto.email, this.inviteMetadata(establishmentId, dto));
+    } catch (error) {
+      throw this.translateSupabaseError(error);
+    }
+    return { email: dto.email, roleId: dto.roleId, roleName: role.name };
+  }
+
+  /**
+   * Même effet que invite() (même vérifications, même rattachement) mais
+   * sans passer par le service d'e-mail de Supabase (quota gratuit partagé
+   * très limité — voir docs/api/users.md) : renvoie le lien d'invitation,
+   * à copier/transmettre par l'appelant lui-même (WhatsApp, SMS, son propre
+   * e-mail...) — jamais envoyé par le serveur à sa place.
+   */
+  async generateInviteLink(establishmentId: string, callerId: string, dto: InviteUserDto) {
+    const role = await this.assertRoleAssignable(establishmentId, callerId, dto.roleId);
+    let link: string;
+    try {
+      link = await this.supabaseAdmin.generateInviteLink(dto.email, this.inviteMetadata(establishmentId, dto));
+    } catch (error) {
+      throw this.translateSupabaseError(error);
+    }
+    return { email: dto.email, roleId: dto.roleId, roleName: role.name, link };
+  }
+
+  private inviteMetadata(establishmentId: string, dto: InviteUserDto): Record<string, string> {
+    return { invited_establishment_id: establishmentId, invited_role_id: dto.roleId, full_name: dto.fullName ?? '' };
+  }
+
+  private translateSupabaseError(error: unknown): ConflictException | BadRequestException {
+    const message = error instanceof Error ? error.message : "Échec de l'invitation";
+    if (/already.*registered|already.*exists/i.test(message)) {
+      return new ConflictException(
+        "Cette adresse e-mail a déjà un compte — rattacher un utilisateur existant à un nouvel établissement n'est pas encore pris en charge.",
+      );
+    }
+    return new BadRequestException(`Échec de l'invitation : ${message}`);
+  }
+
+  /**
    * Protection anti-élévation de privilèges : `callerId` ne peut affecter un
    * rôle qui accorde une permission qu'il ne détient pas lui-même sur cet
    * établissement — sinon un Gérant pourrait inviter un pair avec un rôle
    * plus puissant que le sien (ex. Propriétaire).
    */
-  async invite(establishmentId: string, callerId: string, dto: InviteUserDto) {
+  private async assertRoleAssignable(establishmentId: string, callerId: string, roleId: string) {
     const role = await this.prisma.role.findFirst({
-      where: { id: dto.roleId },
+      where: { id: roleId },
       include: { rolePermissions: { select: { permission: { select: { code: true } } } } },
     });
     if (!role) {
@@ -62,23 +105,6 @@ export class UsersService {
         `Vous ne pouvez pas affecter le rôle « ${role.name} » : il accorde des permissions que vous n'avez pas vous-même (${missing.join(', ')})`,
       );
     }
-
-    try {
-      await this.supabaseAdmin.inviteUserByEmail(dto.email, {
-        invited_establishment_id: establishmentId,
-        invited_role_id: dto.roleId,
-        full_name: dto.fullName ?? '',
-      });
-    } catch (error) {
-      const message = error instanceof Error ? error.message : "Échec de l'invitation";
-      if (/already.*registered|already.*exists/i.test(message)) {
-        throw new ConflictException(
-          'Cette adresse e-mail a déjà un compte — rattacher un utilisateur existant à un nouvel établissement n\'est pas encore pris en charge.',
-        );
-      }
-      throw new BadRequestException(`Échec de l'invitation : ${message}`);
-    }
-
-    return { email: dto.email, roleId: dto.roleId, roleName: role.name };
+    return role;
   }
 }

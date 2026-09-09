@@ -26,4 +26,13 @@ export class UsersController {
   invite(@Req() request: Request, @Param('establishmentId') establishmentId: string, @Body() dto: InviteUserDto) {
     return this.users.invite(establishmentId, request.user!.sub, dto);
   }
+
+  @Post('users/invite-link')
+  generateInviteLink(
+    @Req() request: Request,
+    @Param('establishmentId') establishmentId: string,
+    @Body() dto: InviteUserDto,
+  ) {
+    return this.users.generateInviteLink(establishmentId, request.user!.sub, dto);
+  }
 }

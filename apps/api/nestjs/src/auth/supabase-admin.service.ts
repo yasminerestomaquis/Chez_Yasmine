@@ -40,4 +40,24 @@ export class SupabaseAdminService {
       throw new Error(error.message);
     }
   }
+
+  /**
+   * Même effet que inviteUserByEmail (crée le compte, mêmes métadonnées) mais
+   * ne passe jamais par le service d'e-mail de Supabase — utile quand son
+   * quota gratuit partagé est atteint (voir docs/api/users.md). Renvoie le
+   * lien tel quel ; à afficher/copier côté UI pour que l'appelant l'envoie
+   * lui-même par le canal de son choix (jamais Claude qui l'envoie à sa
+   * place).
+   */
+  async generateInviteLink(email: string, metadata: Record<string, string>): Promise<string> {
+    const { data, error } = await this.getClient().auth.admin.generateLink({
+      type: 'invite',
+      email,
+      options: { data: metadata },
+    });
+    if (error || !data.properties?.action_link) {
+      throw new Error(error?.message ?? 'Lien non généré');
+    }
+    return data.properties.action_link;
+  }
 }

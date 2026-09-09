@@ -24,13 +24,13 @@ const roleWithPermissions = (name: string, codes: string[], overrides: Partial<{
 describe('UsersService.invite', () => {
   let prisma: ReturnType<typeof makePrismaMock>;
   let authorization: { getPermissionCodes: ReturnType<typeof vi.fn> };
-  let supabaseAdmin: { inviteUserByEmail: ReturnType<typeof vi.fn> };
+  let supabaseAdmin: { inviteUserByEmail: ReturnType<typeof vi.fn>; generateInviteLink: ReturnType<typeof vi.fn> };
   let service: UsersService;
 
   beforeEach(() => {
     prisma = makePrismaMock();
     authorization = { getPermissionCodes: vi.fn() };
-    supabaseAdmin = { inviteUserByEmail: vi.fn() };
+    supabaseAdmin = { inviteUserByEmail: vi.fn(), generateInviteLink: vi.fn() };
     prisma.establishment.findUniqueOrThrow.mockResolvedValue({ id: 'est-1', organizationId: 'org-1' });
     service = new UsersService(
       prisma as unknown as PrismaService,
@@ -98,5 +98,65 @@ describe('UsersService.invite', () => {
     await expect(
       service.invite('est-1', 'caller-1', { email: 'a@b.com', roleId: 'role-x' }),
     ).rejects.toBeInstanceOf(BadRequestException);
+  });
+});
+
+describe('UsersService.generateInviteLink', () => {
+  let prisma: ReturnType<typeof makePrismaMock>;
+  let authorization: { getPermissionCodes: ReturnType<typeof vi.fn> };
+  let supabaseAdmin: { inviteUserByEmail: ReturnType<typeof vi.fn>; generateInviteLink: ReturnType<typeof vi.fn> };
+  let service: UsersService;
+
+  beforeEach(() => {
+    prisma = makePrismaMock();
+    authorization = { getPermissionCodes: vi.fn() };
+    supabaseAdmin = { inviteUserByEmail: vi.fn(), generateInviteLink: vi.fn() };
+    prisma.establishment.findUniqueOrThrow.mockResolvedValue({ id: 'est-1', organizationId: 'org-1' });
+    service = new UsersService(
+      prisma as unknown as PrismaService,
+      authorization as unknown as AuthorizationService,
+      supabaseAdmin as unknown as SupabaseAdminService,
+    );
+  });
+
+  it('never calls the e-mail-sending path — only generateInviteLink', async () => {
+    prisma.role.findFirst.mockResolvedValue(roleWithPermissions('Gérant', ['products.manage']));
+    authorization.getPermissionCodes.mockResolvedValue(new Set(['products.manage']));
+    supabaseAdmin.generateInviteLink.mockResolvedValue('https://example.supabase.co/auth/v1/verify?token=abc');
+
+    const result = await service.generateInviteLink('est-1', 'caller-1', { email: 'a@b.com', roleId: 'role-x' });
+
+    expect(supabaseAdmin.generateInviteLink).toHaveBeenCalledWith('a@b.com', {
+      invited_establishment_id: 'est-1',
+      invited_role_id: 'role-x',
+      full_name: '',
+    });
+    expect(supabaseAdmin.inviteUserByEmail).not.toHaveBeenCalled();
+    expect(result).toEqual({
+      email: 'a@b.com',
+      roleId: 'role-x',
+      roleName: 'Gérant',
+      link: 'https://example.supabase.co/auth/v1/verify?token=abc',
+    });
+  });
+
+  it('reuses the same anti-escalation protection as invite()', async () => {
+    prisma.role.findFirst.mockResolvedValue(roleWithPermissions('Propriétaire', ['roles.manage']));
+    authorization.getPermissionCodes.mockResolvedValue(new Set(['products.manage']));
+
+    await expect(
+      service.generateInviteLink('est-1', 'caller-1', { email: 'a@b.com', roleId: 'role-x' }),
+    ).rejects.toBeInstanceOf(ForbiddenException);
+    expect(supabaseAdmin.generateInviteLink).not.toHaveBeenCalled();
+  });
+
+  it('surfaces an already-registered email as ConflictException', async () => {
+    prisma.role.findFirst.mockResolvedValue(roleWithPermissions('Serveur', ['pos.sell']));
+    authorization.getPermissionCodes.mockResolvedValue(new Set(['pos.sell']));
+    supabaseAdmin.generateInviteLink.mockRejectedValue(new Error('Email already exists'));
+
+    await expect(
+      service.generateInviteLink('est-1', 'caller-1', { email: 'a@b.com', roleId: 'role-x' }),
+    ).rejects.toBeInstanceOf(ConflictException);
   });
 });

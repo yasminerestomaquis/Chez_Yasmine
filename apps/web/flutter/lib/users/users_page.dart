@@ -1,8 +1,20 @@
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart' show Clipboard, ClipboardData;
 
 import '../api/api_client.dart';
 import 'user_models.dart';
 import 'users_repository.dart';
+
+enum _InviteAction { sendEmail, copyLink }
+
+class _InviteFormResult {
+  const _InviteFormResult({required this.action, required this.email, required this.roleId, this.fullName});
+
+  final _InviteAction action;
+  final String email;
+  final String roleId;
+  final String? fullName;
+}
 
 class UsersPage extends StatefulWidget {
   const UsersPage({super.key, required this.establishmentId});
@@ -29,54 +41,84 @@ class _UsersPageState extends State<UsersPage> {
     final emailController = TextEditingController();
     final fullNameController = TextEditingController();
     String? roleId = roles.firstOrNull?.id;
-    final result = await showDialog<bool>(
+    final result = await showDialog<_InviteFormResult>(
       context: context,
       builder: (context) => StatefulBuilder(
-        builder: (context, setDialogState) => AlertDialog(
-          title: const Text('Inviter un utilisateur'),
-          content: Column(
-            mainAxisSize: MainAxisSize.min,
-            children: [
-              TextField(
-                controller: emailController,
-                autofocus: true,
-                keyboardType: TextInputType.emailAddress,
-                decoration: const InputDecoration(labelText: 'E-mail'),
+        builder: (context, setDialogState) {
+          _InviteFormResult? buildResult(_InviteAction action) {
+            final email = emailController.text.trim();
+            if (email.isEmpty || roleId == null) return null;
+            return _InviteFormResult(
+              action: action,
+              email: email,
+              roleId: roleId!,
+              fullName: fullNameController.text.trim().isEmpty ? null : fullNameController.text.trim(),
+            );
+          }
+
+          return AlertDialog(
+            title: const Text('Inviter un utilisateur'),
+            content: Column(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                TextField(
+                  controller: emailController,
+                  autofocus: true,
+                  keyboardType: TextInputType.emailAddress,
+                  decoration: const InputDecoration(labelText: 'E-mail'),
+                ),
+                TextField(controller: fullNameController, decoration: const InputDecoration(labelText: 'Nom complet (optionnel)')),
+                DropdownButtonFormField<String>(
+                  initialValue: roleId,
+                  isExpanded: true,
+                  decoration: const InputDecoration(labelText: 'Rôle'),
+                  items: [for (final role in roles) DropdownMenuItem(value: role.id, child: Text(role.name))],
+                  onChanged: (value) => setDialogState(() => roleId = value),
+                ),
+                const SizedBox(height: 8),
+                const Text(
+                  "« Inviter » envoie un e-mail avec un lien pour choisir un mot de passe. "
+                  "« Copier le lien » génère ce même lien sans passer par e-mail (utile si le quota d'envoi de Supabase "
+                  "est atteint) — vous le transmettez alors vous-même par le canal de votre choix.",
+                  style: TextStyle(fontSize: 12),
+                ),
+              ],
+            ),
+            actions: [
+              TextButton(onPressed: () => Navigator.of(context).pop(), child: const Text('Annuler')),
+              OutlinedButton(
+                onPressed: () => Navigator.of(context).pop(buildResult(_InviteAction.copyLink)),
+                child: const Text('Copier le lien'),
               ),
-              TextField(controller: fullNameController, decoration: const InputDecoration(labelText: 'Nom complet (optionnel)')),
-              DropdownButtonFormField<String>(
-                initialValue: roleId,
-                isExpanded: true,
-                decoration: const InputDecoration(labelText: 'Rôle'),
-                items: [for (final role in roles) DropdownMenuItem(value: role.id, child: Text(role.name))],
-                onChanged: (value) => setDialogState(() => roleId = value),
-              ),
-              const SizedBox(height: 8),
-              const Text(
-                "Un e-mail avec un lien pour choisir un mot de passe sera envoyé à cette adresse.",
-                style: TextStyle(fontSize: 12),
+              FilledButton(
+                onPressed: () => Navigator.of(context).pop(buildResult(_InviteAction.sendEmail)),
+                child: const Text('Inviter'),
               ),
             ],
-          ),
-          actions: [
-            TextButton(onPressed: () => Navigator.of(context).pop(false), child: const Text('Annuler')),
-            FilledButton(onPressed: () => Navigator.of(context).pop(true), child: const Text('Inviter')),
-          ],
-        ),
+          );
+        },
       ),
     );
-    if (result != true) return;
-    final email = emailController.text.trim();
-    if (email.isEmpty || roleId == null) return;
+    if (result == null) return;
     try {
-      await _repository.invite(
-        email: email,
-        roleId: roleId!,
-        fullName: fullNameController.text.trim().isEmpty ? null : fullNameController.text.trim(),
-      );
-      _reload();
-      if (!mounted) return;
-      ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text('Invitation envoyée à $email.')));
+      if (result.action == _InviteAction.sendEmail) {
+        await _repository.invite(email: result.email, roleId: result.roleId, fullName: result.fullName);
+        _reload();
+        if (!mounted) return;
+        ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text('Invitation envoyée à ${result.email}.')));
+      } else {
+        final link = await _repository.generateInviteLink(
+          email: result.email,
+          roleId: result.roleId,
+          fullName: result.fullName,
+        );
+        await Clipboard.setData(ClipboardData(text: link));
+        _reload();
+        if (!mounted) return;
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text('Lien copié — transmettez-le à ${result.email} par le canal de votre choix.')),
+        );
+      }
     } on ApiException catch (e) {
       if (!mounted) return;
       ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text(e.message)));

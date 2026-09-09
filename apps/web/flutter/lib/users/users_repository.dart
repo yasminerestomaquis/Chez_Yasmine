@@ -23,4 +23,16 @@ class UsersRepository {
   Future<void> invite({required String email, required String roleId, String? fullName}) {
     return _api.post('$_base/users/invite', body: {'email': email, 'roleId': roleId, 'fullName': ?fullName});
   }
+
+  /// Même effet que [invite], sans passer par l'e-mail de Supabase (quota
+  /// gratuit partagé très limité) — renvoie le lien à copier/transmettre
+  /// soi-même par le canal de son choix.
+  Future<String> generateInviteLink({required String email, required String roleId, String? fullName}) async {
+    final json = await _api.post('$_base/users/invite-link', body: {
+      'email': email,
+      'roleId': roleId,
+      'fullName': ?fullName,
+    }) as Map<String, dynamic>;
+    return json['link'] as String;
+  }
 }
