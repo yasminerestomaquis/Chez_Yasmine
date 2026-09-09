@@ -1,4 +1,4 @@
-import { IsIn, IsNumber, IsOptional, IsString, IsUUID, Min, MinLength } from 'class-validator';
+import { IsIn, IsInt, IsNumber, IsOptional, IsString, IsUUID, Min, MinLength } from 'class-validator';
 
 export class CreateProductDto {
   @IsString()
@@ -43,6 +43,18 @@ export class CreateProductDto {
   @IsNumber()
   @Min(0)
   salePrice?: number;
+
+  /** Catalogue, catégories à prix par casier uniquement (ex. Bières, Vins, Sucreries). */
+  @IsOptional()
+  @IsInt()
+  @Min(1)
+  bottlesPerCase?: number;
+
+  /** Catalogue, catégories à prix par casier uniquement. */
+  @IsOptional()
+  @IsNumber()
+  @Min(0)
+  purchasePricePerCase?: number;
 
   @IsOptional()
   @IsNumber()

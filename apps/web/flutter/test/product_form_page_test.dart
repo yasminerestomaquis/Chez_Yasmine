@@ -18,6 +18,7 @@ void main() {
   final categories = [
     Category(id: 'cat-1', name: 'Boissons'),
     Category(id: 'cat-2', name: 'Poulets', hasVariablePricing: true),
+    Category(id: 'cat-3', name: 'Bières', hasCasePricing: true),
   ];
 
   // The form is a long ListView — a tall test viewport avoids relying on
@@ -85,7 +86,7 @@ void main() {
   testWidgets('a variable-pricing category hides the purchase/sale price fields', (tester) async {
     await pumpForm(tester, initialCategoryId: 'cat-2');
 
-    expect(find.text("Prix d'achat"), findsNothing);
+    expect(find.text("Prix d'achat par bouteille"), findsNothing);
     expect(find.text('Prix de vente (FCFA) *'), findsNothing);
     expect(find.textContaining('Catégorie à prix variable'), findsOneWidget);
   });
@@ -104,5 +105,17 @@ void main() {
     await tester.pump();
 
     expect(find.text('Requis'), findsNothing);
+  });
+
+  testWidgets('a case-pricing category replaces Référence/Code-barres with the case fields', (tester) async {
+    await pumpForm(tester, initialCategoryId: 'cat-3');
+
+    expect(find.text('Référence'), findsNothing);
+    expect(find.text('Code-barres'), findsNothing);
+    expect(find.text('Nbre de bouteilles par casier'), findsOneWidget);
+    expect(find.text("Prix d'achat par casier"), findsOneWidget);
+    // "Prix d'achat par bouteille" reste affiché — seule la catégorie à prix
+    // variable (Poulets) masque le prix, pas la catégorie à prix par casier.
+    expect(find.text("Prix d'achat par bouteille"), findsOneWidget);
   });
 }

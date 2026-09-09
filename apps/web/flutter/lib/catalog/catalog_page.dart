@@ -37,11 +37,20 @@ class _CatalogPageState extends State<CatalogPage> {
 
   void _reload() => setState(() => _future = _load());
 
+  List<String> _categoryBadges(Category category) => [
+        if (category.hasVariablePricing) 'Prix variable',
+        if (category.hasCasePricing) 'Prix par casier',
+      ];
+
   Future<void> _addCategory() async {
     final result = await _showCategoryDialog(title: 'Nouvelle catégorie');
     if (result == null) return;
     try {
-      await _repository.createCategory(result.name, hasVariablePricing: result.hasVariablePricing);
+      await _repository.createCategory(
+        result.name,
+        hasVariablePricing: result.hasVariablePricing,
+        hasCasePricing: result.hasCasePricing,
+      );
       _reload();
     } on ApiException catch (e) {
       if (!mounted) return;
@@ -54,6 +63,7 @@ class _CatalogPageState extends State<CatalogPage> {
       title: 'Modifier la catégorie',
       initialName: category.name,
       initialHasVariablePricing: category.hasVariablePricing,
+      initialHasCasePricing: category.hasCasePricing,
     );
     if (result == null) return;
     try {
@@ -61,6 +71,7 @@ class _CatalogPageState extends State<CatalogPage> {
         category.id,
         name: result.name,
         hasVariablePricing: result.hasVariablePricing,
+        hasCasePricing: result.hasCasePricing,
       );
       _categories = [for (final c in _categories) if (c.id == category.id) updated else c];
       setDialogState(() {});
@@ -75,9 +86,11 @@ class _CatalogPageState extends State<CatalogPage> {
     required String title,
     String? initialName,
     bool initialHasVariablePricing = false,
+    bool initialHasCasePricing = false,
   }) {
     final controller = TextEditingController(text: initialName ?? '');
     var hasVariablePricing = initialHasVariablePricing;
+    var hasCasePricing = initialHasCasePricing;
     return showDialog<_CategoryFormResult>(
       context: context,
       builder: (context) => StatefulBuilder(
@@ -95,6 +108,14 @@ class _CatalogPageState extends State<CatalogPage> {
                 title: const Text('Prix variable'),
                 subtitle: const Text('Pas de prix fixe : saisi en caisse à chaque vente (ex. Poulets, Poissons, Plats africains).'),
               ),
+              CheckboxListTile(
+                contentPadding: EdgeInsets.zero,
+                controlAffinity: ListTileControlAffinity.leading,
+                value: hasCasePricing,
+                onChanged: (v) => setState(() => hasCasePricing = v ?? false),
+                title: const Text('Prix par casier'),
+                subtitle: const Text('Vendu par casier (ex. Bières, Vins, Sucreries) : active Nbre de bouteilles/Prix d\'achat par casier.'),
+              ),
             ],
           ),
           actions: [
@@ -103,7 +124,11 @@ class _CatalogPageState extends State<CatalogPage> {
               onPressed: () {
                 final name = controller.text.trim();
                 if (name.isEmpty) return;
-                Navigator.of(context).pop(_CategoryFormResult(name: name, hasVariablePricing: hasVariablePricing));
+                Navigator.of(context).pop(_CategoryFormResult(
+                  name: name,
+                  hasVariablePricing: hasVariablePricing,
+                  hasCasePricing: hasCasePricing,
+                ));
               },
               child: const Text('Valider'),
             ),
@@ -200,7 +225,7 @@ class _CatalogPageState extends State<CatalogPage> {
                         for (final category in _categories)
                           ListTile(
                             title: Text(category.name),
-                            subtitle: category.hasVariablePricing ? const Text('Prix variable') : null,
+                            subtitle: _categoryBadges(category).isEmpty ? null : Text(_categoryBadges(category).join(' · ')),
                             onTap: () => _editCategory(dialogContext, category, setDialogState),
                             trailing: IconButton(
                               tooltip: 'Supprimer',
@@ -307,14 +332,14 @@ class _CatalogPageState extends State<CatalogPage> {
           return _CategoryTile(
             name: category.name,
             count: count,
-            hasVariablePricing: category.hasVariablePricing,
+            badges: _categoryBadges(category),
             onTap: () => _openCategory(category),
           );
         }
         return _CategoryTile(
           name: 'Sans catégorie',
           count: uncategorizedCount,
-          hasVariablePricing: false,
+          badges: const [],
           onTap: () => _openCategory(null, uncategorized: true),
         );
       },
@@ -340,11 +365,11 @@ class _CatalogPageState extends State<CatalogPage> {
 }
 
 class _CategoryTile extends StatelessWidget {
-  const _CategoryTile({required this.name, required this.count, required this.hasVariablePricing, required this.onTap});
+  const _CategoryTile({required this.name, required this.count, required this.badges, required this.onTap});
 
   final String name;
   final int count;
-  final bool hasVariablePricing;
+  final List<String> badges;
   final VoidCallback onTap;
 
   @override
@@ -362,9 +387,9 @@ class _CategoryTile extends StatelessWidget {
               Text(name, maxLines: 1, overflow: TextOverflow.ellipsis, style: const TextStyle(fontWeight: FontWeight.w600, fontSize: 16)),
               const SizedBox(height: 4),
               Text('$count produit${count > 1 ? 's' : ''}'),
-              if (hasVariablePricing) ...[
+              if (badges.isNotEmpty) ...[
                 const SizedBox(height: 4),
-                const Text('Prix variable', style: TextStyle(fontStyle: FontStyle.italic)),
+                Text(badges.join(' · '), style: const TextStyle(fontStyle: FontStyle.italic)),
               ],
             ],
           ),
@@ -375,10 +400,11 @@ class _CategoryTile extends StatelessWidget {
 }
 
 class _CategoryFormResult {
-  const _CategoryFormResult({required this.name, required this.hasVariablePricing});
+  const _CategoryFormResult({required this.name, required this.hasVariablePricing, required this.hasCasePricing});
 
   final String name;
   final bool hasVariablePricing;
+  final bool hasCasePricing;
 }
 
 class _ProductCard extends StatelessWidget {

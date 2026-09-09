@@ -99,6 +99,50 @@ describe('ReportsService.summary', () => {
     expect(result.receivables).toBe(12000);
   });
 
+  it('uses purchasePricePerCase/bottlesPerCase as the cost for a case-pricing category, not purchasePrice', async () => {
+    (prisma.product as any).findMany.mockResolvedValue([
+      {
+        id: 'p1',
+        purchasePrice: new Decimal(2500), // prix "par bouteille" — ne doit PAS être utilisé ici
+        bottlesPerCase: 12,
+        purchasePricePerCase: new Decimal(19500),
+        category: { hasCasePricing: true },
+      },
+    ]);
+    (prisma.sale as any).findMany.mockResolvedValue([
+      {
+        id: 'sale-1',
+        total: new Decimal(6000),
+        discount: new Decimal(0),
+        createdBy: null,
+        items: [{ productId: 'p1', name: 'Bière 65cl', quantity: new Decimal(2), unitPrice: new Decimal(3000) }],
+      },
+    ]);
+
+    const result = await service.summary('est-1', {});
+
+    expect(result.cogs).toBe(2 * (19500 / 12)); // 3250, pas 2 × 2500 = 5000
+  });
+
+  it('falls back to purchasePrice when a case-pricing product has no bottlesPerCase/purchasePricePerCase yet', async () => {
+    (prisma.product as any).findMany.mockResolvedValue([
+      { id: 'p1', purchasePrice: new Decimal(2500), bottlesPerCase: null, purchasePricePerCase: null, category: { hasCasePricing: true } },
+    ]);
+    (prisma.sale as any).findMany.mockResolvedValue([
+      {
+        id: 'sale-1',
+        total: new Decimal(6000),
+        discount: new Decimal(0),
+        createdBy: null,
+        items: [{ productId: 'p1', name: 'Bière 65cl', quantity: new Decimal(2), unitPrice: new Decimal(3000) }],
+      },
+    ]);
+
+    const result = await service.summary('est-1', {});
+
+    expect(result.cogs).toBe(5000); // 2 × 2500
+  });
+
   it('ranks topProducts by quantity sold, capped at 5', async () => {
     (prisma.sale as any).findMany.mockResolvedValue([
       {

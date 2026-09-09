@@ -50,6 +50,8 @@ export class ProductsService {
         // dépense "Marché" (voir docs/api/catalog.md).
         purchasePrice: hasVariablePricing ? null : dto.purchasePrice,
         salePrice: hasVariablePricing ? null : dto.salePrice,
+        bottlesPerCase: dto.bottlesPerCase,
+        purchasePricePerCase: dto.purchasePricePerCase,
         vatRate: dto.vatRate,
         minStock: dto.minStock,
         stockQuantity: dto.stockQuantity ?? 0,

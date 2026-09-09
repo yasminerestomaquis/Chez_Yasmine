@@ -1,5 +1,5 @@
 class Category {
-  Category({required this.id, required this.name, this.hasVariablePricing = false});
+  Category({required this.id, required this.name, this.hasVariablePricing = false, this.hasCasePricing = false});
 
   final String id;
   final String name;
@@ -10,10 +10,17 @@ class Category {
   /// vente, l'achat est suivi via la dépense "Marché" (module Dépenses).
   final bool hasVariablePricing;
 
+  /// Vrai pour une catégorie vendue par casier (ex. Bières, Vins, Sucreries) :
+  /// le formulaire produit affiche Nbre de bouteilles par casier/Prix d'achat
+  /// par casier à la place de Référence/Code-barres, et le module Achats ne
+  /// propose que ces produits dans son flux de commande par casier.
+  final bool hasCasePricing;
+
   factory Category.fromJson(Map<String, dynamic> json) => Category(
         id: json['id'] as String,
         name: json['name'] as String,
         hasVariablePricing: json['hasVariablePricing'] as bool? ?? false,
+        hasCasePricing: json['hasCasePricing'] as bool? ?? false,
       );
 }
 
@@ -45,6 +52,8 @@ class Product {
     this.barcode,
     this.unit,
     this.purchasePrice,
+    this.bottlesPerCase,
+    this.purchasePricePerCase,
     this.vatRate,
     this.minStock,
     this.images = const [],
@@ -58,10 +67,14 @@ class Product {
   final String? reference;
   final String? barcode;
   final String? unit;
+  /// Libellé UI "Prix d'achat par bouteille".
   final double? purchasePrice;
   /// Nul quand `category.hasVariablePricing` est vrai — le prix se saisit
   /// alors en caisse à chaque vente plutôt que d'être fixé dans le catalogue.
   final double? salePrice;
+  /// Catalogue, catégories à prix par casier uniquement (hasCasePricing).
+  final int? bottlesPerCase;
+  final double? purchasePricePerCase;
   final double? vatRate;
   final double? minStock;
   final double stockQuantity;
@@ -69,6 +82,7 @@ class Product {
   final List<ProductImage> images;
 
   bool get hasVariablePricing => category?.hasVariablePricing ?? false;
+  bool get hasCasePricing => category?.hasCasePricing ?? false;
 
   factory Product.fromJson(Map<String, dynamic> json) => Product(
         id: json['id'] as String,
@@ -81,6 +95,8 @@ class Product {
         unit: json['unit'] as String?,
         purchasePrice: (json['purchasePrice'] as num?)?.toDouble(),
         salePrice: (json['salePrice'] as num?)?.toDouble(),
+        bottlesPerCase: (json['bottlesPerCase'] as num?)?.toInt(),
+        purchasePricePerCase: (json['purchasePricePerCase'] as num?)?.toDouble(),
         vatRate: (json['vatRate'] as num?)?.toDouble(),
         minStock: (json['minStock'] as num?)?.toDouble(),
         stockQuantity: (json['stockQuantity'] as num).toDouble(),

@@ -2,6 +2,18 @@
 
 ## [Unreleased]
 
+### Ajouté (post-plan, 2026-09-09) — Catalogue par casier + refonte du module Achats
+- **Catégories à prix par casier** (`Category.hasCasePricing`, migration `20260909070000_add_purchase_case_ordering.sql`) : décision explicite de l'utilisateur pour Bières, Vins, Sucreries — activable sur n'importe quelle catégorie via « Prix par casier » dans « Gérer les catégories », liste ouverte (même mécanisme que les catégories à prix variable).
+- **Catalogue** : pour ces catégories, le formulaire produit remplace Référence par **Nbre de bouteilles par casier** et Code-barres par **Prix d'achat par casier** ; le champ Prix d'achat est renommé **« Prix d'achat par bouteille »** partout dans l'UI (toutes catégories).
+- **Bénéfices** : `effectiveUnitCost()` (nouveau `apps/api/nestjs/src/catalog/product-cost.util.ts`, partagé par Rapports et Graphiques) utilise `Prix d'achat par casier / Nbre de bouteilles par casier` comme coût pour ces catégories, jamais le prix d'achat par bouteille — décision explicite de l'utilisateur, avec repli si ces champs ne sont pas encore renseignés.
+- **Module Achats entièrement refondu** en 3 sous-modules (Créer une commande / Liste de commandes / Historique) — voir `docs/api/purchasing.md` pour le détail complet. Résumé :
+  - Ne s'applique qu'aux produits des catégories à prix par casier ; `PurchasesService` dérive toujours `bottlesPerCase`/`purchasePricePerCase` depuis le Catalogue (jamais du client), à partir du seul `casesOrdered` saisi par l'utilisateur.
+  - **Créer une commande** : Date (éditable, défaut aujourd'hui) et **N° de la commande** (suggéré — compteur par fournisseur — et librement éditable) au-dessus de Fournisseur ; un produit à la fois avec sa vignette photo (reprise du Catalogue), Nbre de bouteilles par casier (non éditable) et Nbre de casiers commandés (éditable, remplace l'ancien champ Qté) ; Nbre total de bouteilles calculé automatiquement ; bouton **Ajouter la commande** (bascule vers Liste de commandes).
+  - **Liste de commandes** : lignes accumulées de la commande en cours (nom, prix d'achat par casier, casiers commandés, prix total), totaux en gras, bouton **Créer la commande** qui enregistre réellement côté serveur — **le stock entre directement à la création**, décision explicite de l'utilisateur (plus d'étape de réception séparée pour ce flux ; l'ancien flux `pending`/`receive`/`cancel` reste en place, déprécié, pour l'historique déjà existant).
+  - **Historique** : liste des commandes enregistrées, avec **modification** (remplace l'intégralité des lignes, annule puis réapplique l'effet stock) et **suppression** (idem, décrémentation clampée à 0 plutôt que de bloquer si une partie du stock a déjà été vendue).
+  - **Fournisseurs** : modification et suppression désormais exposées dans l'UI (le backend les supportait déjà) — suppression toujours possible sans casser l'historique des achats (`onDelete: SetNull`).
+- 14 nouveaux tests NestJS (catégories, coût par casier dans Rapports/Graphiques, module Achats réécrit) + 1 nouveau test widget Flutter (formulaire produit). `flutter analyze`/lint backend propres, 224/224 tests backend, 42/42 tests Flutter.
+
 ### Ajouté
 - Structure monorepo v5 (`apps/`, `packages/`, `supabase/`, `docs/*`, `docker/`, `.github/workflows/`).
 - Scaffold NestJS (`apps/api/nestjs`), build vérifié.

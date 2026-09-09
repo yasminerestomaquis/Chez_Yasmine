@@ -34,7 +34,7 @@ describe('CategoriesService', () => {
     prisma.category.create.mockResolvedValue({ id: 'cat-1' });
     await service.create('est-1', { name: 'Boissons' });
     expect(prisma.category.create).toHaveBeenCalledWith({
-      data: { establishmentId: 'est-1', name: 'Boissons', hasVariablePricing: undefined },
+      data: { establishmentId: 'est-1', name: 'Boissons', hasVariablePricing: undefined, hasCasePricing: undefined },
     });
   });
 
@@ -42,7 +42,15 @@ describe('CategoriesService', () => {
     prisma.category.create.mockResolvedValue({ id: 'cat-1' });
     await service.create('est-1', { name: 'Poulets', hasVariablePricing: true });
     expect(prisma.category.create).toHaveBeenCalledWith({
-      data: { establishmentId: 'est-1', name: 'Poulets', hasVariablePricing: true },
+      data: { establishmentId: 'est-1', name: 'Poulets', hasVariablePricing: true, hasCasePricing: undefined },
+    });
+  });
+
+  it('create() passes hasCasePricing through when provided', async () => {
+    prisma.category.create.mockResolvedValue({ id: 'cat-1' });
+    await service.create('est-1', { name: 'Bières', hasCasePricing: true });
+    expect(prisma.category.create).toHaveBeenCalledWith({
+      data: { establishmentId: 'est-1', name: 'Bières', hasVariablePricing: undefined, hasCasePricing: true },
     });
   });
 

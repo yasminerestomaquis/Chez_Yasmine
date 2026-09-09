@@ -1,23 +1,30 @@
 import { Type } from 'class-transformer';
-import { ArrayMinSize, IsArray, IsNumber, IsOptional, IsUUID, Min, ValidateNested } from 'class-validator';
+import { ArrayMinSize, IsArray, IsDateString, IsInt, IsOptional, IsUUID, Min, ValidateNested } from 'class-validator';
 
 export class PurchaseItemDto {
   @IsUUID()
   productId!: string;
 
-  @IsNumber()
-  @Min(0.01)
-  quantity!: number;
-
-  @IsNumber()
-  @Min(0)
-  unitPrice!: number;
+  /** Nbre de casiers commandés — bottlesPerCase/purchasePricePerCase sont dérivés côté serveur depuis le Catalogue, jamais acceptés du client. */
+  @IsInt()
+  @Min(1)
+  casesOrdered!: number;
 }
 
 export class CreatePurchaseDto {
   @IsOptional()
   @IsUUID()
   supplierId?: string;
+
+  /** N° de la commande — suggéré côté client (compteur par fournisseur), librement éditable. */
+  @IsInt()
+  @Min(1)
+  orderNumber!: number;
+
+  /** Par défaut aujourd'hui si omis. */
+  @IsOptional()
+  @IsDateString()
+  orderDate?: string;
 
   @IsArray()
   @ArrayMinSize(1)

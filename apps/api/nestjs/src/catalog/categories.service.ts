@@ -17,7 +17,12 @@ export class CategoriesService {
 
   create(establishmentId: string, dto: CreateCategoryDto) {
     return this.prisma.category.create({
-      data: { establishmentId, name: dto.name, hasVariablePricing: dto.hasVariablePricing },
+      data: {
+        establishmentId,
+        name: dto.name,
+        hasVariablePricing: dto.hasVariablePricing,
+        hasCasePricing: dto.hasCasePricing,
+      },
     });
   }
 

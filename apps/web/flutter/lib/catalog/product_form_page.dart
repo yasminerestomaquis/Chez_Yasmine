@@ -41,6 +41,8 @@ class _ProductFormPageState extends State<ProductFormPage> {
   late final TextEditingController _unitController;
   late final TextEditingController _purchasePriceController;
   late final TextEditingController _salePriceController;
+  late final TextEditingController _bottlesPerCaseController;
+  late final TextEditingController _purchasePricePerCaseController;
   late final TextEditingController _vatRateController;
   late final TextEditingController _minStockController;
   late final TextEditingController _initialStockController;
@@ -64,6 +66,8 @@ class _ProductFormPageState extends State<ProductFormPage> {
     _unitController = TextEditingController(text: p?.unit ?? '');
     _purchasePriceController = TextEditingController(text: p?.purchasePrice?.toString() ?? '');
     _salePriceController = TextEditingController(text: p?.salePrice?.toString() ?? '');
+    _bottlesPerCaseController = TextEditingController(text: p?.bottlesPerCase?.toString() ?? '');
+    _purchasePricePerCaseController = TextEditingController(text: p?.purchasePricePerCase?.toString() ?? '');
     _vatRateController = TextEditingController(text: p?.vatRate?.toString() ?? '');
     _minStockController = TextEditingController(text: p?.minStock?.toString() ?? '');
     _initialStockController = TextEditingController(text: '0');
@@ -80,6 +84,16 @@ class _ProductFormPageState extends State<ProductFormPage> {
     return false;
   }
 
+  /// Vrai quand la catégorie sélectionnée est vendue par casier (ex. Bières,
+  /// Vins, Sucreries) : Référence/Code-barres sont remplacés par Nbre de
+  /// bouteilles par casier/Prix d'achat par casier — voir docs/api/catalog.md.
+  bool get _isCasePricing {
+    for (final c in widget.categories) {
+      if (c.id == _categoryId) return c.hasCasePricing;
+    }
+    return false;
+  }
+
   @override
   void dispose() {
     _nameController.dispose();
@@ -89,6 +103,8 @@ class _ProductFormPageState extends State<ProductFormPage> {
     _unitController.dispose();
     _purchasePriceController.dispose();
     _salePriceController.dispose();
+    _bottlesPerCaseController.dispose();
+    _purchasePricePerCaseController.dispose();
     _vatRateController.dispose();
     _minStockController.dispose();
     _initialStockController.dispose();
@@ -160,8 +176,12 @@ class _ProductFormPageState extends State<ProductFormPage> {
         'name': _nameController.text.trim(),
         if (_categoryId != null) 'categoryId': _categoryId,
         if (_descriptionController.text.trim().isNotEmpty) 'description': _descriptionController.text.trim(),
-        if (_referenceController.text.trim().isNotEmpty) 'reference': _referenceController.text.trim(),
-        if (_barcodeController.text.trim().isNotEmpty) 'barcode': _barcodeController.text.trim(),
+        if (!_isCasePricing && _referenceController.text.trim().isNotEmpty) 'reference': _referenceController.text.trim(),
+        if (!_isCasePricing && _barcodeController.text.trim().isNotEmpty) 'barcode': _barcodeController.text.trim(),
+        if (_isCasePricing && _parseNumber(_bottlesPerCaseController.text) != null)
+          'bottlesPerCase': _parseNumber(_bottlesPerCaseController.text)!.round(),
+        if (_isCasePricing && _parseNumber(_purchasePricePerCaseController.text) != null)
+          'purchasePricePerCase': _parseNumber(_purchasePricePerCaseController.text),
         if (_unitController.text.trim().isNotEmpty) 'unit': _unitController.text.trim(),
         if (!_isVariablePricing && _parseNumber(_purchasePriceController.text) != null)
           'purchasePrice': _parseNumber(_purchasePriceController.text),
@@ -223,11 +243,30 @@ class _ProductFormPageState extends State<ProductFormPage> {
             const SizedBox(height: 12),
             TextFormField(controller: _descriptionController, decoration: const InputDecoration(labelText: 'Description'), maxLines: 2),
             const SizedBox(height: 12),
-            Row(children: [
-              Expanded(child: TextFormField(controller: _referenceController, decoration: const InputDecoration(labelText: 'Référence'))),
-              const SizedBox(width: 12),
-              Expanded(child: TextFormField(controller: _barcodeController, decoration: const InputDecoration(labelText: 'Code-barres'))),
-            ]),
+            if (_isCasePricing)
+              Row(children: [
+                Expanded(
+                  child: TextFormField(
+                    controller: _bottlesPerCaseController,
+                    keyboardType: TextInputType.number,
+                    decoration: const InputDecoration(labelText: 'Nbre de bouteilles par casier'),
+                  ),
+                ),
+                const SizedBox(width: 12),
+                Expanded(
+                  child: TextFormField(
+                    controller: _purchasePricePerCaseController,
+                    keyboardType: const TextInputType.numberWithOptions(decimal: true),
+                    decoration: const InputDecoration(labelText: "Prix d'achat par casier"),
+                  ),
+                ),
+              ])
+            else
+              Row(children: [
+                Expanded(child: TextFormField(controller: _referenceController, decoration: const InputDecoration(labelText: 'Référence'))),
+                const SizedBox(width: 12),
+                Expanded(child: TextFormField(controller: _barcodeController, decoration: const InputDecoration(labelText: 'Code-barres'))),
+              ]),
             const SizedBox(height: 12),
             TextFormField(controller: _unitController, decoration: const InputDecoration(labelText: 'Unité (ex : bouteille, portion)')),
             const SizedBox(height: 12),
@@ -256,7 +295,7 @@ class _ProductFormPageState extends State<ProductFormPage> {
                   child: TextFormField(
                     controller: _purchasePriceController,
                     keyboardType: const TextInputType.numberWithOptions(decimal: true),
-                    decoration: const InputDecoration(labelText: "Prix d'achat"),
+                    decoration: const InputDecoration(labelText: "Prix d'achat par bouteille"),
                   ),
                 ),
                 const SizedBox(width: 12),

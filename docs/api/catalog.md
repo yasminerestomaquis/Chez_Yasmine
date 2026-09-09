@@ -42,6 +42,15 @@ Le Catalogue affiche désormais une grille de sous-modules — un par catégorie
 - **Additions de table** : `OrdersService.addItem` rejette (400) l'ajout d'un produit à prix variable — cette UI ne propose pas encore de saisie de prix (contrairement à la Caisse) ; ces produits doivent être vendus depuis la Caisse pour l'instant.
 - **Rapports** (`docs/api/reports.md`) : `purchasePrice` nul contribue 0 au coût des marchandises vendues (cogs) par produit — cohérent avec le fait que le coût réel est capté au niveau agrégé via la dépense « Marché », pas par produit.
 
+## Catégories à prix par casier (2026-09-09)
+
+`Category.hasCasePricing` (migration `20260909070000_add_purchase_case_ordering.sql`) marque une catégorie vendue par casier — décision explicite de l'utilisateur, initialement pour Bières, Vins, Sucreries, activable sur n'importe quelle catégorie via la case à cocher « Prix par casier » du dialogue de création/édition (même mécanisme que `hasVariablePricing`, liste ouverte). Pour un produit de ces catégories, le formulaire Flutter ([lib/catalog/product_form_page.dart](../../apps/web/flutter/lib/catalog/product_form_page.dart)) remplace :
+
+- **Référence** par **Nbre de bouteilles par casier** (`Product.bottlesPerCase`, entier) ;
+- **Code-barres** par **Prix d'achat par casier** (`Product.purchasePricePerCase`).
+
+Le champ **Prix d'achat** (`Product.purchasePrice`) reste affiché pour ces catégories, seulement relabellisé **« Prix d'achat par bouteille »** dans toute l'UI — mais le calcul du bénéfice (`docs/api/reports.md`) utilise `purchasePricePerCase / bottlesPerCase` à la place pour ces catégories, jamais `purchasePrice` (décision explicite de l'utilisateur). Ces deux champs sont ensuite repris (jamais ressaisis) par le module Achats à chaque commande — voir `docs/api/purchasing.md`.
+
 ## Isolation multi-tenant côté NestJS
 
 Prisma se connecte directement à Postgres via `DATABASE_URL` (rôle propriétaire de la base) — **il contourne RLS**, contrairement à un appel PostgREST anon/authenticated. `PermissionsGuard` vérifie l'appartenance à l'établissement, mais chaque requête Prisma des services `CategoriesService`/`ProductsService`/`ProductImagesService` filtre *explicitement* par `establishmentId` — ce n'est jamais automatique à cette couche. `ProductsService` vérifie en plus qu'un `categoryId`/`supplierId` fourni appartient bien au même établissement avant de l'associer à un produit (protection contre le rattachement croisé entre établissements).

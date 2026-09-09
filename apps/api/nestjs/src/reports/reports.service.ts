@@ -1,5 +1,6 @@
 import { Injectable } from '@nestjs/common';
 import { PrismaService } from '../prisma/prisma.service.js';
+import { effectiveUnitCost } from '../catalog/product-cost.util.js';
 import { StockMovementsService } from '../stock/stock-movements.service.js';
 import type { ReportQueryDto } from './dto/report-query.dto.js';
 
@@ -64,7 +65,16 @@ export class ReportsService {
       }),
       this.prisma.loss.findMany({
         where: { establishmentId, createdAt: { gte: from, lte: to } },
-        include: { product: { select: { purchasePrice: true } } },
+        include: {
+          product: {
+            select: {
+              purchasePrice: true,
+              bottlesPerCase: true,
+              purchasePricePerCase: true,
+              category: { select: { hasCasePricing: true } },
+            },
+          },
+        },
       }),
       this.prisma.customer.aggregate({ _sum: { creditBalance: true }, where: { establishmentId } }),
       this.stockMovements.listLowStockAlerts(establishmentId),
@@ -76,9 +86,18 @@ export class ReportsService {
 
     const productIds = [...new Set(sales.flatMap((s) => s.items.map((i) => i.productId)))];
     const products = productIds.length
-      ? await this.prisma.product.findMany({ where: { id: { in: productIds } }, select: { id: true, purchasePrice: true } })
+      ? await this.prisma.product.findMany({
+          where: { id: { in: productIds } },
+          select: {
+            id: true,
+            purchasePrice: true,
+            bottlesPerCase: true,
+            purchasePricePerCase: true,
+            category: { select: { hasCasePricing: true } },
+          },
+        })
       : [];
-    const purchasePriceById = new Map(products.map((p) => [p.id, p.purchasePrice?.toNumber() ?? 0]));
+    const purchasePriceById = new Map(products.map((p) => [p.id, effectiveUnitCost(p)]));
 
     let cogs = 0;
     const productAgg = new Map<string, { name: string; quantity: number; revenue: number; cost: number }>();
@@ -118,10 +137,7 @@ export class ReportsService {
       .map(([userId, v]) => ({ userId, name: serverNameById.get(userId) ?? userId, ...v }))
       .sort((a, b) => b.total - a.total);
 
-    const lossesTotal = losses.reduce(
-      (sum, l) => sum + l.quantity.toNumber() * (l.product.purchasePrice?.toNumber() ?? 0),
-      0,
-    );
+    const lossesTotal = losses.reduce((sum, l) => sum + l.quantity.toNumber() * effectiveUnitCost(l.product), 0);
     const expensesTotal = expenseAgg._sum.amount?.toNumber() ?? 0;
     const grossMargin = revenue - cogs;
     const netProfit = grossMargin - expensesTotal - lossesTotal;

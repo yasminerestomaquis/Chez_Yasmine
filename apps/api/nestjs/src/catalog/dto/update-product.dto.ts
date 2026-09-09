@@ -1,4 +1,4 @@
-import { IsIn, IsNumber, IsOptional, IsString, IsUUID, Min, MinLength } from 'class-validator';
+import { IsIn, IsInt, IsNumber, IsOptional, IsString, IsUUID, Min, MinLength } from 'class-validator';
 
 /** Excludes stockQuantity on purpose — stock changes go through movements (Phase 6), never a direct product edit. */
 export class UpdateProductDto {
@@ -44,6 +44,16 @@ export class UpdateProductDto {
   @IsNumber()
   @Min(0)
   salePrice?: number;
+
+  @IsOptional()
+  @IsInt()
+  @Min(1)
+  bottlesPerCase?: number;
+
+  @IsOptional()
+  @IsNumber()
+  @Min(0)
+  purchasePricePerCase?: number;
 
   @IsOptional()
   @IsNumber()

@@ -29,6 +29,9 @@ interface ItemOverrides {
   name?: string;
   categoryId?: string | null;
   categoryName?: string;
+  hasCasePricing?: boolean;
+  bottlesPerCase?: number | null;
+  purchasePricePerCase?: number | null;
 }
 
 function item(overrides: ItemOverrides = {}) {
@@ -41,8 +44,13 @@ function item(overrides: ItemOverrides = {}) {
     sale: { createdAt: overrides.createdAt ?? new Date('2026-09-07T10:00:00Z') },
     product: {
       purchasePrice: new Decimal(overrides.purchasePrice ?? 60),
+      bottlesPerCase: overrides.bottlesPerCase ?? null,
+      purchasePricePerCase: overrides.purchasePricePerCase != null ? new Decimal(overrides.purchasePricePerCase) : null,
       categoryId,
-      category: categoryId === null ? null : { name: overrides.categoryName ?? 'Boissons' },
+      category:
+        categoryId === null
+          ? null
+          : { name: overrides.categoryName ?? 'Boissons', hasCasePricing: overrides.hasCasePricing ?? false },
     },
   };
 }
@@ -85,6 +93,25 @@ describe('ChartsService.weeklyTotal', () => {
     const result = await service.weeklyTotal('est-1', 'profit', '2026-09-07');
 
     expect(result.series[0].points[0].value).toBe(400); // (500 - 300) * 2
+  });
+
+  it('uses purchasePricePerCase/bottlesPerCase for profit in a case-pricing category, not purchasePrice', async () => {
+    const prisma = makePrismaMock();
+    const service = new ChartsService(prisma as unknown as PrismaService);
+    prisma.saleItem.findMany.mockResolvedValue([
+      item({
+        quantity: 2,
+        unitPrice: 3000,
+        purchasePrice: 2500, // ne doit pas être utilisé
+        hasCasePricing: true,
+        bottlesPerCase: 12,
+        purchasePricePerCase: 19500,
+      }),
+    ]);
+
+    const result = await service.weeklyTotal('est-1', 'profit', '2026-09-07');
+
+    expect(result.series[0].points[0].value).toBeCloseTo(2 * (3000 - 19500 / 12)); // pas 2 * (3000 - 2500)
   });
 
   it('excludes sales outside the requested week', async () => {

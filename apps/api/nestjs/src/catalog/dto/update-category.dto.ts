@@ -10,4 +10,8 @@ export class UpdateCategoryDto {
   @IsOptional()
   @IsBoolean()
   hasVariablePricing?: boolean;
+
+  @IsOptional()
+  @IsBoolean()
+  hasCasePricing?: boolean;
 }

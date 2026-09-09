@@ -10,4 +10,9 @@ export class CreateCategoryDto {
   @IsOptional()
   @IsBoolean()
   hasVariablePricing?: boolean;
+
+  /** Vrai pour une catégorie vendue par casier (ex. Bières, Vins, Sucreries) — voir CategoriesService. */
+  @IsOptional()
+  @IsBoolean()
+  hasCasePricing?: boolean;
 }

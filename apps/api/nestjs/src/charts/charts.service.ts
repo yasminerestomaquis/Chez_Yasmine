@@ -1,4 +1,5 @@
 import { Injectable, NotFoundException } from '@nestjs/common';
+import { effectiveUnitCost } from '../catalog/product-cost.util.js';
 import { PrismaService } from '../prisma/prisma.service.js';
 import { computeFifoLots, type StockLotMovementType } from '../stock/stock-lots.js';
 import type { ChartMetric } from './dto/chart-query.dto.js';
@@ -83,17 +84,24 @@ export class ChartsService {
         productId: true,
         name: true,
         sale: { select: { createdAt: true } },
-        product: { select: { purchasePrice: true, categoryId: true, category: { select: { name: true } } } },
+        product: {
+          select: {
+            purchasePrice: true,
+            bottlesPerCase: true,
+            purchasePricePerCase: true,
+            categoryId: true,
+            category: { select: { name: true, hasCasePricing: true } },
+          },
+        },
       },
     });
     return items.map((item) => {
       const quantity = item.quantity.toNumber();
       const unitPrice = item.unitPrice.toNumber();
-      const purchasePrice = item.product.purchasePrice?.toNumber() ?? 0;
       return {
         createdAt: item.sale.createdAt,
         revenue: quantity * unitPrice,
-        cost: quantity * purchasePrice,
+        cost: quantity * effectiveUnitCost(item.product),
         productId: item.productId,
         productName: item.name,
         categoryId: item.product.categoryId,

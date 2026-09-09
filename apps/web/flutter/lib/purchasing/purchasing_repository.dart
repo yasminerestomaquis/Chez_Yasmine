@@ -37,10 +37,44 @@ class PurchasingRepository {
     return json.map((e) => Purchase.fromJson(e as Map<String, dynamic>)).toList();
   }
 
-  Future<Purchase> createPurchase({String? supplierId, required List<Map<String, dynamic>> items}) async {
-    final json = await _api.post('$_base/purchases', body: {'supplierId': ?supplierId, 'items': items}) as Map<String, dynamic>;
+  /// Suggestion de N° de commande (compteur par fournisseur, "Aucun" inclus) — purement indicatif, jamais imposé côté serveur.
+  Future<int> nextOrderNumber({String? supplierId}) async {
+    final json = await _api.get('$_base/purchases/next-order-number', query: {'supplierId': ?supplierId}) as Map<String, dynamic>;
+    return json['orderNumber'] as int;
+  }
+
+  Future<Purchase> createPurchase({
+    String? supplierId,
+    required int orderNumber,
+    required DateTime orderDate,
+    required List<Map<String, dynamic>> items,
+  }) async {
+    final json = await _api.post('$_base/purchases', body: {
+      'supplierId': ?supplierId,
+      'orderNumber': orderNumber,
+      'orderDate': _dateOnly(orderDate),
+      'items': items,
+    }) as Map<String, dynamic>;
     return Purchase.fromJson(json);
   }
+
+  Future<Purchase> updatePurchase(
+    String purchaseId, {
+    String? supplierId,
+    int? orderNumber,
+    DateTime? orderDate,
+    required List<Map<String, dynamic>> items,
+  }) async {
+    final json = await _api.patch('$_base/purchases/$purchaseId', body: {
+      'supplierId': ?supplierId,
+      'orderNumber': ?orderNumber,
+      'orderDate': ?(orderDate != null ? _dateOnly(orderDate) : null),
+      'items': items,
+    }) as Map<String, dynamic>;
+    return Purchase.fromJson(json);
+  }
+
+  Future<void> deletePurchase(String purchaseId) => _api.delete('$_base/purchases/$purchaseId');
 
   Future<Purchase> receive(String purchaseId) async {
     final json = await _api.post('$_base/purchases/$purchaseId/receive') as Map<String, dynamic>;
@@ -50,4 +84,7 @@ class PurchasingRepository {
   Future<void> cancel(String purchaseId) {
     return _api.post('$_base/purchases/$purchaseId/cancel');
   }
+
+  String _dateOnly(DateTime date) =>
+      '${date.year.toString().padLeft(4, '0')}-${date.month.toString().padLeft(2, '0')}-${date.day.toString().padLeft(2, '0')}';
 }
