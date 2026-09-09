@@ -36,8 +36,10 @@ class UsersRepository {
     return json['link'] as String;
   }
 
-  Future<void> changeRole(String membershipId, String roleId) {
-    return _api.patch('$_base/users/$membershipId', body: {'roleId': roleId});
+  /// [roleId]/[fullName] sont indépendants et optionnels — n'envoyer que ce
+  /// qui a changé.
+  Future<void> updateMember(String membershipId, {String? roleId, String? fullName}) {
+    return _api.patch('$_base/users/$membershipId', body: {'roleId': ?roleId, 'fullName': ?fullName});
   }
 
   /// Génère un lien de réinitialisation de mot de passe pour un membre déjà

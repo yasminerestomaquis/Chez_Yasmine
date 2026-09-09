@@ -3,7 +3,7 @@ import { AuthorizationService } from '../auth/authorization.service.js';
 import { SupabaseAdminService } from '../auth/supabase-admin.service.js';
 import { PrismaService } from '../prisma/prisma.service.js';
 import type { InviteUserDto } from './dto/invite-user.dto.js';
-import type { UpdateUserRoleDto } from './dto/update-user-role.dto.js';
+import type { UpdateMemberDto } from './dto/update-member.dto.js';
 
 const ROLE_WITH_PERMISSIONS_INCLUDE = {
   rolePermissions: { select: { permission: { select: { code: true } } } },
@@ -96,27 +96,38 @@ export class UsersService {
   }
 
   /**
-   * Change le rôle d'un utilisateur déjà membre de cet établissement.
-   * L'appelant doit dominer (au sens des permissions) à la fois le rôle
-   * actuel et le nouveau rôle — sinon un Gérant pourrait, par exemple,
-   * rétrograder un Propriétaire sans avoir lui-même ce niveau d'accès.
+   * Modifie le rôle et/ou le nom complet d'un membre déjà en place — les
+   * deux champs sont indépendants et optionnels. Seul le changement de rôle
+   * est soumis à la protection anti-élévation (l'appelant doit dominer, au
+   * sens des permissions, à la fois le rôle actuel et le nouveau rôle —
+   * sinon un Gérant pourrait par exemple rétrograder un Propriétaire sans
+   * avoir lui-même ce niveau d'accès) et à l'interdiction de se modifier
+   * soi-même (évite un verrouillage accidentel) ; changer uniquement son
+   * propre nom complet est sans risque et reste autorisé.
    */
-  async changeRole(establishmentId: string, callerId: string, membershipId: string, dto: UpdateUserRoleDto) {
+  async updateMember(establishmentId: string, callerId: string, membershipId: string, dto: UpdateMemberDto) {
     const membership = await this.findMembershipOrThrow(establishmentId, membershipId);
-    if (membership.userId === callerId) {
-      throw new BadRequestException('Vous ne pouvez pas modifier votre propre rôle');
+
+    if (dto.roleId !== undefined) {
+      if (membership.userId === callerId) {
+        throw new BadRequestException('Vous ne pouvez pas modifier votre propre rôle');
+      }
+      await this.assertCallerOutranks(establishmentId, callerId, membership.role);
+      const newRole = await this.assertRoleAssignable(establishmentId, callerId, dto.roleId);
+      if (this.hasPermission(membership.role, 'users.manage') && !this.hasPermission(newRole, 'users.manage')) {
+        await this.assertKeepsAtLeastOneUserManager(establishmentId, membershipId);
+      }
+      await this.prisma.userEstablishmentRole.update({ where: { id: membershipId }, data: { roleId: dto.roleId } });
     }
-    await this.assertCallerOutranks(establishmentId, callerId, membership.role);
-    const newRole = await this.assertRoleAssignable(establishmentId, callerId, dto.roleId);
-    if (this.hasPermission(membership.role, 'users.manage') && !this.hasPermission(newRole, 'users.manage')) {
-      await this.assertKeepsAtLeastOneUserManager(establishmentId, membershipId);
+
+    if (dto.fullName !== undefined) {
+      await this.prisma.userProfile.update({ where: { id: membership.userId }, data: { fullName: dto.fullName } });
     }
-    const result = await this.prisma.userEstablishmentRole.update({
+
+    return this.prisma.userEstablishmentRole.findUniqueOrThrow({
       where: { id: membershipId },
-      data: { roleId: dto.roleId },
       include: { user: { select: { fullName: true } }, role: { select: { id: true, name: true } } },
     });
-    return result;
   }
 
   /**

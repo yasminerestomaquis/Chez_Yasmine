@@ -4,7 +4,7 @@ import { PermissionsGuard } from '../auth/permissions.guard.js';
 import { RequirePermissions } from '../auth/permissions.decorator.js';
 import { SupabaseJwtGuard } from '../auth/supabase-jwt.guard.js';
 import { InviteUserDto } from './dto/invite-user.dto.js';
-import { UpdateUserRoleDto } from './dto/update-user-role.dto.js';
+import { UpdateMemberDto } from './dto/update-member.dto.js';
 import { UsersService } from './users.service.js';
 
 @Controller('establishments/:establishmentId')
@@ -38,13 +38,13 @@ export class UsersController {
   }
 
   @Patch('users/:membershipId')
-  changeRole(
+  updateMember(
     @Req() request: Request,
     @Param('establishmentId') establishmentId: string,
     @Param('membershipId') membershipId: string,
-    @Body() dto: UpdateUserRoleDto,
+    @Body() dto: UpdateMemberDto,
   ) {
-    return this.users.changeRole(establishmentId, request.user!.sub, membershipId, dto);
+    return this.users.updateMember(establishmentId, request.user!.sub, membershipId, dto);
   }
 
   @Post('users/:membershipId/recovery-link')

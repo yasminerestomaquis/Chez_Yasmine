@@ -7,7 +7,15 @@ import { UsersService } from './users.service.js';
 
 function makePrismaMock() {
   return {
-    userEstablishmentRole: { findMany: vi.fn(), findFirst: vi.fn(), delete: vi.fn(), update: vi.fn(), count: vi.fn() },
+    userEstablishmentRole: {
+      findMany: vi.fn(),
+      findFirst: vi.fn(),
+      findUniqueOrThrow: vi.fn(),
+      delete: vi.fn(),
+      update: vi.fn(),
+      count: vi.fn(),
+    },
+    userProfile: { update: vi.fn() },
     establishment: { findUniqueOrThrow: vi.fn() },
     role: { findMany: vi.fn(), findFirst: vi.fn() },
   };
@@ -220,7 +228,7 @@ describe('UsersService.removeMember', () => {
   });
 });
 
-describe('UsersService.changeRole', () => {
+describe('UsersService.updateMember', () => {
   let prisma: ReturnType<typeof makePrismaMock>;
   let authorization: { getPermissionCodes: ReturnType<typeof vi.fn> };
   let service: UsersService;
@@ -229,6 +237,7 @@ describe('UsersService.changeRole', () => {
     prisma = makePrismaMock();
     authorization = { getPermissionCodes: vi.fn() };
     prisma.establishment.findUniqueOrThrow.mockResolvedValue({ id: 'est-1', organizationId: 'org-1' });
+    prisma.userEstablishmentRole.findUniqueOrThrow.mockResolvedValue({ id: 'membership-1', roleId: 'role-Caissier' });
     service = new UsersService(
       prisma as unknown as PrismaService,
       authorization as unknown as AuthorizationService,
@@ -239,7 +248,7 @@ describe('UsersService.changeRole', () => {
   it('rejects changing your own role', async () => {
     prisma.userEstablishmentRole.findFirst.mockResolvedValue(membership('Caissier', ['pos.sell'], { userId: 'caller-1' }));
     await expect(
-      service.changeRole('est-1', 'caller-1', 'membership-1', { roleId: 'role-x' }),
+      service.updateMember('est-1', 'caller-1', 'membership-1', { roleId: 'role-x' }),
     ).rejects.toBeInstanceOf(BadRequestException);
   });
 
@@ -248,7 +257,7 @@ describe('UsersService.changeRole', () => {
     prisma.role.findFirst.mockResolvedValue(roleWithPermissions('Propriétaire', ['roles.manage']));
     authorization.getPermissionCodes.mockResolvedValue(new Set(['pos.sell']));
     await expect(
-      service.changeRole('est-1', 'caller-1', 'membership-1', { roleId: 'role-x' }),
+      service.updateMember('est-1', 'caller-1', 'membership-1', { roleId: 'role-x' }),
     ).rejects.toBeInstanceOf(ForbiddenException);
     expect(prisma.userEstablishmentRole.update).not.toHaveBeenCalled();
   });
@@ -259,7 +268,7 @@ describe('UsersService.changeRole', () => {
     authorization.getPermissionCodes.mockResolvedValue(new Set(['users.manage', 'pos.sell']));
     prisma.userEstablishmentRole.count.mockResolvedValue(0);
     await expect(
-      service.changeRole('est-1', 'caller-1', 'membership-1', { roleId: 'role-x' }),
+      service.updateMember('est-1', 'caller-1', 'membership-1', { roleId: 'role-x' }),
     ).rejects.toBeInstanceOf(ConflictException);
     expect(prisma.userEstablishmentRole.update).not.toHaveBeenCalled();
   });
@@ -268,14 +277,42 @@ describe('UsersService.changeRole', () => {
     prisma.userEstablishmentRole.findFirst.mockResolvedValue(membership('Serveur', ['pos.sell', 'tables.manage']));
     prisma.role.findFirst.mockResolvedValue(roleWithPermissions('Caissier', ['pos.sell', 'cash.manage']));
     authorization.getPermissionCodes.mockResolvedValue(new Set(['pos.sell', 'tables.manage', 'cash.manage']));
-    prisma.userEstablishmentRole.update.mockResolvedValue({ id: 'membership-1', roleId: 'role-Caissier' });
 
-    const result = await service.changeRole('est-1', 'caller-1', 'membership-1', { roleId: 'role-x' });
+    const result = await service.updateMember('est-1', 'caller-1', 'membership-1', { roleId: 'role-x' });
 
-    expect(prisma.userEstablishmentRole.update).toHaveBeenCalledWith(
-      expect.objectContaining({ where: { id: 'membership-1' }, data: { roleId: 'role-x' } }),
-    );
+    expect(prisma.userEstablishmentRole.update).toHaveBeenCalledWith({
+      where: { id: 'membership-1' },
+      data: { roleId: 'role-x' },
+    });
+    expect(prisma.userProfile.update).not.toHaveBeenCalled();
     expect(result).toEqual({ id: 'membership-1', roleId: 'role-Caissier' });
+  });
+
+  it('allows changing your own full name (no anti-escalation, no self-block)', async () => {
+    prisma.userEstablishmentRole.findFirst.mockResolvedValue(membership('Caissier', ['pos.sell'], { userId: 'caller-1' }));
+
+    await service.updateMember('est-1', 'caller-1', 'membership-1', { fullName: 'Nouveau nom' });
+
+    expect(prisma.userProfile.update).toHaveBeenCalledWith({ where: { id: 'caller-1' }, data: { fullName: 'Nouveau nom' } });
+    expect(prisma.userEstablishmentRole.update).not.toHaveBeenCalled();
+    expect(authorization.getPermissionCodes).not.toHaveBeenCalled();
+  });
+
+  it('updates both the role and the full name in one call', async () => {
+    prisma.userEstablishmentRole.findFirst.mockResolvedValue(membership('Serveur', ['pos.sell']));
+    prisma.role.findFirst.mockResolvedValue(roleWithPermissions('Caissier', ['pos.sell']));
+    authorization.getPermissionCodes.mockResolvedValue(new Set(['pos.sell']));
+
+    await service.updateMember('est-1', 'caller-1', 'membership-1', { roleId: 'role-x', fullName: 'Missa Key' });
+
+    expect(prisma.userEstablishmentRole.update).toHaveBeenCalledWith({
+      where: { id: 'membership-1' },
+      data: { roleId: 'role-x' },
+    });
+    expect(prisma.userProfile.update).toHaveBeenCalledWith({
+      where: { id: membership('Serveur', ['pos.sell']).userId },
+      data: { fullName: 'Missa Key' },
+    });
   });
 });
 

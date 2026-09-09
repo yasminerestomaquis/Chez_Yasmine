@@ -128,19 +128,30 @@ class _UsersPageState extends State<UsersPage> {
 
   String? get _currentUserId => Supabase.instance.client.auth.currentUser?.id;
 
-  Future<void> _changeRole(TeamMember member, List<RoleOption> roles) async {
+  Future<void> _editMember(TeamMember member, List<RoleOption> roles) async {
+    final fullNameController = TextEditingController(text: member.fullName ?? '');
     String roleId = member.roleId;
     final confirmed = await showDialog<bool>(
       context: context,
       builder: (context) => StatefulBuilder(
         builder: (context, setDialogState) => AlertDialog(
-          title: Text('Modifier le rôle — ${member.fullName ?? member.userId}'),
-          content: DropdownButtonFormField<String>(
-            initialValue: roleId,
-            isExpanded: true,
-            decoration: const InputDecoration(labelText: 'Rôle'),
-            items: [for (final role in roles) DropdownMenuItem(value: role.id, child: Text(role.name))],
-            onChanged: (value) => setDialogState(() => roleId = value ?? roleId),
+          title: const Text('Modifier le membre'),
+          content: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              TextField(
+                controller: fullNameController,
+                autofocus: true,
+                decoration: const InputDecoration(labelText: 'Nom complet'),
+              ),
+              DropdownButtonFormField<String>(
+                initialValue: roleId,
+                isExpanded: true,
+                decoration: const InputDecoration(labelText: 'Rôle'),
+                items: [for (final role in roles) DropdownMenuItem(value: role.id, child: Text(role.name))],
+                onChanged: (value) => setDialogState(() => roleId = value ?? roleId),
+              ),
+            ],
           ),
           actions: [
             TextButton(onPressed: () => Navigator.of(context).pop(false), child: const Text('Annuler')),
@@ -150,8 +161,13 @@ class _UsersPageState extends State<UsersPage> {
       ),
     );
     if (confirmed != true) return;
+    final fullName = fullNameController.text.trim();
     try {
-      await _repository.changeRole(member.membershipId, roleId);
+      await _repository.updateMember(
+        member.membershipId,
+        roleId: roleId == member.roleId ? null : roleId,
+        fullName: fullName == (member.fullName ?? '') ? null : fullName,
+      );
       _reload();
     } on ApiException catch (e) {
       if (!mounted) return;
@@ -251,9 +267,9 @@ class _UsersPageState extends State<UsersPage> {
                       ),
                       if (member.userId != _currentUserId) ...[
                         IconButton(
-                          tooltip: 'Modifier le rôle',
+                          tooltip: 'Modifier le membre',
                           icon: const Icon(Icons.edit_outlined),
-                          onPressed: () => _changeRole(member, roles),
+                          onPressed: () => _editMember(member, roles),
                         ),
                         IconButton(
                           tooltip: 'Retirer',
