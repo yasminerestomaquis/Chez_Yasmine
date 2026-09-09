@@ -2,6 +2,17 @@ import { Injectable, InternalServerErrorException } from '@nestjs/common';
 import { createClient, type SupabaseClient } from '@supabase/supabase-js';
 
 /**
+ * Où un lien Supabase (invitation ou réinitialisation) redirige une fois le
+ * jeton vérifié — sans `redirectTo` explicite, Supabase retombe sur le
+ * « Site URL » du projet, resté sur `localhost:3000` (utile en dev, jamais
+ * en production) : un lien cliqué depuis un vrai appareil échouait alors en
+ * `ERR_CONNECTION_REFUSED` (rencontré en conditions réelles le 2026-09-09,
+ * sur missakey1@gmail.com). Même origine que celle whitelistée pour CORS
+ * dans main.ts.
+ */
+const APP_REDIRECT_URL = 'https://chez-yasmine-two.vercel.app';
+
+/**
  * Seul point du code qui utilise la clé service_role (jamais exposée au
  * client — CLAUDE.md, « Règles Supabase / PostgreSQL »). Réservé aux
  * opérations que l'API Admin de Supabase Auth est seule à exposer, comme
@@ -35,7 +46,10 @@ export class SupabaseAdminService {
    * du type d'exception HTTP renvoyé.
    */
   async inviteUserByEmail(email: string, metadata: Record<string, string | boolean>): Promise<void> {
-    const { error } = await this.getClient().auth.admin.inviteUserByEmail(email, { data: metadata });
+    const { error } = await this.getClient().auth.admin.inviteUserByEmail(email, {
+      data: metadata,
+      redirectTo: APP_REDIRECT_URL,
+    });
     if (error) {
       throw new Error(error.message);
     }
@@ -53,7 +67,7 @@ export class SupabaseAdminService {
     const { data, error } = await this.getClient().auth.admin.generateLink({
       type: 'invite',
       email,
-      options: { data: metadata },
+      options: { data: metadata, redirectTo: APP_REDIRECT_URL },
     });
     if (error || !data.properties?.action_link) {
       throw new Error(error?.message ?? 'Lien non généré');
@@ -83,7 +97,11 @@ export class SupabaseAdminService {
     if (updateError) {
       throw new Error(updateError.message);
     }
-    const { data, error } = await client.auth.admin.generateLink({ type: 'recovery', email: userData.user.email });
+    const { data, error } = await client.auth.admin.generateLink({
+      type: 'recovery',
+      email: userData.user.email,
+      options: { redirectTo: APP_REDIRECT_URL },
+    });
     if (error || !data.properties?.action_link) {
       throw new Error(error?.message ?? 'Lien non généré');
     }
