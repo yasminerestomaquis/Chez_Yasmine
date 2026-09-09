@@ -18,29 +18,93 @@ class _SuppliersPageState extends State<SuppliersPage> {
 
   void _reload() => setState(() => _future = widget.repository.listSuppliers());
 
-  Future<void> _addSupplier() async {
-    final nameController = TextEditingController();
-    final phoneController = TextEditingController();
-    final saved = await showDialog<bool>(
+  Future<_SupplierFormResult?> _showSupplierDialog({
+    required String title,
+    String? initialName,
+    String? initialPhone,
+    String? initialAddress,
+  }) {
+    final nameController = TextEditingController(text: initialName ?? '');
+    final phoneController = TextEditingController(text: initialPhone ?? '');
+    final addressController = TextEditingController(text: initialAddress ?? '');
+    return showDialog<_SupplierFormResult>(
       context: context,
       builder: (context) => AlertDialog(
-        title: const Text('Nouveau fournisseur'),
+        title: Text(title),
         content: Column(
           mainAxisSize: MainAxisSize.min,
           children: [
-            TextField(controller: nameController, decoration: const InputDecoration(labelText: 'Nom')),
+            TextField(controller: nameController, autofocus: true, decoration: const InputDecoration(labelText: 'Nom')),
             TextField(controller: phoneController, decoration: const InputDecoration(labelText: 'Téléphone')),
+            TextField(controller: addressController, decoration: const InputDecoration(labelText: 'Adresse')),
           ],
         ),
         actions: [
-          TextButton(onPressed: () => Navigator.of(context).pop(false), child: const Text('Annuler')),
-          FilledButton(onPressed: () => Navigator.of(context).pop(true), child: const Text('Créer')),
+          TextButton(onPressed: () => Navigator.of(context).pop(), child: const Text('Annuler')),
+          FilledButton(
+            onPressed: () {
+              final name = nameController.text.trim();
+              if (name.isEmpty) return;
+              Navigator.of(context).pop(_SupplierFormResult(
+                name: name,
+                phone: phoneController.text.trim(),
+                address: addressController.text.trim(),
+              ));
+            },
+            child: const Text('Valider'),
+          ),
         ],
       ),
     );
-    if (saved != true || nameController.text.trim().isEmpty) return;
+  }
+
+  Future<void> _addSupplier() async {
+    final result = await _showSupplierDialog(title: 'Nouveau fournisseur');
+    if (result == null) return;
     try {
-      await widget.repository.createSupplier(nameController.text.trim(), phone: phoneController.text.trim());
+      await widget.repository.createSupplier(result.name, phone: result.phone, address: result.address);
+      _reload();
+    } on ApiException catch (e) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text(e.message)));
+    }
+  }
+
+  Future<void> _editSupplier(Supplier supplier) async {
+    final result = await _showSupplierDialog(
+      title: 'Modifier le fournisseur',
+      initialName: supplier.name,
+      initialPhone: supplier.phone,
+      initialAddress: supplier.address,
+    );
+    if (result == null) return;
+    try {
+      await widget.repository.updateSupplier(supplier.id, name: result.name, phone: result.phone, address: result.address);
+      _reload();
+    } on ApiException catch (e) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text(e.message)));
+    }
+  }
+
+  Future<void> _deleteSupplier(Supplier supplier) async {
+    final confirmed = await showDialog<bool>(
+      context: context,
+      builder: (context) => AlertDialog(
+        title: const Text('Supprimer ce fournisseur ?'),
+        content: Text(
+          '« ${supplier.name} » sera supprimé. Les achats déjà enregistrés avec ce fournisseur sont conservés '
+          '(ils affichent simplement « Fournisseur non renseigné » ensuite).',
+        ),
+        actions: [
+          TextButton(onPressed: () => Navigator.of(context).pop(false), child: const Text('Annuler')),
+          FilledButton(onPressed: () => Navigator.of(context).pop(true), child: const Text('Supprimer')),
+        ],
+      ),
+    );
+    if (confirmed != true) return;
+    try {
+      await widget.repository.deleteSupplier(supplier.id);
       _reload();
     } on ApiException catch (e) {
       if (!mounted) return;
@@ -69,7 +133,16 @@ class _SuppliersPageState extends State<SuppliersPage> {
           return ListView(
             children: [
               for (final supplier in suppliers)
-                ListTile(title: Text(supplier.name), subtitle: Text(supplier.phone ?? '')),
+                ListTile(
+                  title: Text(supplier.name),
+                  subtitle: Text([?supplier.phone, ?supplier.address].where((s) => s.isNotEmpty).join(' — ')),
+                  onTap: () => _editSupplier(supplier),
+                  trailing: IconButton(
+                    tooltip: 'Supprimer',
+                    icon: const Icon(Icons.delete_outline),
+                    onPressed: () => _deleteSupplier(supplier),
+                  ),
+                ),
             ],
           );
         },
@@ -77,4 +150,12 @@ class _SuppliersPageState extends State<SuppliersPage> {
       floatingActionButton: FloatingActionButton(onPressed: _addSupplier, child: const Icon(Icons.add)),
     );
   }
+}
+
+class _SupplierFormResult {
+  const _SupplierFormResult({required this.name, this.phone, this.address});
+
+  final String name;
+  final String? phone;
+  final String? address;
 }

@@ -21,6 +21,17 @@ class PurchasingRepository {
     return Supplier.fromJson(json);
   }
 
+  Future<Supplier> updateSupplier(String supplierId, {String? name, String? phone, String? address}) async {
+    final json = await _api.patch('$_base/suppliers/$supplierId', body: {
+      'name': ?name,
+      'phone': ?phone,
+      'address': ?address,
+    }) as Map<String, dynamic>;
+    return Supplier.fromJson(json);
+  }
+
+  Future<void> deleteSupplier(String supplierId) => _api.delete('$_base/suppliers/$supplierId');
+
   Future<List<Purchase>> listPurchases() async {
     final json = await _api.get('$_base/purchases') as List<dynamic>;
     return json.map((e) => Purchase.fromJson(e as Map<String, dynamic>)).toList();
