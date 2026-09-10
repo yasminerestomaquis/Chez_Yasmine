@@ -58,7 +58,10 @@ class _TableOrderPageState extends State<TableOrderPage> {
   @override
   void initState() {
     super.initState();
-    _catalogFuture = _loadCatalog();
+    // `..ignore()` : même garde que les autres écrans de ce module contre un
+    // rejet "unhandled" en test (flutter_test répond quasi instantanément,
+    // voir stock_lots_tab.dart pour le même motif).
+    _catalogFuture = _loadCatalog()..ignore();
     _reloadOrders();
   }
 
@@ -74,7 +77,13 @@ class _TableOrderPageState extends State<TableOrderPage> {
     // retombe déjà sur l'index 0 si l'addition sélectionnée a disparu.
     final future = widget.repository.listOpenOrdersForTable(widget.tableId);
     future.ignore();
-    setState(() => _ordersFuture = future);
+    // Corps bloc (pas `=>`) : une closure fléchée affectant un champ `Future`
+    // renvoie la valeur de l'affectation, donc le `Future` lui-même — setState
+    // le prendrait alors pour une closure `async` et lève une assertion (même
+    // piège que stock_lots_tab.dart plus tôt dans cette session).
+    setState(() {
+      _ordersFuture = future;
+    });
   }
 
   Future<void> _addNewAddition() async {
