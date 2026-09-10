@@ -507,6 +507,8 @@ model Expense {
   expenseDate     DateTime @default(now()) @map("expense_date") @db.Date
   periodicity     String   @default("one_off")
   note            String?
+  /** Suggestion éditable, pertinente uniquement pour category === 'Marché' (même principe que Purchase.orderNumber) — jamais contrainte en unicité côté serveur. */
+  marketNumber    Int?     @map("market_number")
   createdAt       DateTime @default(now()) @map("created_at")
 
   establishment Establishment @relation(fields: [establishmentId], references: [id], onDelete: Cascade)

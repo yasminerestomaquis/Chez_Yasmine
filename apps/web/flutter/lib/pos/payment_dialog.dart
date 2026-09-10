@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 
+import '../common/formatting.dart';
 import 'pos_models.dart';
 
 // Décision explicite de l'utilisateur (2026-09-10) : "Carte" et "Crédit"
@@ -86,7 +87,7 @@ class _PaymentDialogState extends State<_PaymentDialog> {
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
             Text(
-              'Total à payer : ${widget.total.toStringAsFixed(0)} FCFA',
+              'Total à payer : ${formatAmount(widget.total)} FCFA',
               style: const TextStyle(fontWeight: FontWeight.bold),
             ),
             const SizedBox(height: 12),
@@ -95,7 +96,7 @@ class _PaymentDialogState extends State<_PaymentDialog> {
                 dense: true,
                 contentPadding: EdgeInsets.zero,
                 title: Text(
-                  '${paymentMethodLabels[line.method]} : ${line.amount.toStringAsFixed(0)} FCFA',
+                  '${paymentMethodLabels[line.method]} : ${formatAmount(line.amount)} FCFA',
                 ),
                 trailing: IconButton(
                   icon: const Icon(Icons.close),
@@ -139,7 +140,7 @@ class _PaymentDialogState extends State<_PaymentDialog> {
               ),
             ] else
               Text(
-                'Restant : ${_remaining.toStringAsFixed(0)} FCFA',
+                'Restant : ${formatAmount(_remaining)} FCFA',
                 style: const TextStyle(color: Colors.green),
               ),
           ],

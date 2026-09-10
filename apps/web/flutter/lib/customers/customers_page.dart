@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 
 import '../api/api_client.dart';
+import '../common/formatting.dart';
 import 'customer_credit_page.dart';
 import 'customer_models.dart';
 import 'customers_repository.dart';
@@ -83,7 +84,7 @@ class _CustomersPageState extends State<CustomersPage> {
               for (final customer in customers)
                 ListTile(
                   title: Text(customer.name),
-                  subtitle: Text('${customer.phone ?? ''} — Solde crédit : ${customer.creditBalance.toStringAsFixed(0)} FCFA'),
+                  subtitle: Text('${customer.phone ?? ''} — Solde crédit : ${formatAmount(customer.creditBalance)} FCFA'),
                   trailing: const Icon(Icons.chevron_right),
                   onTap: () => Navigator.of(context)
                       .push(MaterialPageRoute(builder: (_) => CustomerCreditPage(repository: _repository, customer: customer)))

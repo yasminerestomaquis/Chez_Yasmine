@@ -40,6 +40,7 @@ class Expense {
     required this.expenseDate,
     this.periodicity = ExpensePeriodicity.oneOff,
     this.note,
+    this.marketNumber,
   });
 
   final String id;
@@ -49,6 +50,8 @@ class Expense {
   final DateTime expenseDate;
   final ExpensePeriodicity periodicity;
   final String? note;
+  /// Pertinent uniquement pour `category == 'Marché'` — voir `docs/api/expenses.md`.
+  final int? marketNumber;
 
   factory Expense.fromJson(Map<String, dynamic> json) => Expense(
         id: json['id'] as String,
@@ -58,5 +61,6 @@ class Expense {
         expenseDate: DateTime.parse(json['expenseDate'] as String),
         periodicity: ExpensePeriodicity.fromValue(json['periodicity'] as String?),
         note: json['note'] as String?,
+        marketNumber: (json['marketNumber'] as num?)?.toInt(),
       );
 }

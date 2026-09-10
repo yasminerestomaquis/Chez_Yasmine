@@ -1,4 +1,4 @@
-import { IsDateString, IsIn, IsNumber, IsOptional, IsString, IsUUID, Min, MinLength } from 'class-validator';
+import { IsDateString, IsIn, IsInt, IsNumber, IsOptional, IsString, IsUUID, Min, MinLength } from 'class-validator';
 
 export type ExpensePeriodicity = 'one_off' | 'recurring';
 
@@ -32,6 +32,12 @@ export class CreateExpenseDto {
   @IsOptional()
   @IsString()
   note?: string;
+
+  /** Numéro de marché — pertinent uniquement pour category === 'Marché', jamais imposé (même principe que Purchase.orderNumber). */
+  @IsOptional()
+  @IsInt()
+  @Min(1)
+  marketNumber?: number;
 }
 
 export class UpdateExpenseDto {
@@ -60,4 +66,9 @@ export class UpdateExpenseDto {
   @IsOptional()
   @IsString()
   note?: string;
+
+  @IsOptional()
+  @IsInt()
+  @Min(1)
+  marketNumber?: number;
 }

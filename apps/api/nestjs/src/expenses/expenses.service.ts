@@ -27,6 +27,16 @@ export class ExpensesService {
     });
   }
 
+  /** Retourne le prochain N° de marché suggéré (toutes dépenses "Marché" de l'établissement) — simple convenance, jamais imposé côté serveur, même principe que PurchasesService.nextOrderNumber. */
+  async nextMarketNumber(establishmentId: string): Promise<number> {
+    const last = await this.prisma.expense.findFirst({
+      where: { establishmentId, category: 'Marché' },
+      orderBy: { marketNumber: 'desc' },
+      select: { marketNumber: true },
+    });
+    return (last?.marketNumber ?? 0) + 1;
+  }
+
   async create(establishmentId: string, dto: CreateExpenseDto) {
     // Idempotent replay — même motif que SalesService.create : une dépense
     // saisie hors ligne peut être renvoyée plusieurs fois par la file de
@@ -45,6 +55,7 @@ export class ExpensesService {
         expenseDate: dto.expenseDate ? new Date(dto.expenseDate) : undefined,
         periodicity: dto.periodicity ?? 'one_off',
         note: dto.note,
+        marketNumber: dto.marketNumber,
       },
     });
     await this.activityNotifier.notify(
@@ -65,6 +76,7 @@ export class ExpensesService {
         note: dto.note,
         expenseDate: dto.expenseDate ? new Date(dto.expenseDate) : undefined,
         periodicity: dto.periodicity,
+        marketNumber: dto.marketNumber,
       },
     });
     if (count === 0) {

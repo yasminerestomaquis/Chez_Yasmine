@@ -5,6 +5,7 @@ import '../api/api_client.dart';
 import '../catalog/catalog_cache.dart';
 import '../catalog/catalog_repository.dart';
 import '../catalog/models.dart';
+import '../common/formatting.dart';
 import '../sync/device_id.dart';
 import '../sync/pending_operation.dart';
 import '../sync/sync_queue_service.dart';
@@ -460,7 +461,7 @@ class _FloatingCartBar extends StatelessWidget {
                   ),
                   const SizedBox(width: 8),
                   Text(
-                    '$itemCount article${itemCount > 1 ? 's' : ''} · ${total.toStringAsFixed(0)} FCFA',
+                    '$itemCount article${itemCount > 1 ? 's' : ''} · ${formatAmount(total)} FCFA',
                     style: const TextStyle(
                       color: Colors.white,
                       fontWeight: FontWeight.bold,
@@ -540,7 +541,7 @@ class _CartPanel extends StatelessWidget {
                       ListTile(
                         title: Text(line.product.name),
                         subtitle: Text(
-                          '${line.unitPrice.toStringAsFixed(0)} FCFA x ${line.quantity}',
+                          '${formatAmount(line.unitPrice)} FCFA x ${line.quantity}',
                         ),
                         trailing: Row(
                           mainAxisSize: MainAxisSize.min,
@@ -578,7 +579,7 @@ class _CartPanel extends StatelessWidget {
                   ),
                   const Spacer(),
                   Text(
-                    '${subtotal.toStringAsFixed(0)} FCFA',
+                    '${formatAmount(subtotal)} FCFA',
                     style: const TextStyle(
                       fontWeight: FontWeight.bold,
                       fontSize: 18,
@@ -685,7 +686,7 @@ class _PosProductTile extends StatelessWidget {
                       ),
                       Text(
                         product.salePrice != null
-                            ? '${product.salePrice!.toStringAsFixed(0)} FCFA'
+                            ? '${formatAmount(product.salePrice!)} FCFA'
                             : 'Prix variable',
                         style: const TextStyle(
                           fontSize: 12,

@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:intl/intl.dart';
 
 import '../api/api_client.dart';
+import '../common/formatting.dart';
 import 'cash_models.dart';
 import 'cash_repository.dart';
 
@@ -119,10 +120,10 @@ class _CashPageState extends State<CashPage> {
             children: [
               for (final closing in closings)
                 ListTile(
-                  title: Text('Attendu ${closing.expectedAmount.toStringAsFixed(0)} — Compté ${closing.countedAmount.toStringAsFixed(0)} FCFA'),
+                  title: Text('Attendu ${formatAmount(closing.expectedAmount)} — Compté ${formatAmount(closing.countedAmount)} FCFA'),
                   subtitle: Text('Clôturée le ${dateFormat.format(closing.closedAt.toLocal())}'),
                   trailing: Text(
-                    '${closing.difference >= 0 ? '+' : ''}${closing.difference.toStringAsFixed(0)}',
+                    '${closing.difference >= 0 ? '+' : ''}${formatAmount(closing.difference)}',
                     style: TextStyle(
                       fontWeight: FontWeight.bold,
                       color: closing.difference == 0 ? null : (closing.difference > 0 ? Colors.green : Colors.red),

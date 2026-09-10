@@ -1,6 +1,7 @@
 import 'package:fl_chart/fl_chart.dart';
 import 'package:flutter/material.dart';
 
+import '../common/formatting.dart';
 import 'chart_models.dart';
 
 /// Histogramme vertical générique pour les graphiques hebdomadaires
@@ -48,7 +49,7 @@ class WeeklyBarChartWidget extends StatelessWidget {
               barTouchData: BarTouchData(
                 touchTooltipData: BarTouchTooltipData(
                   getTooltipItem: (group, groupIndex, rod, rodIndex) => BarTooltipItem(
-                    '${series.length > rodIndex ? series[rodIndex].name : ''}\n${rod.toY.toStringAsFixed(0)} FCFA',
+                    '${series.length > rodIndex ? series[rodIndex].name : ''}\n${formatAmount(rod.toY)} FCFA',
                     const TextStyle(color: Colors.white, fontSize: 11),
                   ),
                 ),

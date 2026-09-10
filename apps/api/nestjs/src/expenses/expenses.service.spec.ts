@@ -124,4 +124,37 @@ describe('ExpensesService.create', () => {
     expect(result).toEqual({ id: 'exp-1', label: 'Loyer' });
     expect(prisma.expense.create).not.toHaveBeenCalled();
   });
+
+  it('passes through an explicit marketNumber', async () => {
+    (prisma.expense as any).create.mockResolvedValue({ id: 'exp-1' });
+    await service.create('est-1', { label: 'Achat du jour', amount: 15000, category: 'Marché', marketNumber: 3 });
+    expect(prisma.expense.create).toHaveBeenCalledWith({
+      data: expect.objectContaining({ marketNumber: 3 }),
+    });
+  });
+});
+
+describe('ExpensesService.nextMarketNumber', () => {
+  let prisma: ReturnType<typeof makePrismaMock>;
+  let service: ExpensesService;
+
+  beforeEach(() => {
+    prisma = makePrismaMock();
+    service = new ExpensesService(prisma as unknown as PrismaService, activityNotifierMock);
+  });
+
+  it('returns 1 when no "Marché" expense exists yet', async () => {
+    (prisma.expense as any).findFirst.mockResolvedValue(null);
+    await expect(service.nextMarketNumber('est-1')).resolves.toBe(1);
+    expect(prisma.expense.findFirst).toHaveBeenCalledWith({
+      where: { establishmentId: 'est-1', category: 'Marché' },
+      orderBy: { marketNumber: 'desc' },
+      select: { marketNumber: true },
+    });
+  });
+
+  it('returns last + 1, scoped to category "Marché"', async () => {
+    (prisma.expense as any).findFirst.mockResolvedValue({ marketNumber: 4 });
+    await expect(service.nextMarketNumber('est-1')).resolves.toBe(5);
+  });
 });

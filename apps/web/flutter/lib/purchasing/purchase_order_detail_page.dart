@@ -4,6 +4,7 @@ import 'package:intl/intl.dart';
 import '../api/api_client.dart';
 import '../catalog/catalog_repository.dart';
 import '../catalog/models.dart';
+import '../common/formatting.dart';
 import 'purchasing_models.dart';
 import 'purchasing_repository.dart';
 
@@ -30,6 +31,7 @@ class _PurchaseOrderDetailPageState extends State<PurchaseOrderDetailPage> {
   bool _isBusy = false;
 
   List<Product> _caseProducts = [];
+  Map<String, Product> _productsById = {};
   List<Supplier> _suppliers = [];
   late List<_EditLine> _editLines;
   late final TextEditingController _orderNumberController;
@@ -52,8 +54,36 @@ class _PurchaseOrderDetailPageState extends State<PurchaseOrderDetailPage> {
     if (!mounted) return;
     setState(() {
       _caseProducts = products.where((p) => p.status == 'active' && p.hasCasePricing).toList();
+      _productsById = {for (final p in products) p.id: p};
       _suppliers = suppliers;
     });
+  }
+
+  /// Vignette photo (reprise du Catalogue, même principe que le sous-module
+  /// Créer une commande) — repli sur une icône générique si le produit n'a
+  /// pas encore été chargé ou n'a pas de photo.
+  Widget _thumbnail(String productId) {
+    final product = _productsById[productId];
+    final primaryImage = product?.images.where((i) => i.isPrimary).firstOrNull ?? product?.images.firstOrNull;
+    return ClipRRect(
+      borderRadius: BorderRadius.circular(8),
+      child: SizedBox(
+        width: 44,
+        height: 44,
+        child: primaryImage == null
+            ? const ColoredBox(color: Color(0x11000000), child: Icon(Icons.local_drink_outlined, size: 20))
+            : FutureBuilder<String>(
+                future: widget.catalog.getImageUrl(product!.id, primaryImage.id, variant: 'thumbnail'),
+                builder: (context, snapshot) {
+                  if (!snapshot.hasData) return const ColoredBox(color: Color(0x11000000));
+                  return ColoredBox(
+                    color: const Color(0x11000000),
+                    child: Image.network(snapshot.data!, fit: BoxFit.contain),
+                  );
+                },
+              ),
+      ),
+    );
   }
 
   void _startEditing() => setState(() {
@@ -222,8 +252,9 @@ class _PurchaseOrderDetailPageState extends State<PurchaseOrderDetailPage> {
                     children: [
                       for (final line in _editLines)
                         ListTile(
+                          leading: _thumbnail(line.productId),
                           title: Text(line.productName),
-                          subtitle: Text('${line.purchasePricePerCase.toStringAsFixed(0)} FCFA/casier'),
+                          subtitle: Text('${formatAmount(line.purchasePricePerCase)} FCFA/casier'),
                           trailing: Row(
                             mainAxisSize: MainAxisSize.min,
                             children: [
@@ -249,12 +280,13 @@ class _PurchaseOrderDetailPageState extends State<PurchaseOrderDetailPage> {
                     children: [
                       for (final line in _purchase.items)
                         ListTile(
+                          leading: _thumbnail(line.productId),
                           title: Text(line.productName),
                           subtitle: Text(
-                            '${line.purchasePricePerCase.toStringAsFixed(0)} FCFA/casier × '
+                            '${formatAmount(line.purchasePricePerCase)} FCFA/casier × '
                             '${line.casesOrdered.toStringAsFixed(0)} casier(s)',
                           ),
-                          trailing: Text('${line.lineTotal.toStringAsFixed(0)} FCFA'),
+                          trailing: Text('${formatAmount(line.lineTotal)} FCFA'),
                         ),
                     ],
                   ),
@@ -269,7 +301,7 @@ class _PurchaseOrderDetailPageState extends State<PurchaseOrderDetailPage> {
                     const Spacer(),
                     Text('${totalCases.toStringAsFixed(0)} casier(s)', style: const TextStyle(fontWeight: FontWeight.bold)),
                     const SizedBox(width: 16),
-                    Text('${totalPrice.toStringAsFixed(0)} FCFA', style: const TextStyle(fontWeight: FontWeight.bold)),
+                    Text('${formatAmount(totalPrice)} FCFA', style: const TextStyle(fontWeight: FontWeight.bold)),
                   ],
                 ),
                 if (_isEditing) ...[

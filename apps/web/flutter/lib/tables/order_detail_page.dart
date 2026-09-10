@@ -3,6 +3,7 @@ import 'package:flutter/material.dart';
 import '../api/api_client.dart';
 import '../catalog/catalog_repository.dart';
 import '../catalog/models.dart';
+import '../common/formatting.dart';
 import '../pos/payment_dialog.dart';
 import '../pos/pos_repository.dart';
 import '../pos/receipt_page.dart';
@@ -59,7 +60,7 @@ class _OrderDetailPageState extends State<OrderDetailPage> {
             SimpleDialogOption(
               onPressed: () => Navigator.of(context).pop(product),
               child: Text(
-                '${product.name} — ${product.salePrice!.toStringAsFixed(0)} FCFA',
+                '${product.name} — ${formatAmount(product.salePrice!)} FCFA',
               ),
             ),
         ],
@@ -163,7 +164,7 @@ class _OrderDetailPageState extends State<OrderDetailPage> {
                             ListTile(
                               title: Text(item.productName),
                               subtitle: Text(
-                                '${item.unitPrice.toStringAsFixed(0)} FCFA x ${item.quantity.toStringAsFixed(0)}',
+                                '${formatAmount(item.unitPrice)} FCFA x ${item.quantity.toStringAsFixed(0)}',
                               ),
                               trailing: IconButton(
                                 icon: const Icon(Icons.delete_outline),
@@ -190,7 +191,7 @@ class _OrderDetailPageState extends State<OrderDetailPage> {
                         ),
                         const Spacer(),
                         Text(
-                          '${order.total.toStringAsFixed(0)} FCFA',
+                          '${formatAmount(order.total)} FCFA',
                           style: const TextStyle(
                             fontWeight: FontWeight.bold,
                             fontSize: 18,

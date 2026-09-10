@@ -16,6 +16,11 @@ export class ExpensesController {
     return this.expenses.list(establishmentId, { from, to });
   }
 
+  @Get('next-market-number')
+  nextMarketNumber(@Param('establishmentId') establishmentId: string) {
+    return this.expenses.nextMarketNumber(establishmentId).then((marketNumber) => ({ marketNumber }));
+  }
+
   @Post()
   create(@Param('establishmentId') establishmentId: string, @Body() dto: CreateExpenseDto) {
     return this.expenses.create(establishmentId, dto);

@@ -62,7 +62,7 @@ void main() {
       await tester.tap(find.text('Ajouter la ligne de paiement'));
       await tester.pumpAndSettle();
 
-      expect(find.text('Espèces : 2000 FCFA'), findsOneWidget);
+      expect(find.text('Espèces : 2 000 FCFA'), findsOneWidget);
       // Remaining 3000 should now be pre-filled for the second line.
       expect(find.text('3000'), findsOneWidget);
 
@@ -74,7 +74,7 @@ void main() {
       await tester.tap(find.text('Ajouter la ligne de paiement'));
       await tester.pumpAndSettle();
 
-      expect(find.text('Mobile Money : 3000 FCFA'), findsOneWidget);
+      expect(find.text('Mobile Money : 3 000 FCFA'), findsOneWidget);
 
       final button = tester.widget<FilledButton>(
         find.widgetWithText(FilledButton, 'Valider le paiement'),
@@ -101,12 +101,12 @@ void main() {
 
     await tester.tap(find.text('Ajouter la ligne de paiement'));
     await tester.pumpAndSettle();
-    expect(find.text('Espèces : 1000 FCFA'), findsOneWidget);
+    expect(find.text('Espèces : 1 000 FCFA'), findsOneWidget);
 
     await tester.tap(find.byIcon(Icons.close));
     await tester.pumpAndSettle();
 
-    expect(find.text('Espèces : 1000 FCFA'), findsNothing);
+    expect(find.text('Espèces : 1 000 FCFA'), findsNothing);
     final button = tester.widget<FilledButton>(
       find.widgetWithText(FilledButton, 'Valider le paiement'),
     );

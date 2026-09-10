@@ -3,6 +3,7 @@ import 'package:intl/intl.dart';
 
 import '../api/api_client.dart';
 import '../catalog/catalog_repository.dart';
+import '../common/formatting.dart';
 import 'loss_models.dart';
 import 'losses_repository.dart';
 import 'record_loss_dialog.dart';
@@ -54,7 +55,7 @@ class _LossesPageState extends State<LossesPage> {
                 width: double.infinity,
                 padding: const EdgeInsets.all(12),
                 color: Theme.of(context).colorScheme.surfaceContainerHighest,
-                child: Text('Valeur estimée totale : ${totalValue.toStringAsFixed(0)} FCFA', style: const TextStyle(fontWeight: FontWeight.bold)),
+                child: Text('Valeur estimée totale : ${formatAmount(totalValue)} FCFA', style: const TextStyle(fontWeight: FontWeight.bold)),
               ),
               Expanded(
                 child: ListView(
@@ -65,7 +66,7 @@ class _LossesPageState extends State<LossesPage> {
                         subtitle: Text(
                           '${loss.reason != null && loss.reason!.isNotEmpty ? '${loss.reason} — ' : ''}${dateFormat.format(loss.createdAt.toLocal())}',
                         ),
-                        trailing: Text('${loss.estimatedValue.toStringAsFixed(0)} FCFA'),
+                        trailing: Text('${formatAmount(loss.estimatedValue)} FCFA'),
                       ),
                   ],
                 ),

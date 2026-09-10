@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 
+import '../common/formatting.dart';
 import 'chart_models.dart';
 
 /// Classement horizontal (le plus lisible pour des noms de catégories/produits
@@ -55,7 +56,7 @@ class RankingBarChartWidget extends StatelessWidget {
                 SizedBox(
                   width: 90,
                   child: Text(
-                    '${items[rank].value.toStringAsFixed(0)} FCFA',
+                    '${formatAmount(items[rank].value)} FCFA',
                     textAlign: TextAlign.right,
                     style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 12),
                   ),

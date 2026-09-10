@@ -3,6 +3,7 @@ import 'package:intl/intl.dart';
 import 'package:uuid/uuid.dart';
 
 import '../api/api_client.dart';
+import '../common/formatting.dart';
 import '../sync/device_id.dart';
 import '../sync/pending_operation.dart';
 import '../sync/sync_queue_service.dart';
@@ -35,6 +36,7 @@ class _ExpensesPageState extends State<ExpensesPage> {
     final customCategoryController = TextEditingController();
     final amountController = TextEditingController();
     final noteController = TextEditingController();
+    final marketNumberController = TextEditingController();
     final formKey = GlobalKey<FormState>();
     String? selectedCategory;
     var periodicity = ExpensePeriodicity.oneOff;
@@ -84,12 +86,29 @@ class _ExpensesPageState extends State<ExpensesPage> {
                           DropdownMenuItem(value: category, child: Text(category)),
                         const DropdownMenuItem(value: _otherCategoryValue, child: Text('Autre…')),
                       ],
-                      onChanged: (value) => setDialogState(() => selectedCategory = value),
+                      onChanged: (value) async {
+                        setDialogState(() => selectedCategory = value);
+                        if (value == 'Marché' && marketNumberController.text.isEmpty) {
+                          try {
+                            final suggestion = await _repository.nextMarketNumber();
+                            marketNumberController.text = '$suggestion';
+                            setDialogState(() {});
+                          } catch (_) {
+                            // Simple suggestion de convenance — jamais bloquant, saisie manuelle toujours possible.
+                          }
+                        }
+                      },
                     ),
                     if (selectedCategory == _otherCategoryValue)
                       TextField(
                         controller: customCategoryController,
                         decoration: const InputDecoration(labelText: 'Préciser la nature'),
+                      ),
+                    if (selectedCategory == 'Marché')
+                      TextFormField(
+                        controller: marketNumberController,
+                        keyboardType: TextInputType.number,
+                        decoration: const InputDecoration(labelText: 'N° de marché'),
                       ),
                     TextFormField(
                       controller: amountController,
@@ -140,6 +159,7 @@ class _ExpensesPageState extends State<ExpensesPage> {
     final label = labelController.text.trim();
     final amount = double.parse(amountController.text.trim().replaceAll(',', '.'));
     final note = noteController.text.trim();
+    final marketNumber = category == 'Marché' ? int.tryParse(marketNumberController.text.trim()) : null;
 
     try {
       await _repository.createExpense(
@@ -150,6 +170,7 @@ class _ExpensesPageState extends State<ExpensesPage> {
         periodicity: periodicity,
         note: note,
         expenseDate: expenseDate,
+        marketNumber: marketNumber,
       );
       _reload();
     } on ApiException catch (e) {
@@ -171,6 +192,7 @@ class _ExpensesPageState extends State<ExpensesPage> {
           if (note.isNotEmpty) 'note': note,
           'expenseDate':
               '${expenseDate.year.toString().padLeft(4, '0')}-${expenseDate.month.toString().padLeft(2, '0')}-${expenseDate.day.toString().padLeft(2, '0')}',
+          'marketNumber': ?marketNumber,
         },
         createdAt: DateTime.now(),
       ));
@@ -224,7 +246,7 @@ class _ExpensesPageState extends State<ExpensesPage> {
                       width: double.infinity,
                       padding: const EdgeInsets.all(12),
                       color: Theme.of(context).colorScheme.surfaceContainerHighest,
-                      child: Text('Total : ${total.toStringAsFixed(0)} FCFA', style: const TextStyle(fontWeight: FontWeight.bold)),
+                      child: Text('Total : ${formatAmount(total)} FCFA', style: const TextStyle(fontWeight: FontWeight.bold)),
                     ),
                     Expanded(
                       child: ListView(
@@ -233,13 +255,15 @@ class _ExpensesPageState extends State<ExpensesPage> {
                             ListTile(
                               title: Text(expense.label),
                               subtitle: Text(
-                                '${expense.category != null && expense.category!.isNotEmpty ? '${expense.category} — ' : ''}'
+                                '${expense.category != null && expense.category!.isNotEmpty ? '${expense.category}' : ''}'
+                                '${expense.marketNumber != null ? ' n°${expense.marketNumber}' : ''}'
+                                '${expense.category != null && expense.category!.isNotEmpty ? ' — ' : ''}'
                                 '${dateFormat.format(expense.expenseDate.toLocal())} · ${expense.periodicity.label}',
                               ),
                               trailing: Row(
                                 mainAxisSize: MainAxisSize.min,
                                 children: [
-                                  Text('${expense.amount.toStringAsFixed(0)} FCFA'),
+                                  Text('${formatAmount(expense.amount)} FCFA'),
                                   IconButton(
                                     tooltip: 'Supprimer',
                                     icon: const Icon(Icons.delete_outline),

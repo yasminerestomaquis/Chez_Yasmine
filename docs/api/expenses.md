@@ -3,15 +3,20 @@
 ## Routes
 
 ```
-GET    /establishments/:establishmentId/expenses?from=&to=   (expenses.manage)
-POST   /establishments/:establishmentId/expenses              (expenses.manage)
-PATCH  /establishments/:establishmentId/expenses/:expenseId   (expenses.manage)
-DELETE /establishments/:establishmentId/expenses/:expenseId   (expenses.manage)
+GET    /establishments/:establishmentId/expenses?from=&to=            (expenses.manage)
+GET    /establishments/:establishmentId/expenses/next-market-number   (expenses.manage)
+POST   /establishments/:establishmentId/expenses                       (expenses.manage)
+PATCH  /establishments/:establishmentId/expenses/:expenseId            (expenses.manage)
+DELETE /establishments/:establishmentId/expenses/:expenseId            (expenses.manage)
 ```
 
 ## Champs
 
-`label` (obligatoire), `category` (texte libre — voir plus bas), `amount` (obligatoire, > 0), `expenseDate` (par défaut aujourd'hui, éditable — voir ci-dessous), `periodicity` (`one_off` | `recurring`, par défaut `one_off`), `note`.
+`label` (obligatoire), `category` (texte libre — voir plus bas), `amount` (obligatoire, > 0), `expenseDate` (par défaut aujourd'hui, éditable — voir ci-dessous), `periodicity` (`one_off` | `recurring`, par défaut `one_off`), `note`, `marketNumber` (entier optionnel — voir ci-dessous).
+
+### N° de marché (décision actée 2026-09-10)
+
+Pour une dépense de nature **« Marché »**, le formulaire Flutter affiche un champ **N° de marché** supplémentaire, suggéré et librement éditable — même principe que `Purchase.orderNumber` (`docs/api/purchasing.md`) : `GET .../expenses/next-market-number` renvoie `{ marketNumber }`, dernier `marketNumber` connu (toutes dépenses `category === 'Marché'` de l'établissement, quelle que soit la date) + 1, ou 1 s'il n'y en a aucune. Jamais imposé ni contraint en unicité côté serveur — l'utilisateur reste maître du numéro affiché, un doublon ou un trou n'empêche jamais l'enregistrement. Stocké sur `Expense.marketNumber` (`Int?`, migration `20260910180000_add_expense_market_number.sql`), affiché dans la liste sous la forme « Marché n°3 » quand renseigné. Sans rapport avec l'allocation du coût aux ventes (`docs/api/charts.md`), qui reste basée sur `expenseDate` et `category` uniquement — ce numéro est une simple aide au suivi/pointage des marchés successifs, pas une clé de calcul.
 
 ### Date de la dépense éditable (décision actée 2026-09-10)
 
@@ -35,6 +40,7 @@ Toute dépense enregistrée avec succès notifie toute l'organisation (« Nouvel
 
 ## Vérifications effectuées
 
-- `ExpensesService` : tests couvrant le filtrage par période, la mise à jour/suppression scopées par établissement, la valeur par défaut et la transmission de `periodicity`, le rejeu idempotent d'une création (aucun doublon, aucune notification en double), et la notification de l'organisation sur une création réelle.
-- UI Flutter (`lib/expenses/`) : menu déroulant des 9 catégories prédéfinies + option « Autre » révélant un champ libre, sélecteur de date (défaut aujourd'hui, librement modifiable), sélecteur de périodicité (`SegmentedButton`), file de synchronisation hors ligne montée (`SyncStatusBar`) — `flutter analyze`/`test`/`build web` ✅.
+- `ExpensesService` : tests couvrant le filtrage par période, la mise à jour/suppression scopées par établissement, la valeur par défaut et la transmission de `periodicity`, le rejeu idempotent d'une création (aucun doublon, aucune notification en double), la notification de l'organisation sur une création réelle, la transmission de `marketNumber`, et `nextMarketNumber` (1 si aucune dépense « Marché », dernier + 1 sinon, scopé à `category === 'Marché'`).
+- UI Flutter (`lib/expenses/`) : menu déroulant des 9 catégories prédéfinies + option « Autre » révélant un champ libre, sélecteur de date (défaut aujourd'hui, librement modifiable), champ N° de marché (affiché uniquement pour « Marché », suggéré puis éditable), sélecteur de périodicité (`SegmentedButton`), file de synchronisation hors ligne montée (`SyncStatusBar`) — `flutter analyze`/`test`/`build web` ✅.
+- **Vérifié en conditions réelles** (2026-09-10, compte de démonstration jetable, établissement réel « Chez Yasmine ») : saisie d'une dépense « Marché » datée la veille via l'application déployée, `expense_date` confirmée en base distincte de `created_at`, allocation pro-rata reflétée dans Graphiques → Bénéfices (voir `docs/api/charts.md`), puis nettoyage complet (dépense, vente/produit de test, compte jetable).
 - **Non vérifié en conditions réelles** : un scénario hors-ligne→ligne complet pour une dépense (coupure réseau réelle, retour, synchronisation) — à faire à l'occasion d'une prochaine vérification en conditions réelles.

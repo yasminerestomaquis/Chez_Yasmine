@@ -4,6 +4,7 @@ import 'package:intl/intl.dart';
 import '../api/api_client.dart';
 import '../catalog/catalog_repository.dart';
 import '../catalog/models.dart';
+import '../common/formatting.dart';
 import 'purchase_order_detail_page.dart';
 import 'purchasing_models.dart';
 import 'purchasing_repository.dart';
@@ -260,11 +261,36 @@ class _PurchasesPageState extends State<PurchasesPage> with SingleTickerProvider
     );
   }
 
+  /// Vignette photo (reprise du Catalogue) — repli sur une icône générique
+  /// si le produit n'a pas de photo. Partagée par la carte de sélection et
+  /// les lignes de la commande en cours.
+  Widget _thumbnail(Product product, {double size = 64}) {
+    final primaryImage = product.images.where((i) => i.isPrimary).firstOrNull ?? product.images.firstOrNull;
+    return ClipRRect(
+      borderRadius: BorderRadius.circular(8),
+      child: SizedBox(
+        width: size,
+        height: size,
+        child: primaryImage == null
+            ? ColoredBox(color: const Color(0x11000000), child: Icon(Icons.local_drink_outlined, size: size * 0.4))
+            : FutureBuilder<String>(
+                future: _catalog.getImageUrl(product.id, primaryImage.id, variant: 'thumbnail'),
+                builder: (context, snapshot) {
+                  if (!snapshot.hasData) return const ColoredBox(color: Color(0x11000000));
+                  return ColoredBox(
+                    color: const Color(0x11000000),
+                    child: Image.network(snapshot.data!, fit: BoxFit.contain),
+                  );
+                },
+              ),
+      ),
+    );
+  }
+
   Widget _buildSelectedProductCard() {
     final product = _selectedProduct!;
     final cases = double.tryParse(_casesOrderedController.text.trim().replaceAll(',', '.')) ?? 0;
     final totalBottles = cases * (product.bottlesPerCase ?? 0);
-    final primaryImage = product.images.where((i) => i.isPrimary).firstOrNull ?? product.images.firstOrNull;
     return Card(
       child: Padding(
         padding: const EdgeInsets.all(16),
@@ -273,25 +299,7 @@ class _PurchasesPageState extends State<PurchasesPage> with SingleTickerProvider
           children: [
             Row(
               children: [
-                ClipRRect(
-                  borderRadius: BorderRadius.circular(8),
-                  child: SizedBox(
-                    width: 64,
-                    height: 64,
-                    child: primaryImage == null
-                        ? const ColoredBox(color: Color(0x11000000), child: Icon(Icons.local_drink_outlined))
-                        : FutureBuilder<String>(
-                            future: _catalog.getImageUrl(product.id, primaryImage.id, variant: 'thumbnail'),
-                            builder: (context, snapshot) {
-                              if (!snapshot.hasData) return const ColoredBox(color: Color(0x11000000));
-                              return ColoredBox(
-                                color: const Color(0x11000000),
-                                child: Image.network(snapshot.data!, fit: BoxFit.contain),
-                              );
-                            },
-                          ),
-                  ),
-                ),
+                _thumbnail(product),
                 const SizedBox(width: 12),
                 Expanded(child: Text(product.name, style: const TextStyle(fontWeight: FontWeight.w600, fontSize: 16))),
                 TextButton(onPressed: _pickProduct, child: const Text('Changer')),
@@ -338,10 +346,11 @@ class _PurchasesPageState extends State<PurchasesPage> with SingleTickerProvider
                   children: [
                     for (final line in _draftLines)
                       ListTile(
+                        leading: _thumbnail(line.product, size: 44),
                         title: Text(line.product.name),
                         subtitle: Text(
-                          '${line.purchasePricePerCase.toStringAsFixed(0)} FCFA/casier × '
-                          '${line.casesOrdered.toStringAsFixed(0)} casier(s) = ${line.lineTotal.toStringAsFixed(0)} FCFA',
+                          '${formatAmount(line.purchasePricePerCase)} FCFA/casier × '
+                          '${line.casesOrdered.toStringAsFixed(0)} casier(s) = ${formatAmount(line.lineTotal)} FCFA',
                         ),
                         trailing: IconButton(icon: const Icon(Icons.delete_outline), onPressed: () => _removeDraftLine(line)),
                       ),
@@ -358,7 +367,7 @@ class _PurchasesPageState extends State<PurchasesPage> with SingleTickerProvider
                   const Spacer(),
                   Text('${totalCases.toStringAsFixed(0)} casier(s)', style: const TextStyle(fontWeight: FontWeight.bold)),
                   const SizedBox(width: 16),
-                  Text('${totalPrice.toStringAsFixed(0)} FCFA', style: const TextStyle(fontWeight: FontWeight.bold)),
+                  Text('${formatAmount(totalPrice)} FCFA', style: const TextStyle(fontWeight: FontWeight.bold)),
                 ],
               ),
               const SizedBox(height: 12),
@@ -381,7 +390,7 @@ class _PurchasesPageState extends State<PurchasesPage> with SingleTickerProvider
             title: Text('N° ${purchase.orderNumber} — ${purchase.supplier?.name ?? 'Sans fournisseur'}'),
             subtitle: Text(
               '${_dateFormat.format(purchase.orderDate)} — ${purchase.totalCases.toStringAsFixed(0)} casier(s) — '
-              '${purchase.total.toStringAsFixed(0)} FCFA',
+              '${formatAmount(purchase.total)} FCFA',
             ),
             onTap: () async {
               await Navigator.of(context).push(

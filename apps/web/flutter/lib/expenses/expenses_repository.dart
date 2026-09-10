@@ -23,6 +23,7 @@ class ExpensesRepository {
     ExpensePeriodicity periodicity = ExpensePeriodicity.oneOff,
     String? note,
     DateTime? expenseDate,
+    int? marketNumber,
   }) async {
     final json = await _api.post(_base, body: {
       'id': ?id,
@@ -32,8 +33,15 @@ class ExpensesRepository {
       'periodicity': periodicity.value,
       'note': ?note,
       'expenseDate': ?(expenseDate != null ? _dateOnly(expenseDate) : null),
+      'marketNumber': ?marketNumber,
     }) as Map<String, dynamic>;
     return Expense.fromJson(json);
+  }
+
+  /// Suggestion éditable pour le prochain N° de marché — jamais imposée côté serveur.
+  Future<int> nextMarketNumber() async {
+    final json = await _api.get('$_base/next-market-number') as Map<String, dynamic>;
+    return json['marketNumber'] as int;
   }
 
   String _dateOnly(DateTime date) =>

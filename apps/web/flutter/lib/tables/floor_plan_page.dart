@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 
 import '../api/api_client.dart';
+import '../common/formatting.dart';
 import '../theme/app_theme.dart';
 import 'order_detail_page.dart';
 import 'tables_models.dart';
@@ -701,7 +702,7 @@ class _TableCard extends StatelessWidget {
         return 'Libre';
       case 'billing':
         return table.currentTotal != null
-            ? '${table.currentTotal!.toStringAsFixed(0)} F'
+            ? '${formatAmount(table.currentTotal!)} F'
             : 'À encaisser';
       case 'reserved':
         final t = table.reservation?.reservedAt.toLocal();
@@ -710,11 +711,11 @@ class _TableCard extends StatelessWidget {
             : 'Réservée';
       default:
         if (table.guestCount != null && table.currentTotal != null) {
-          return '${table.guestCount} pers. · ${table.currentTotal!.toStringAsFixed(0)} F';
+          return '${table.guestCount} pers. · ${formatAmount(table.currentTotal!)} F';
         }
         if (table.guestCount != null) return '${table.guestCount} pers.';
         if (table.currentTotal != null) {
-          return '${table.currentTotal!.toStringAsFixed(0)} F';
+          return '${formatAmount(table.currentTotal!)} F';
         }
         return 'Occupée';
     }

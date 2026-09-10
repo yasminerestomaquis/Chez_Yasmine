@@ -5,6 +5,7 @@ import '../api/api_client.dart';
 import '../cash/cash_page.dart';
 import '../catalog/catalog_page.dart';
 import '../charts/graphiques_page.dart';
+import '../common/formatting.dart';
 import '../customers/customers_page.dart';
 import '../expenses/expenses_page.dart';
 import '../losses/losses_page.dart';
@@ -657,7 +658,7 @@ class _HomeDashboardState extends State<HomeDashboard> {
                       _statCard(
                         icon: Icons.trending_up,
                         label: "Ventes aujourd'hui",
-                        value: '${data.summary.revenue.toStringAsFixed(0)} F',
+                        value: '${formatAmount(data.summary.revenue)} F',
                         color: AppColors.green,
                       ),
                       _statCard(

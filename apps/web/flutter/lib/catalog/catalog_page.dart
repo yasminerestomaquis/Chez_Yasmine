@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 
 import '../api/api_client.dart';
+import '../common/formatting.dart';
 import 'catalog_repository.dart';
 import 'models.dart';
 import 'product_form_page.dart';
@@ -462,7 +463,7 @@ class _ProductCard extends StatelessWidget {
                 mainAxisSize: MainAxisSize.min,
                 children: [
                   Text(product.name, maxLines: 1, overflow: TextOverflow.ellipsis, style: const TextStyle(fontWeight: FontWeight.w600)),
-                  Text(product.salePrice != null ? '${product.salePrice!.toStringAsFixed(0)} FCFA' : 'Prix variable'),
+                  Text(product.salePrice != null ? '${formatAmount(product.salePrice!)} FCFA' : 'Prix variable'),
                 ],
               ),
             ),

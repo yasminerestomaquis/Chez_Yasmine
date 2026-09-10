@@ -1,6 +1,7 @@
 import 'package:fl_chart/fl_chart.dart';
 import 'package:flutter/material.dart';
 
+import '../common/formatting.dart';
 import 'chart_models.dart';
 
 /// Courbe des 12 mois (Janvier..Décembre) d'une année, utilisée par
@@ -34,7 +35,7 @@ class MonthlyLineChartWidget extends StatelessWidget {
           lineTouchData: LineTouchData(
             touchTooltipData: LineTouchTooltipData(
               getTooltipItems: (spots) => spots
-                  .map((s) => LineTooltipItem('${s.y.toStringAsFixed(0)} FCFA', const TextStyle(color: Colors.white, fontSize: 11)))
+                  .map((s) => LineTooltipItem('${formatAmount(s.y)} FCFA', const TextStyle(color: Colors.white, fontSize: 11)))
                   .toList(),
             ),
           ),

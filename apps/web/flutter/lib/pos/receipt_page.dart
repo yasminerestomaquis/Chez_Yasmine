@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:intl/intl.dart';
 
+import '../common/formatting.dart';
 import 'pos_models.dart';
 
 class ReceiptPage extends StatelessWidget {
@@ -39,7 +40,7 @@ class ReceiptPage extends StatelessWidget {
                         child: Row(
                           children: [
                             Expanded(child: Text('${item.name} x${item.quantity.toStringAsFixed(0)}')),
-                            Text((item.quantity * item.unitPrice).toStringAsFixed(0)),
+                            Text(formatAmount(item.quantity * item.unitPrice)),
                           ],
                         ),
                       ),
@@ -67,7 +68,7 @@ class ReceiptPage extends StatelessWidget {
       child: Row(
         children: [
           Expanded(child: Text(label, style: style)),
-          Text('${amount.toStringAsFixed(0)} FCFA', style: style),
+          Text('${formatAmount(amount)} FCFA', style: style),
         ],
       ),
     );

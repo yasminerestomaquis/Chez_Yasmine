@@ -61,8 +61,12 @@ Contrairement au flux hérité ci-dessous, **`create` fait immédiatement entrer
 
 Trois sous-modules ([lib/purchasing/purchases_page.dart](../../apps/web/flutter/lib/purchasing/purchases_page.dart)) :
 - **Créer une commande** : Date (éditable, défaut aujourd'hui), N° de la commande (suggéré, éditable), Fournisseur, puis un produit à la fois — vignette photo (reprise du Catalogue), Nbre de bouteilles par casier (non éditable), Nbre de casiers commandés (éditable), Nbre total de bouteilles (calculé) — bouton **Ajouter la commande** qui ajoute la ligne à la commande en cours et bascule sur Liste de commandes.
-- **Liste de commandes** : Date/N° de commande (non éditables, reconduits), lignes accumulées (nom, prix d'achat par casier, casiers commandés, prix total), totaux en gras, bouton **Créer la commande** qui enregistre réellement côté serveur.
-- **Historique** ([lib/purchasing/purchase_order_detail_page.dart](../../apps/web/flutter/lib/purchasing/purchase_order_detail_page.dart)) : liste des commandes enregistrées ; un tap ouvre le détail dans la même présentation, avec modification (mêmes champs, lignes ajoutables/supprimables/éditables) et suppression.
+- **Liste de commandes** : Date/N° de commande (non éditables, reconduits), lignes accumulées avec **vignette photo par ligne** (reprise du Catalogue, même principe que Créer une commande — décision actée 2026-09-10) — nom, prix d'achat par casier, casiers commandés, prix total, totaux en gras, bouton **Créer la commande** qui enregistre réellement côté serveur.
+- **Historique** ([lib/purchasing/purchase_order_detail_page.dart](../../apps/web/flutter/lib/purchasing/purchase_order_detail_page.dart)) : liste des commandes enregistrées ; un tap ouvre le détail dans la même présentation (**vignette photo par ligne** ici aussi, chargée depuis une carte `productId → Product` construite au chargement de l'écran, pas seulement les produits actifs — un produit archivé depuis reste illustré), avec modification (mêmes champs, lignes ajoutables/supprimables/éditables) et suppression.
+
+## Montants affichés avec séparateur de milliers (décision actée 2026-09-10)
+
+Tout montant/prix affiché dans l'application (pas seulement ce module) utilise désormais `formatAmount()` (`lib/common/formatting.dart`) plutôt que `toStringAsFixed(0)` brut — ex. `147000` → `147 000`. Jamais appliqué à la valeur initiale d'un champ éditable (`TextEditingController`/`TextFormField` dont le texte doit rester un nombre brut parsable, ex. le montant de paiement pré-rempli en Caisse) ni aux quantités (casiers, bouteilles, articles) — seulement aux montants/prix en FCFA affichés en lecture seule.
 
 [lib/purchasing/suppliers_page.dart](../../apps/web/flutter/lib/purchasing/suppliers_page.dart) : liste + création + modification + suppression (`PATCH`/`DELETE` déjà supportés côté serveur ; suppression toujours possible, `Purchase.supplierId`/`Product.supplierId` en `onDelete: SetNull`).
 

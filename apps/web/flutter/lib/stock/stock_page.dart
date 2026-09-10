@@ -4,6 +4,7 @@ import '../api/api_client.dart';
 import '../catalog/catalog_cache.dart';
 import '../catalog/catalog_repository.dart';
 import '../catalog/models.dart';
+import '../common/formatting.dart';
 import '../sync/sync_queue_service.dart';
 import '../sync/sync_status_bar.dart';
 import '../theme/app_theme.dart';
@@ -290,7 +291,7 @@ class _StockKpiRow extends StatelessWidget {
         _kpiCard(
           Icons.payments_outlined,
           'Valeur du stock',
-          '${value.toStringAsFixed(0)} F',
+          '${formatAmount(value)} F',
           AppColors.green,
         ),
       ],

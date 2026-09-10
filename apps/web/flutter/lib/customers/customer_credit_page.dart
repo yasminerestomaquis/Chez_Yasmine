@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:intl/intl.dart';
 
 import '../api/api_client.dart';
+import '../common/formatting.dart';
 import 'customer_models.dart';
 import 'customers_repository.dart';
 
@@ -30,7 +31,7 @@ class _CustomerCreditPageState extends State<CustomerCreditPage> {
         content: TextField(
           controller: controller,
           keyboardType: const TextInputType.numberWithOptions(decimal: true),
-          decoration: InputDecoration(labelText: 'Montant (solde actuel : ${widget.customer.creditBalance.toStringAsFixed(0)} FCFA)'),
+          decoration: InputDecoration(labelText: 'Montant (solde actuel : ${formatAmount(widget.customer.creditBalance)} FCFA)'),
         ),
         actions: [
           TextButton(onPressed: () => Navigator.of(context).pop(), child: const Text('Annuler')),
@@ -69,8 +70,8 @@ class _CustomerCreditPageState extends State<CustomerCreditPage> {
                 padding: const EdgeInsets.all(12),
                 child: Row(
                   children: [
-                    Expanded(child: Text('Solde : ${widget.customer.creditBalance.toStringAsFixed(0)} FCFA')),
-                    Expanded(child: Text('Plafond : ${widget.customer.creditLimit.toStringAsFixed(0)} FCFA')),
+                    Expanded(child: Text('Solde : ${formatAmount(widget.customer.creditBalance)} FCFA')),
+                    Expanded(child: Text('Plafond : ${formatAmount(widget.customer.creditLimit)} FCFA')),
                   ],
                 ),
               ),
@@ -98,7 +99,7 @@ class _CustomerCreditPageState extends State<CustomerCreditPage> {
                             color: entry.type == 'credit' ? Colors.red : Colors.green),
                         title: Text(entry.type == 'credit' ? 'Vente à crédit' : 'Remboursement'),
                         subtitle: Text(dateFormat.format(entry.createdAt.toLocal())),
-                        trailing: Text('${entry.amount.toStringAsFixed(0)} FCFA'),
+                        trailing: Text('${formatAmount(entry.amount)} FCFA'),
                       ),
                   ],
                 );

@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 
 import '../api/api_client.dart';
+import '../common/formatting.dart';
 import 'report_models.dart';
 import 'reports_repository.dart';
 
@@ -106,15 +107,15 @@ class _ReportsPageState extends State<ReportsPage> {
                         child: Column(
                           crossAxisAlignment: CrossAxisAlignment.stretch,
                           children: [
-                            _indicator("Chiffre d'affaires", '${s.revenue.toStringAsFixed(0)} FCFA'),
+                            _indicator("Chiffre d'affaires", '${formatAmount(s.revenue)} FCFA'),
                             _indicator('Nombre de ventes', '${s.salesCount}'),
-                            _indicator('Remises', '${s.discountTotal.toStringAsFixed(0)} FCFA'),
-                            _indicator('Marge brute', '${s.grossMargin.toStringAsFixed(0)} FCFA'),
-                            _indicator('Dépenses', '${s.expenses.toStringAsFixed(0)} FCFA'),
-                            _indicator('Pertes', '${s.losses.toStringAsFixed(0)} FCFA'),
+                            _indicator('Remises', '${formatAmount(s.discountTotal)} FCFA'),
+                            _indicator('Marge brute', '${formatAmount(s.grossMargin)} FCFA'),
+                            _indicator('Dépenses', '${formatAmount(s.expenses)} FCFA'),
+                            _indicator('Pertes', '${formatAmount(s.losses)} FCFA'),
                             const Divider(),
-                            _indicator('Bénéfice net (estimé)', '${s.netProfit.toStringAsFixed(0)} FCFA'),
-                            _indicator('Créances clients', '${s.receivables.toStringAsFixed(0)} FCFA'),
+                            _indicator('Bénéfice net (estimé)', '${formatAmount(s.netProfit)} FCFA'),
+                            _indicator('Créances clients', '${formatAmount(s.receivables)} FCFA'),
                             _indicator('Produits en alerte de stock', '${s.lowStockCount}'),
                           ],
                         ),
@@ -127,7 +128,7 @@ class _ReportsPageState extends State<ReportsPage> {
                         ListTile(
                           dense: true,
                           title: Text(p.name),
-                          trailing: Text('${p.quantity.toStringAsFixed(0)} — ${p.revenue.toStringAsFixed(0)} FCFA'),
+                          trailing: Text('${p.quantity.toStringAsFixed(0)} — ${formatAmount(p.revenue)} FCFA'),
                         ),
                       const SizedBox(height: 16),
                     ],
@@ -137,8 +138,8 @@ class _ReportsPageState extends State<ReportsPage> {
                         ListTile(
                           dense: true,
                           title: Text(p.name),
-                          subtitle: Text('${p.quantity.toStringAsFixed(0)} vendu(s) — CA ${p.revenue.toStringAsFixed(0)} FCFA'),
-                          trailing: Text('${p.profit.toStringAsFixed(0)} FCFA'),
+                          subtitle: Text('${p.quantity.toStringAsFixed(0)} vendu(s) — CA ${formatAmount(p.revenue)} FCFA'),
+                          trailing: Text('${formatAmount(p.profit)} FCFA'),
                         ),
                       const SizedBox(height: 16),
                     ],
@@ -148,7 +149,7 @@ class _ReportsPageState extends State<ReportsPage> {
                         ListTile(
                           dense: true,
                           title: Text(perf.name),
-                          trailing: Text('${perf.salesCount} ventes — ${perf.total.toStringAsFixed(0)} FCFA'),
+                          trailing: Text('${perf.salesCount} ventes — ${formatAmount(perf.total)} FCFA'),
                         ),
                     ],
                   ],
