@@ -14,11 +14,36 @@ export class StockMovementsService {
   ) {}
 
   private async getProductOrThrow(establishmentId: string, productId: string) {
-    const product = await this.prisma.product.findFirst({ where: { id: productId, establishmentId } });
+    const product = await this.prisma.product.findFirst({
+      where: { id: productId, establishmentId },
+      include: { category: { select: { hasVariablePricing: true } } },
+    });
     if (!product) {
       throw new NotFoundException('Produit introuvable pour cet établissement');
     }
     return product;
+  }
+
+  /**
+   * Entrée ('in') sur une catégorie à prix variable (Poulets, Poissons,
+   * Plats africains) : ces produits n'ont aucun flux d'achat automatisé
+   * (contrairement aux catégories à prix par casier, approvisionnées via
+   * Achats), donc un N° de marché doit être fourni et correspondre à une
+   * dépense "Marché" déjà enregistrée pour l'établissement — c'est ce qui
+   * permet à `computeFifoLots`/`ChartsService.stockLots` de rattacher le lot
+   * créé à ce marché (voir docs/api/charts.md). Le motif stocké reprend le
+   * même gabarit que `PurchasesService` ("Commande n°X") pour rester
+   * parsable par la même expression régulière.
+   */
+  private resolveReason(
+    dto: CreateStockMovementDto,
+    hasVariablePricing: boolean,
+  ): string | undefined {
+    if (dto.type !== 'in' || !hasVariablePricing) return dto.reason;
+    if (!dto.marketNumber) {
+      throw new BadRequestException('N° de marché requis pour une entrée de stock dans cette catégorie');
+    }
+    return `Marché n°${dto.marketNumber}${dto.reason ? ` — ${dto.reason}` : ''}`;
   }
 
   async create(establishmentId: string, productId: string, userId: string, dto: CreateStockMovementDto) {
@@ -29,6 +54,18 @@ export class StockMovementsService {
     }
 
     const product = await this.getProductOrThrow(establishmentId, productId);
+    const hasVariablePricing = product.category?.hasVariablePricing ?? false;
+
+    if (dto.type === 'in' && hasVariablePricing && dto.marketNumber) {
+      const market = await this.prisma.expense.findFirst({
+        where: { establishmentId, category: 'Marché', marketNumber: dto.marketNumber },
+        select: { id: true },
+      });
+      if (!market) {
+        throw new BadRequestException(`Aucun marché n°${dto.marketNumber} enregistré pour cet établissement`);
+      }
+    }
+    const reason = this.resolveReason(dto, hasVariablePricing);
 
     let nextQuantity: number;
     try {
@@ -40,7 +77,7 @@ export class StockMovementsService {
     const [, movement] = await this.prisma.$transaction([
       this.prisma.product.update({ where: { id: productId }, data: { stockQuantity: nextQuantity } }),
       this.prisma.stockMovement.create({
-        data: { id: dto.id, productId, type: dto.type, quantity: dto.quantity, reason: dto.reason, createdBy: userId },
+        data: { id: dto.id, productId, type: dto.type, quantity: dto.quantity, reason, createdBy: userId },
       }),
     ]);
     await this.activityNotifier.notify(

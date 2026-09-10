@@ -233,7 +233,7 @@ class _HomeDashboardState extends State<HomeDashboard> {
                 Icons.restaurant_outlined,
                 color: AppColors.green,
               ),
-              title: const Text('Nouvelle commande'),
+              title: const Text('Réceptionner un menu'),
               onTap: () {
                 Navigator.of(sheetContext).pop();
                 _openPage(
@@ -259,7 +259,7 @@ class _HomeDashboardState extends State<HomeDashboard> {
                 Icons.inventory_2_outlined,
                 color: AppColors.green,
               ),
-              title: const Text('Réceptionner un achat'),
+              title: const Text('Commander boissons'),
               onTap: () {
                 Navigator.of(sheetContext).pop();
                 _openPage(

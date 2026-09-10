@@ -6,9 +6,10 @@ import { ChartsService } from './charts.service.js';
 function makePrismaMock() {
   return {
     saleItem: { findMany: vi.fn() },
-    product: { findFirst: vi.fn() },
+    product: { findFirst: vi.fn(), findMany: vi.fn() },
     stockMovement: { findMany: vi.fn() },
     expense: { findMany: vi.fn() },
+    purchase: { findMany: vi.fn() },
   };
 }
 
@@ -319,51 +320,129 @@ describe('ChartsService.top', () => {
 });
 
 describe('ChartsService.stockLots', () => {
-  it('throws NotFoundException when the product does not belong to this establishment', async () => {
+  it('throws NotFoundException when a requested product does not belong to this establishment', async () => {
     const prisma = makePrismaMock();
     const service = new ChartsService(prisma as unknown as PrismaService);
-    prisma.product.findFirst.mockResolvedValue(null);
+    prisma.product.findMany.mockResolvedValue([]);
 
-    await expect(service.stockLots('est-1', 'missing')).rejects.toThrow('Produit introuvable');
+    await expect(service.stockLots('est-1', ['missing'])).rejects.toThrow('introuvable');
   });
 
-  it('reconstructs FIFO lots from the movement history and separates active lots from full history', async () => {
+  it('throws BadRequestException when the selected products span more than one category', async () => {
     const prisma = makePrismaMock();
     const service = new ChartsService(prisma as unknown as PrismaService);
-    prisma.product.findFirst.mockResolvedValue({ id: 'p1', name: 'Bière Flag 65cl' });
-    prisma.stockMovement.findMany.mockResolvedValue([
-      { type: 'in', quantity: new Decimal(100), createdAt: new Date('2025-08-20T08:00:00Z') },
-      { type: 'in', quantity: new Decimal(150), createdAt: new Date('2025-09-05T08:00:00Z') },
-      { type: 'in', quantity: new Decimal(120), createdAt: new Date('2025-09-10T08:00:00Z') },
-      { type: 'sale', quantity: new Decimal(100), createdAt: new Date('2025-09-11T09:00:00Z') },
-      { type: 'sale', quantity: new Decimal(70), createdAt: new Date('2025-09-12T09:00:00Z') },
+    prisma.product.findMany.mockResolvedValue([
+      { id: 'p1', name: 'Bière', categoryId: 'c1', category: { name: 'Bières', hasCasePricing: true, hasVariablePricing: false } },
+      { id: 'p2', name: 'Poulet', categoryId: 'c2', category: { name: 'Poulets', hasCasePricing: false, hasVariablePricing: true } },
     ]);
 
-    const result = await service.stockLots('est-1', 'p1');
+    await expect(service.stockLots('est-1', ['p1', 'p2'])).rejects.toThrow('même catégorie');
+  });
 
-    expect(result.productId).toBe('p1');
-    expect(result.productName).toBe('Bière Flag 65cl');
-    expect(result.historyLots).toHaveLength(3);
-    expect(result.activeLots.map((l) => l.code)).toEqual(['L002', 'L003']);
-    expect(result.totalActiveUnits).toBe(200);
-    expect(prisma.stockMovement.findMany).toHaveBeenCalledWith({
-      where: { productId: 'p1' },
-      orderBy: { createdAt: 'asc' },
-      select: { type: true, quantity: true, createdAt: true },
+  it('renumbers a lot with the order number parsed from its reason, and hides it when no matching purchase exists', async () => {
+    const prisma = makePrismaMock();
+    const service = new ChartsService(prisma as unknown as PrismaService);
+    prisma.product.findMany.mockResolvedValue([
+      { id: 'p1', name: 'Bière Flag 65cl', categoryId: 'c1', category: { name: 'Bières', hasCasePricing: true, hasVariablePricing: false } },
+    ]);
+    prisma.stockMovement.findMany.mockResolvedValue([
+      { productId: 'p1', type: 'in', quantity: new Decimal(100), createdAt: new Date('2025-08-20T08:00:00Z'), reason: 'Commande n°1' },
+      { productId: 'p1', type: 'in', quantity: new Decimal(120), createdAt: new Date('2025-09-10T08:00:00Z'), reason: 'Commande n°3' },
+      { productId: 'p1', type: 'sale', quantity: new Decimal(30), createdAt: new Date('2025-09-11T09:00:00Z'), reason: null },
+    ]);
+    // Seule la commande n°1 existe réellement pour cet établissement : le lot
+    // "n°3" (référence parsée mais sans commande correspondante) doit être masqué.
+    prisma.purchase.findMany.mockResolvedValue([{ orderNumber: 1 }]);
+
+    const result = await service.stockLots('est-1', ['p1']);
+
+    expect(result.historyLots).toHaveLength(1);
+    expect(result.historyLots[0]).toMatchObject({ code: 'L001', referenceNumber: 1, remainingQuantity: 70 });
+    expect(result.totalActiveUnits).toBe(70);
+    expect(prisma.purchase.findMany).toHaveBeenCalledWith({
+      where: { establishmentId: 'est-1', orderNumber: { in: expect.arrayContaining([1, 3]) } },
+      select: { orderNumber: true },
+    });
+  });
+
+  it('combines lots from several products of the same category, tagging each with its own product name', async () => {
+    const prisma = makePrismaMock();
+    const service = new ChartsService(prisma as unknown as PrismaService);
+    prisma.product.findMany.mockResolvedValue([
+      { id: 'p1', name: 'Bière Flag 65cl', categoryId: 'c1', category: { name: 'Bières', hasCasePricing: true, hasVariablePricing: false } },
+      { id: 'p2', name: 'Bière Beaufort', categoryId: 'c1', category: { name: 'Bières', hasCasePricing: true, hasVariablePricing: false } },
+    ]);
+    prisma.stockMovement.findMany.mockResolvedValue([
+      { productId: 'p1', type: 'in', quantity: new Decimal(50), createdAt: new Date('2025-08-20T08:00:00Z'), reason: 'Commande n°1' },
+      { productId: 'p2', type: 'in', quantity: new Decimal(60), createdAt: new Date('2025-08-20T08:00:00Z'), reason: 'Commande n°1' },
+    ]);
+    prisma.purchase.findMany.mockResolvedValue([{ orderNumber: 1 }]);
+
+    const result = await service.stockLots('est-1', ['p1', 'p2']);
+
+    expect(result.productIds).toEqual(['p1', 'p2']);
+    expect(result.historyLots.map((l) => l.productName)).toEqual(['Bière Flag 65cl', 'Bière Beaufort']);
+    expect(result.totalActiveUnits).toBe(110);
+  });
+
+  it('reports lossQuantity separately from other consumption on a lot', async () => {
+    const prisma = makePrismaMock();
+    const service = new ChartsService(prisma as unknown as PrismaService);
+    prisma.product.findMany.mockResolvedValue([
+      { id: 'p1', name: 'Poulet braisé', categoryId: 'c3', category: { name: 'Poulets', hasCasePricing: false, hasVariablePricing: true } },
+    ]);
+    prisma.stockMovement.findMany.mockResolvedValue([
+      { productId: 'p1', type: 'in', quantity: new Decimal(20), createdAt: new Date('2026-01-01T00:00:00Z'), reason: 'Marché n°2' },
+      { productId: 'p1', type: 'loss', quantity: new Decimal(5), createdAt: new Date('2026-01-02T00:00:00Z'), reason: null },
+    ]);
+    prisma.expense.findMany.mockResolvedValue([{ marketNumber: 2 }]);
+
+    const result = await service.stockLots('est-1', ['p1']);
+
+    expect(result.historyLots[0]).toMatchObject({ code: 'L002', consumedQuantity: 5, lossQuantity: 5, remainingQuantity: 15 });
+    expect(prisma.expense.findMany).toHaveBeenCalledWith({
+      where: { establishmentId: 'est-1', category: 'Marché', marketNumber: { in: [2] } },
+      select: { marketNumber: true },
     });
   });
 
   it('returns empty lot lists and a zero total for a product with no stock movements yet', async () => {
     const prisma = makePrismaMock();
     const service = new ChartsService(prisma as unknown as PrismaService);
-    prisma.product.findFirst.mockResolvedValue({ id: 'p1', name: 'Nouveau produit' });
+    prisma.product.findMany.mockResolvedValue([
+      { id: 'p1', name: 'Nouveau produit', categoryId: 'c1', category: { name: 'Bières', hasCasePricing: true, hasVariablePricing: false } },
+    ]);
     prisma.stockMovement.findMany.mockResolvedValue([]);
 
-    const result = await service.stockLots('est-1', 'p1');
+    const result = await service.stockLots('est-1', ['p1']);
 
     expect(result.activeLots).toEqual([]);
     expect(result.historyLots).toEqual([]);
     expect(result.totalActiveUnits).toBe(0);
+    expect(prisma.purchase.findMany).not.toHaveBeenCalled();
+  });
+});
+
+describe('ChartsService.outOfStockProducts', () => {
+  it('lists active products at or below zero stock, sorted alphabetically', async () => {
+    const prisma = makePrismaMock();
+    const service = new ChartsService(prisma as unknown as PrismaService);
+    prisma.product.findMany.mockResolvedValue([
+      { id: 'p1', name: 'Bière Beaufort', stockQuantity: new Decimal(0), category: { name: 'Bières' } },
+      { id: 'p2', name: 'Poisson braisé', stockQuantity: new Decimal(0), category: null },
+    ]);
+
+    const result = await service.outOfStockProducts('est-1');
+
+    expect(result).toEqual([
+      { id: 'p1', name: 'Bière Beaufort', categoryName: 'Bières', stockQuantity: 0 },
+      { id: 'p2', name: 'Poisson braisé', categoryName: 'Sans catégorie', stockQuantity: 0 },
+    ]);
+    expect(prisma.product.findMany).toHaveBeenCalledWith({
+      where: { establishmentId: 'est-1', status: 'active', stockQuantity: { lte: 0 } },
+      select: { id: true, name: true, stockQuantity: true, category: { select: { name: true } } },
+      orderBy: { name: 'asc' },
+    });
   });
 });
 

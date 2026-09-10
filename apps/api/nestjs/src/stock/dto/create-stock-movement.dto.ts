@@ -1,4 +1,4 @@
-import { IsIn, IsNumber, IsOptional, IsString, IsUUID, Min } from 'class-validator';
+import { IsIn, IsInt, IsNumber, IsOptional, IsString, IsUUID, Min } from 'class-validator';
 import type { ManualStockMovementType } from '../stock-math.js';
 
 export class CreateStockMovementDto {
@@ -18,4 +18,17 @@ export class CreateStockMovementDto {
   @IsOptional()
   @IsString()
   reason?: string;
+
+  /**
+   * N° de marché (dépense "Marché" déjà enregistrée) — requis par
+   * `StockMovementsService.create` pour toute entrée ('in') sur un produit
+   * d'une catégorie à prix variable (Poulets, Poissons, Plats africains),
+   * pour que le lot FIFO créé soit rattachable à ce marché (voir
+   * docs/api/charts.md, principe de numérotation des lots). Ignoré pour les
+   * autres catégories/types de mouvement.
+   */
+  @IsOptional()
+  @IsInt()
+  @Min(1)
+  marketNumber?: number;
 }

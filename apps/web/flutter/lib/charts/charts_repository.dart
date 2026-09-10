@@ -90,12 +90,22 @@ class ChartsRepository {
     return RankingChart.fromJson(json);
   }
 
-  Future<StockLotsChart> getStockLots({required String productId}) async {
+  Future<StockLotsChart> getStockLots({
+    required List<String> productIds,
+  }) async {
     final json = await _api.get(
       '$_base/stock-lots',
-      query: _query({'productId': productId}),
+      query: _query({'productIds': productIds.join(',')}),
     ) as Map<String, dynamic>;
     return StockLotsChart.fromJson(json);
+  }
+
+  Future<List<OutOfStockProduct>> getOutOfStockProducts() async {
+    final json =
+        await _api.get('$_base/out-of-stock-products') as List<dynamic>;
+    return json
+        .map((e) => OutOfStockProduct.fromJson(e as Map<String, dynamic>))
+        .toList();
   }
 
   Future<WeeklyChart> getExpensesWeekly({String? weekStart}) async {

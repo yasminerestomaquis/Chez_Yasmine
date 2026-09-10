@@ -48,6 +48,7 @@ export class TopChartQueryDto {
 }
 
 export class StockLotsQueryDto {
+  /** CSV d'un ou plusieurs identifiants de produit — sélection multiple, doit être de la même catégorie (validé côté service). */
   @IsString()
-  productId!: string;
+  productIds!: string;
 }

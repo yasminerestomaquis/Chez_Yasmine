@@ -9,13 +9,21 @@ class StockRepository {
   final String establishmentId;
 
   Future<List<StockAlert>> listAlerts() async {
-    final json = await _api.get('/establishments/$establishmentId/stock/alerts') as List<dynamic>;
-    return json.map((e) => StockAlert.fromJson(e as Map<String, dynamic>)).toList();
+    final json = await _api.get(
+      '/establishments/$establishmentId/stock/alerts',
+    ) as List<dynamic>;
+    return json
+        .map((e) => StockAlert.fromJson(e as Map<String, dynamic>))
+        .toList();
   }
 
   Future<List<StockMovement>> listMovements(String productId) async {
-    final json = await _api.get('/establishments/$establishmentId/products/$productId/stock-movements') as List<dynamic>;
-    return json.map((e) => StockMovement.fromJson(e as Map<String, dynamic>)).toList();
+    final json = await _api.get(
+      '/establishments/$establishmentId/products/$productId/stock-movements',
+    ) as List<dynamic>;
+    return json
+        .map((e) => StockMovement.fromJson(e as Map<String, dynamic>))
+        .toList();
   }
 
   Future<void> createMovement(
@@ -24,6 +32,7 @@ class StockRepository {
     required double quantity,
     String? reason,
     String? id,
+    int? marketNumber,
   }) {
     return _api.post(
       '/establishments/$establishmentId/products/$productId/stock-movements',
@@ -32,6 +41,7 @@ class StockRepository {
         'type': type,
         'quantity': quantity,
         if (reason != null && reason.isNotEmpty) 'reason': reason,
+        'marketNumber': ?marketNumber,
       },
     );
   }

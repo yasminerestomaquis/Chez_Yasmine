@@ -54,7 +54,13 @@ export class ChartsController {
 
   @Get('stock-lots')
   stockLots(@Param('establishmentId') establishmentId: string, @Query() query: StockLotsQueryDto) {
-    return this.charts.stockLots(establishmentId, query.productId);
+    const productIds = query.productIds.split(',').filter((id) => id.length > 0);
+    return this.charts.stockLots(establishmentId, productIds);
+  }
+
+  @Get('out-of-stock-products')
+  outOfStockProducts(@Param('establishmentId') establishmentId: string) {
+    return this.charts.outOfStockProducts(establishmentId);
   }
 
   @Get('expenses/weekly')

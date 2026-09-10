@@ -15,11 +15,17 @@ void main() {
 
   final repository = StockRepository(ApiClient(), 'establishment-1');
 
-  Future<void> openDialog(WidgetTester tester) async {
+  Future<void> openDialog(WidgetTester tester, {bool hasVariablePricing = false}) async {
     await tester.pumpWidget(MaterialApp(
       home: Builder(
         builder: (context) => ElevatedButton(
-          onPressed: () => showStockMovementDialog(context, repository: repository, productId: 'prod-1', productName: 'Bière 65cl'),
+          onPressed: () => showStockMovementDialog(
+            context,
+            repository: repository,
+            productId: 'prod-1',
+            productName: 'Bière 65cl',
+            hasVariablePricing: hasVariablePricing,
+          ),
           child: const Text('open'),
         ),
       ),
@@ -54,5 +60,35 @@ void main() {
     await tester.pump();
 
     expect(find.text('Quantité invalide'), findsOneWidget);
+  });
+
+  testWidgets('does not show the market number field for a category without variable pricing', (tester) async {
+    await openDialog(tester);
+
+    expect(find.text('N° de marché *'), findsNothing);
+  });
+
+  testWidgets('requires a market number for an "in" entry on a variable-pricing category', (tester) async {
+    await openDialog(tester, hasVariablePricing: true);
+
+    expect(find.text('N° de marché *'), findsOneWidget);
+
+    await tester.tap(find.text('Enregistrer'));
+    await tester.pump();
+
+    expect(find.text('N° de marché invalide'), findsOneWidget);
+  });
+
+  testWidgets('hides the market number field once switched away from "in"', (tester) async {
+    await openDialog(tester, hasVariablePricing: true);
+
+    expect(find.text('N° de marché *'), findsOneWidget);
+
+    await tester.tap(find.text('Entrée'));
+    await tester.pumpAndSettle();
+    await tester.tap(find.text('Correction').last);
+    await tester.pumpAndSettle();
+
+    expect(find.text('N° de marché *'), findsNothing);
   });
 }

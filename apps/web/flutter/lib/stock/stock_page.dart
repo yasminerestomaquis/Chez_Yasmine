@@ -66,6 +66,7 @@ class _StockPageState extends State<StockPage> {
       repository: _stock,
       productId: product.id,
       productName: product.name,
+      hasVariablePricing: product.hasVariablePricing,
     );
     if (created == true) _reload();
   }

@@ -1,7 +1,7 @@
-import { Injectable, NotFoundException } from '@nestjs/common';
+import { BadRequestException, Injectable, NotFoundException } from '@nestjs/common';
 import { effectiveUnitCost } from '../catalog/product-cost.util.js';
 import { PrismaService } from '../prisma/prisma.service.js';
-import { computeFifoLots, type StockLotMovementType } from '../stock/stock-lots.js';
+import { computeFifoLots, type StockLot, type StockLotMovementType } from '../stock/stock-lots.js';
 import type { ChartMetric } from './dto/chart-query.dto.js';
 
 const WEEKDAY_LABELS = ['Lundi', 'Mardi', 'Mercredi', 'Jeudi', 'Vendredi', 'Samedi', 'Dimanche'];
@@ -287,44 +287,124 @@ export class ChartsService {
 
   /**
    * Sous-module "Stock" (maquette FIFO par lots — voir docs/api/charts.md) :
-   * reconstruit les lots d'un produit à partir de son historique complet de
-   * `StockMovement`, sans aucun schéma de lot dédié. Contrairement aux
-   * autres graphiques de ce service, cette vue représente l'état COURANT du
-   * stock (tout l'historique du produit, pas une période bornée par le
-   * filtre Année de la page Graphiques) — un lot reçu il y a plusieurs
-   * années peut rester actif aujourd'hui.
+   * reconstruit les lots d'un ou plusieurs produits (sélection multiple,
+   * obligatoirement de la même catégorie — voir plus bas) à partir de leur
+   * historique complet de `StockMovement`, sans aucun schéma de lot dédié.
+   * Contrairement aux autres graphiques de ce service, cette vue représente
+   * l'état COURANT du stock (tout l'historique des produits, pas une période
+   * bornée par le filtre Année de la page Graphiques) — un lot reçu il y a
+   * plusieurs années peut rester actif aujourd'hui.
+   *
+   * Numérotation/visibilité des lots (décision utilisateur, 2026-09-10) : un
+   * lot L00N doit correspondre à la commande N°N (catégories à prix par
+   * casier : Bières, Vins, Sucreries) ou au marché N°N (catégories à prix
+   * variable : Poulets, Poissons, Plats africains) qui l'a réellement
+   * produit, et ne doit pas s'afficher si cette commande/ce marché n'existe
+   * pas. `computeFifoLots` parse déjà ce numéro depuis le motif du mouvement
+   * 'in' (`referenceNumber`, ex. "Commande n°1" → 1) ; ici on renumérote le
+   * `code` du lot avec ce numéro et on écarte tout lot dont le numéro est
+   * absent ou ne correspond à aucune commande/marché existant(e) pour cet
+   * établissement. Les catégories hors de ces deux groupes (aucune connue à
+   * ce jour) ne sont pas soumises à cette règle et gardent la numérotation
+   * séquentielle historique.
    */
-  async stockLots(establishmentId: string, productId: string) {
-    const product = await this.prisma.product.findFirst({
-      where: { id: productId, establishmentId },
-      select: { id: true, name: true },
+  async stockLots(establishmentId: string, productIds: string[]) {
+    const products = await this.prisma.product.findMany({
+      where: { id: { in: productIds }, establishmentId },
+      select: {
+        id: true,
+        name: true,
+        categoryId: true,
+        category: { select: { name: true, hasCasePricing: true, hasVariablePricing: true } },
+      },
     });
-    if (!product) {
-      throw new NotFoundException('Produit introuvable pour cet établissement');
+    if (products.length !== productIds.length) {
+      throw new NotFoundException('Un ou plusieurs produits sont introuvables pour cet établissement');
+    }
+    if (new Set(products.map((p) => p.categoryId)).size > 1) {
+      throw new BadRequestException('La sélection multiple ne peut porter que sur des produits de la même catégorie');
     }
 
     const movements = await this.prisma.stockMovement.findMany({
-      where: { productId },
+      where: { productId: { in: productIds } },
       orderBy: { createdAt: 'asc' },
-      select: { type: true, quantity: true, createdAt: true },
+      select: { productId: true, type: true, quantity: true, createdAt: true, reason: true },
     });
 
-    const lots = computeFifoLots(
-      movements.map((m) => ({
-        type: m.type as StockLotMovementType,
-        quantity: m.quantity.toNumber(),
-        createdAt: m.createdAt,
-      })),
-    );
-    const activeLots = lots.filter((lot) => lot.status === 'actif');
+    const lotsByProduct = new Map<string, StockLot[]>();
+    for (const product of products) {
+      const productMovements = movements
+        .filter((m) => m.productId === product.id)
+        .map((m) => ({
+          type: m.type as StockLotMovementType,
+          quantity: m.quantity.toNumber(),
+          createdAt: m.createdAt,
+          reason: m.reason,
+        }));
+      lotsByProduct.set(product.id, computeFifoLots(productMovements));
+    }
+
+    const category = products[0]?.category;
+    const gated = Boolean(category?.hasCasePricing || category?.hasVariablePricing);
+    let validNumbers = new Set<number>();
+    if (gated) {
+      const referenceNumbers = [
+        ...new Set([...lotsByProduct.values()].flat().map((l) => l.referenceNumber).filter((n): n is number => n != null)),
+      ];
+      if (referenceNumbers.length > 0) {
+        if (category?.hasVariablePricing) {
+          const marches = await this.prisma.expense.findMany({
+            where: { establishmentId, category: 'Marché', marketNumber: { in: referenceNumbers } },
+            select: { marketNumber: true },
+          });
+          validNumbers = new Set(marches.map((m) => m.marketNumber).filter((n): n is number => n != null));
+        } else {
+          const purchases = await this.prisma.purchase.findMany({
+            where: { establishmentId, orderNumber: { in: referenceNumbers } },
+            select: { orderNumber: true },
+          });
+          validNumbers = new Set(purchases.map((p) => p.orderNumber).filter((n): n is number => n != null));
+        }
+      }
+    }
+
+    type ProductStockLot = StockLot & { productId: string; productName: string };
+    const allLots: ProductStockLot[] = [];
+    for (const product of products) {
+      for (const lot of lotsByProduct.get(product.id) ?? []) {
+        if (gated) {
+          if (lot.referenceNumber == null || !validNumbers.has(lot.referenceNumber)) continue;
+          allLots.push({ ...lot, code: `L${String(lot.referenceNumber).padStart(3, '0')}`, productId: product.id, productName: product.name });
+        } else {
+          allLots.push({ ...lot, productId: product.id, productName: product.name });
+        }
+      }
+    }
+    allLots.sort((a, b) => a.receivedAt.getTime() - b.receivedAt.getTime());
+    const activeLots = allLots.filter((lot) => lot.status === 'actif');
 
     return {
-      productId: product.id,
-      productName: product.name,
+      productIds: products.map((p) => p.id),
+      productNames: products.map((p) => p.name),
       activeLots,
-      historyLots: lots,
+      historyLots: allLots,
       totalActiveUnits: activeLots.reduce((sum, lot) => sum + lot.remainingQuantity, 0),
     };
+  }
+
+  /** "Top des produits épuisés" (sous-module Stock) : produits actifs en rupture (stockQuantity ≤ 0), triés par ordre alphabétique croissant — seul critère "croissant" disponible en l'absence d'un autre axe numérique demandé. */
+  async outOfStockProducts(establishmentId: string) {
+    const products = await this.prisma.product.findMany({
+      where: { establishmentId, status: 'active', stockQuantity: { lte: 0 } },
+      select: { id: true, name: true, stockQuantity: true, category: { select: { name: true } } },
+      orderBy: { name: 'asc' },
+    });
+    return products.map((p) => ({
+      id: p.id,
+      name: p.name,
+      categoryName: p.category?.name ?? 'Sans catégorie',
+      stockQuantity: p.stockQuantity.toNumber(),
+    }));
   }
 
   // ── Sous-module "Dépenses" ────────────────────────────────────────────
