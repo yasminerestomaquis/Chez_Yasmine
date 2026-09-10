@@ -65,12 +65,12 @@ class _TableOrderPageState extends State<TableOrderPage> {
   }
 
   void _reloadOrders() {
+    // Ne pas réinitialiser _selectedIndex ici : un ajout/retrait sur
+    // l'addition 2 ne doit pas ramener l'écran sur l'addition 1 — le build()
+    // borne déjà l'index via .clamp() si la liste se réduit.
     final future = widget.repository.listOpenOrdersForTable(widget.tableId);
     future.ignore();
-    setState(() {
-      _ordersFuture = future;
-      _selectedIndex = 0;
-    });
+    setState(() => _ordersFuture = future);
   }
 
   Future<void> _addNewAddition() async {
