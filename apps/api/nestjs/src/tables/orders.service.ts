@@ -110,6 +110,18 @@ export class OrdersService {
     });
   }
 
+  /** Modifie la quantité d'une ligne déjà présente sur l'addition — utilisé par le +/- du panier de l'écran de table. Pour supprimer une ligne, utiliser `removeItem` plutôt qu'une quantité à 0. */
+  async updateItemQuantity(establishmentId: string, orderId: string, itemId: string, quantity: number) {
+    await this.getOpenOrderOrThrow(establishmentId, orderId);
+    const { count } = await this.prisma.orderItem.updateMany({
+      where: { id: itemId, orderId },
+      data: { quantity },
+    });
+    if (count === 0) {
+      throw new NotFoundException('Article introuvable sur cette addition');
+    }
+  }
+
   async removeItem(establishmentId: string, orderId: string, itemId: string): Promise<void> {
     await this.getOpenOrderOrThrow(establishmentId, orderId);
     const { count } = await this.prisma.orderItem.deleteMany({ where: { id: itemId, orderId } });

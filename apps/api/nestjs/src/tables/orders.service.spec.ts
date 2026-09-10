@@ -150,6 +150,39 @@ describe('OrdersService.addItem', () => {
   });
 });
 
+describe('OrdersService.updateItemQuantity', () => {
+  let prisma: ReturnType<typeof makePrismaMock>;
+  let service: OrdersService;
+
+  beforeEach(() => {
+    prisma = makePrismaMock();
+    service = new OrdersService(prisma as unknown as PrismaService);
+  });
+
+  it('rejects updating an item on a closed order', async () => {
+    (prisma.order as any).findFirst.mockResolvedValue({ id: 'order-1', status: 'closed' });
+    await expect(service.updateItemQuantity('est-1', 'order-1', 'item-1', 3)).rejects.toBeInstanceOf(ConflictException);
+  });
+
+  it('throws NotFoundException when the item does not belong to the order', async () => {
+    (prisma.order as any).findFirst.mockResolvedValue({ id: 'order-1', status: 'open' });
+    (prisma.orderItem as any).updateMany.mockResolvedValue({ count: 0 });
+    await expect(service.updateItemQuantity('est-1', 'order-1', 'item-x', 3)).rejects.toBeInstanceOf(NotFoundException);
+  });
+
+  it('updates the quantity of an existing line', async () => {
+    (prisma.order as any).findFirst.mockResolvedValue({ id: 'order-1', status: 'open' });
+    (prisma.orderItem as any).updateMany.mockResolvedValue({ count: 1 });
+
+    await service.updateItemQuantity('est-1', 'order-1', 'item-1', 5);
+
+    expect(prisma.orderItem.updateMany).toHaveBeenCalledWith({
+      where: { id: 'item-1', orderId: 'order-1' },
+      data: { quantity: 5 },
+    });
+  });
+});
+
 describe('OrdersService.transfer', () => {
   let prisma: ReturnType<typeof makePrismaMock>;
   let service: OrdersService;
