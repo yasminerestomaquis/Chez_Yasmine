@@ -92,7 +92,11 @@ export class OrdersService {
     const orders = await this.prisma.order.findMany({
       where: { establishmentId, tableId, status: 'open' },
       orderBy: { openedAt: 'asc' },
-      include: { items: { include: { product: { select: { name: true } } } } },
+      include: {
+        items: {
+          include: { product: { select: { name: true, category: { select: { hasCasePricing: true, hasVariablePricing: true } } } } },
+        },
+      },
     });
     if (orders.length === 0) {
       throw new NotFoundException('Aucune addition ouverte pour cette table');

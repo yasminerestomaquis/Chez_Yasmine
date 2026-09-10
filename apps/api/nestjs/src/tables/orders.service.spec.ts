@@ -350,7 +350,11 @@ describe('OrdersService.listOpenOrdersForTable', () => {
     expect(prisma.order.findMany).toHaveBeenCalledWith({
       where: { establishmentId: 'est-1', tableId: 't1', status: 'open' },
       orderBy: { openedAt: 'asc' },
-      include: { items: { include: { product: { select: { name: true } } } } },
+      include: {
+        items: {
+          include: { product: { select: { name: true, category: { select: { hasCasePricing: true, hasVariablePricing: true } } } } },
+        },
+      },
     });
   });
 });

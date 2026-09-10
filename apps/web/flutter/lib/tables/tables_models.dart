@@ -75,6 +75,8 @@ class OrderItemDetail {
     required this.productName,
     required this.quantity,
     required this.unitPrice,
+    this.hasCasePricing = false,
+    this.hasVariablePricing = false,
   });
 
   final String id;
@@ -83,16 +85,25 @@ class OrderItemDetail {
   final double quantity;
   final double unitPrice;
 
-  factory OrderItemDetail.fromJson(Map<String, dynamic> json) =>
-      OrderItemDetail(
-        id: json['id'] as String,
-        productId: json['productId'] as String,
-        productName:
-            (json['product'] as Map<String, dynamic>?)?['name'] as String? ??
-            '',
-        quantity: (json['quantity'] as num).toDouble(),
-        unitPrice: (json['unitPrice'] as num).toDouble(),
-      );
+  /// Recopiés de la catégorie du produit (`product.category`) : déterminent
+  /// l'affichage des champs N° de la commande / N° de marché à
+  /// l'encaissement, exactement comme en Caisse (voir `pos_page.dart`).
+  final bool hasCasePricing;
+  final bool hasVariablePricing;
+
+  factory OrderItemDetail.fromJson(Map<String, dynamic> json) {
+    final product = json['product'] as Map<String, dynamic>?;
+    final category = product?['category'] as Map<String, dynamic>?;
+    return OrderItemDetail(
+      id: json['id'] as String,
+      productId: json['productId'] as String,
+      productName: product?['name'] as String? ?? '',
+      quantity: (json['quantity'] as num).toDouble(),
+      unitPrice: (json['unitPrice'] as num).toDouble(),
+      hasCasePricing: category?['hasCasePricing'] as bool? ?? false,
+      hasVariablePricing: category?['hasVariablePricing'] as bool? ?? false,
+    );
+  }
 }
 
 class OrderDetail {
