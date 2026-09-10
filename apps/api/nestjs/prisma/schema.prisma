@@ -356,6 +356,8 @@ model Order {
   tableId         String?   @map("table_id")
   serverId        String?   @map("server_id")
   status          String    @default("open")
+  /// Nombre de convives, saisi à l'ouverture de la table — facultatif.
+  guestCount      Int?      @map("guest_count")
   openedAt        DateTime  @default(now()) @map("opened_at")
   closedAt        DateTime? @map("closed_at")
 

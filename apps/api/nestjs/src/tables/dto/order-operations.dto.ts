@@ -1,4 +1,11 @@
-import { ArrayMinSize, IsArray, IsNumber, IsUUID, Min } from 'class-validator';
+import { ArrayMinSize, IsArray, IsInt, IsNumber, IsOptional, IsUUID, Min } from 'class-validator';
+
+export class OpenTableDto {
+  @IsOptional()
+  @IsInt()
+  @Min(1)
+  guestCount?: number;
+}
 
 export class AddOrderItemDto {
   @IsUUID()

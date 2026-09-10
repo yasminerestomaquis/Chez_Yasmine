@@ -8,6 +8,7 @@ function makePrismaMock() {
   const prisma: Record<string, unknown> = {
     order: { create: vi.fn(), findFirst: vi.fn(), update: vi.fn(), findUniqueOrThrow: vi.fn() },
     restaurantTable: { findFirst: vi.fn(), update: vi.fn() },
+    reservation: { updateMany: vi.fn() },
     product: { findFirst: vi.fn() },
     orderItem: { create: vi.fn(), deleteMany: vi.fn(), findMany: vi.fn(), updateMany: vi.fn() },
     $transaction: vi.fn(async (callback: (tx: unknown) => unknown) => callback(prisma)),
@@ -41,9 +42,34 @@ describe('OrdersService.openTable', () => {
     await service.openTable('est-1', 't1', 'user-1');
 
     expect(prisma.order.create).toHaveBeenCalledWith({
-      data: { establishmentId: 'est-1', tableId: 't1', serverId: 'user-1', status: 'open' },
+      data: { establishmentId: 'est-1', tableId: 't1', serverId: 'user-1', status: 'open', guestCount: undefined },
     });
     expect(prisma.restaurantTable.update).toHaveBeenCalledWith({ where: { id: 't1' }, data: { status: 'occupied' } });
+    expect(prisma.reservation.updateMany).not.toHaveBeenCalled();
+  });
+
+  it('records the guest count when provided', async () => {
+    (prisma.restaurantTable as any).findFirst.mockResolvedValue({ id: 't1', status: 'free' });
+    (prisma.order as any).create.mockResolvedValue({ id: 'order-1' });
+
+    await service.openTable('est-1', 't1', 'user-1', 4);
+
+    expect(prisma.order.create).toHaveBeenCalledWith({
+      data: { establishmentId: 'est-1', tableId: 't1', serverId: 'user-1', status: 'open', guestCount: 4 },
+    });
+  });
+
+  it('allows opening a reserved table and marks its pending reservation as seated', async () => {
+    (prisma.restaurantTable as any).findFirst.mockResolvedValue({ id: 't1', status: 'reserved' });
+    (prisma.order as any).create.mockResolvedValue({ id: 'order-1' });
+
+    await service.openTable('est-1', 't1', 'user-1');
+
+    expect(prisma.restaurantTable.update).toHaveBeenCalledWith({ where: { id: 't1' }, data: { status: 'occupied' } });
+    expect(prisma.reservation.updateMany).toHaveBeenCalledWith({
+      where: { tableId: 't1', status: 'pending' },
+      data: { status: 'seated' },
+    });
   });
 });
 

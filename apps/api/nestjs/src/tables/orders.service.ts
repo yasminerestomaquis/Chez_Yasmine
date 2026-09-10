@@ -29,18 +29,23 @@ export class OrdersService {
   }
 
   /** Only one open order per table is created through this endpoint — split() is the deliberate exception (see its docstring). */
-  async openTable(establishmentId: string, tableId: string, serverId: string) {
+  async openTable(establishmentId: string, tableId: string, serverId: string, guestCount?: number) {
     const table = await this.prisma.restaurantTable.findFirst({ where: { id: tableId, establishmentId } });
     if (!table) {
       throw new NotFoundException('Table introuvable pour cet établissement');
     }
-    if (table.status !== 'free') {
+    // Une table réservée peut être ouverte normalement (le client attendu
+    // arrive) — voir ReservationsService, qui a posé ce statut.
+    if (table.status !== 'free' && table.status !== 'reserved') {
       throw new ConflictException('Cette table est déjà occupée');
     }
 
     return this.prisma.$transaction(async (tx) => {
-      const order = await tx.order.create({ data: { establishmentId, tableId, serverId, status: 'open' } });
+      const order = await tx.order.create({ data: { establishmentId, tableId, serverId, status: 'open', guestCount } });
       await tx.restaurantTable.update({ where: { id: tableId }, data: { status: 'occupied' } });
+      if (table.status === 'reserved') {
+        await tx.reservation.updateMany({ where: { tableId, status: 'pending' }, data: { status: 'seated' } });
+      }
       return order;
     });
   }

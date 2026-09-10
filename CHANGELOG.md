@@ -2,6 +2,14 @@
 
 ## [Unreleased]
 
+### Ajouté (post-plan, 2026-09-10) — Configuration des tables, réservations et refonte visuelle Tables
+- **Création/modification/suppression d'une table depuis l'application** — un vrai manque jusqu'ici : l'API et le repository Flutter le permettaient déjà, mais aucune interface n'y donnait accès (relevé par l'utilisateur : « comment se fait la configuration de la table »). Bouton flottant « + » sur l'écran Tables (dialogue Nom/Zone) ; appui long sur une carte pour modifier son nom/sa zone ou la supprimer (confirmation requise).
+- **Module Réservations** (`apps/api/nestjs/src/tables/reservations.{service,controller}.ts`) : exploite pour la première fois la table `reservations` du schéma (nom du client, téléphone, heure — présente en base depuis l'origine du projet mais jamais reliée à aucun code). Réserver une table libre la fait passer au statut `reserved` ; ouvrir une table réservée consomme automatiquement la réservation (`status: 'seated'`) au lieu de la rejeter comme occupée ; annuler une réservation libère la table (sauf si elle a été ouverte entre-temps par un autre chemin).
+- **Nombre de convives par table** (`orders.guest_count`, migration `20260910120000_add_order_guest_count.sql`) : saisi facultativement à l'ouverture d'une table, affiché sur sa carte avec le total de l'addition en cours (`TablesService.list` calcule désormais ce total à partir des articles de la commande ouverte, sans nouvel appel réseau côté Flutter).
+- **Écran Tables redessiné** selon "Nouvel interface _ 1.docx" : icône par état (chaise contour vert = Libre, pleine orange = Occupée avec « X pers. · TOTAL F », bleu = Réservée avec l'heure, rouge = À encaisser), recherche par nom, puces de filtre avec compteurs (Toutes/Libres/Occupées/À encaisser/Réservées).
+- Volontairement hors périmètre : pas de carte « Comptoir » dans la grille — la Caisse gère déjà la vente directe sans passer par aucune table, décision explicite de l'utilisateur pour ne pas dupliquer l'accès.
+- 259/259 tests NestJS (nouveaux : `reservations.service.spec.ts`, `TablesService.list` avec agrégats, `OrdersService.openTable` avec convives/réservation), `flutter analyze`/tests propres.
+
 ### Ajouté (post-plan, 2026-09-09) — Module Utilisateurs (invitation)
 - **Nouveau module Utilisateurs** (`lib/users/`, `apps/api/nestjs/src/users/`) : liste de l'équipe de l'établissement + bouton "Inviter" (e-mail, nom, rôle) — voir `docs/api/users.md` pour le détail complet.
 - `SupabaseAdminService` (nouveau, clé `service_role`, jamais exposée au client) déclenche `auth.admin.inviteUserByEmail` — la personne invitée reçoit un e-mail et choisit elle-même son mot de passe ; Claude ne crée ni ne manipule jamais de compte/mot de passe pour un tiers.

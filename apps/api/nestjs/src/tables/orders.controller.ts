@@ -3,7 +3,7 @@ import type { Request } from 'express';
 import { PermissionsGuard } from '../auth/permissions.guard.js';
 import { RequirePermissions } from '../auth/permissions.decorator.js';
 import { SupabaseJwtGuard } from '../auth/supabase-jwt.guard.js';
-import { AddOrderItemDto, MergeOrderDto, SplitOrderDto, TransferOrderDto } from './dto/order-operations.dto.js';
+import { AddOrderItemDto, MergeOrderDto, OpenTableDto, SplitOrderDto, TransferOrderDto } from './dto/order-operations.dto.js';
 import { OrdersService } from './orders.service.js';
 
 @Controller('establishments/:establishmentId')
@@ -13,8 +13,13 @@ export class OrdersController {
   constructor(private readonly orders: OrdersService) {}
 
   @Post('tables/:tableId/open')
-  openTable(@Req() request: Request, @Param('establishmentId') establishmentId: string, @Param('tableId') tableId: string) {
-    return this.orders.openTable(establishmentId, tableId, request.user!.sub);
+  openTable(
+    @Req() request: Request,
+    @Param('establishmentId') establishmentId: string,
+    @Param('tableId') tableId: string,
+    @Body() dto: OpenTableDto,
+  ) {
+    return this.orders.openTable(establishmentId, tableId, request.user!.sub, dto.guestCount);
   }
 
   @Get('tables/:tableId/order')
