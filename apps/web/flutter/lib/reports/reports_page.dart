@@ -24,10 +24,10 @@ const _periodLabels = {
   'year': 'Année',
 };
 const _previousPeriodLabels = {
-  'day': 'hier',
-  'week': 'la semaine précédente',
-  'month': 'le mois précédent',
-  'year': "l'année précédente",
+  'day': 'à hier',
+  'week': 'à la semaine précédente',
+  'month': 'au mois précédent',
+  'year': "à l'année précédente",
 };
 const _medals = ['🥇', '🥈', '🥉'];
 
@@ -752,7 +752,7 @@ class _ReportsPageState extends State<ReportsPage> {
                     if (prev != null) ...[
                       const SizedBox(height: 6),
                       Text(
-                        'Comparé à ${_previousPeriodLabels[_period]}',
+                        'Comparé ${_previousPeriodLabels[_period]}',
                         style: const TextStyle(
                           color: AppColors.textSecondary,
                           fontSize: 12,
