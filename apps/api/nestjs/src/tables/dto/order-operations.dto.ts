@@ -14,6 +14,18 @@ export class AddOrderItemDto {
   @IsNumber()
   @Min(0.01)
   quantity!: number;
+
+  /** Requis si le produit appartient à une catégorie à prix variable (Poulets, Poissons, Plats africains) — voir OrdersService.addItem. Ignoré pour un produit à prix fixe (le prix catalogue prévaut toujours). */
+  @IsOptional()
+  @IsNumber()
+  @Min(0.01)
+  unitPrice?: number;
+}
+
+export class UpdateOrderItemDto {
+  @IsNumber()
+  @Min(0.01)
+  quantity!: number;
 }
 
 export class TransferOrderDto {
