@@ -18,4 +18,9 @@ class ReportsRepository {
   Future<String> exportSummaryCsv({String period = 'day'}) {
     return _api.getText('$_base/summary.csv', query: {'period': period});
   }
+
+  Future<PaymentCategoryBreakdown> getPaymentCategoryBreakdown({String period = 'day'}) async {
+    final json = await _api.get('$_base/payment-category-breakdown', query: {'period': period}) as Map<String, dynamic>;
+    return PaymentCategoryBreakdown.fromJson(json);
+  }
 }

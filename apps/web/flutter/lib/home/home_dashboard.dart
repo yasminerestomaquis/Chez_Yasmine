@@ -18,8 +18,6 @@ import '../reports/reports_page.dart';
 import '../reports/reports_repository.dart';
 import '../stock/stock_page.dart';
 import '../tables/floor_plan_page.dart';
-import '../tables/tables_models.dart';
-import '../tables/tables_repository.dart';
 import '../theme/app_theme.dart';
 import '../users/users_page.dart';
 
@@ -63,11 +61,16 @@ class _ModuleEntry {
 
 /// Tableau de bord d'un établissement — écran d'accueil principal.
 ///
-/// Restructuration purement visuelle de l'ancien écran d'accueil (liste
-/// plate de boutons) selon "Nouvel interface.docx" : cartes de statistiques
-/// du jour, actions rapides, modules regroupés par catégorie, navigation
-/// inférieure. Aucune fonctionnalité n'est ajoutée ni retirée : toutes les
-/// données affichées et toutes les pages ouvertes existaient déjà.
+/// Restructuration initialement purement visuelle de l'ancien écran
+/// d'accueil (liste plate de boutons) selon "Nouvel interface.docx" : cartes
+/// de statistiques du jour, actions rapides, modules regroupés par
+/// catégorie, navigation inférieure.
+///
+/// Décision actée 2026-09-10 : "Ventes aujourd'hui" décomposée par mode de
+/// paiement (Espèces/Mobile Money) et la tuile "Tables occupées" remplacée
+/// par "Recettes boissons/plats aujourd'hui" + leur détail par mode de
+/// paiement — voir `ReportsService.paymentCategoryBreakdown`
+/// (`docs/api/reports.md`). La liste des tables n'est donc plus chargée ici.
 class HomeDashboard extends StatefulWidget {
   const HomeDashboard({
     super.key,
@@ -87,20 +90,16 @@ class HomeDashboard extends StatefulWidget {
 class _DashboardData {
   _DashboardData({
     required this.summary,
-    required this.tables,
+    required this.breakdown,
     required this.unreadCount,
   });
   final ReportSummary summary;
-  final List<RestaurantTable> tables;
+  final PaymentCategoryBreakdown breakdown;
   final int unreadCount;
 }
 
 class _HomeDashboardState extends State<HomeDashboard> {
   late final ReportsRepository _reports = ReportsRepository(
-    ApiClient(),
-    widget.establishmentId,
-  );
-  late final TablesRepository _tablesRepo = TablesRepository(
     ApiClient(),
     widget.establishmentId,
   );
@@ -191,12 +190,12 @@ class _HomeDashboardState extends State<HomeDashboard> {
   Future<_DashboardData> _load() async {
     final results = await Future.wait<dynamic>([
       _reports.getSummary(),
-      _tablesRepo.listTables(),
+      _reports.getPaymentCategoryBreakdown(),
       _notifications.unreadCount(),
     ]);
     return _DashboardData(
       summary: results[0] as ReportSummary,
-      tables: results[1] as List<RestaurantTable>,
+      breakdown: results[1] as PaymentCategoryBreakdown,
       unreadCount: results[2] as int,
     );
   }
@@ -363,6 +362,70 @@ class _HomeDashboardState extends State<HomeDashboard> {
             ),
           ],
         ),
+      ),
+    );
+  }
+
+  /// Carte pleine largeur : "Ventes aujourd'hui" décomposée par mode de
+  /// paiement (Espèces/Mobile Money) — le total est construit comme la somme
+  /// exacte des deux, voir `ReportsService.paymentCategoryBreakdown`.
+  Widget _salesSummaryCard(PaymentCategoryBreakdown breakdown) {
+    return Card(
+      child: Padding(
+        padding: const EdgeInsets.all(16),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Row(
+              children: [
+                Container(
+                  padding: const EdgeInsets.all(8),
+                  decoration: BoxDecoration(
+                    color: AppColors.green.withValues(alpha: 0.12),
+                    shape: BoxShape.circle,
+                  ),
+                  child: const Icon(Icons.trending_up, color: AppColors.green, size: 20),
+                ),
+                const SizedBox(width: 10),
+                const Text(
+                  "Total ventes Aujourd'hui",
+                  style: TextStyle(color: AppColors.textSecondary, fontSize: 12),
+                ),
+              ],
+            ),
+            const SizedBox(height: 8),
+            Text(
+              '${formatAmount(breakdown.totalRevenue)} F',
+              style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 24),
+            ),
+            const SizedBox(height: 12),
+            Row(
+              children: [
+                Expanded(child: _miniStat('Espèces', breakdown.cashRevenue)),
+                const SizedBox(width: 12),
+                Expanded(child: _miniStat('Mobile Money', breakdown.mobileMoneyRevenue)),
+              ],
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
+  Widget _miniStat(String label, double value) {
+    return Container(
+      padding: const EdgeInsets.symmetric(vertical: 8, horizontal: 10),
+      decoration: BoxDecoration(
+        color: AppColors.greenLight,
+        borderRadius: BorderRadius.circular(10),
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Text(label, style: const TextStyle(fontSize: 11, color: AppColors.textSecondary)),
+          const SizedBox(height: 2),
+          Text('${formatAmount(value)} F', style: const TextStyle(fontWeight: FontWeight.w700, fontSize: 15)),
+        ],
       ),
     );
   }
@@ -611,10 +674,6 @@ class _HomeDashboardState extends State<HomeDashboard> {
               }
 
               final data = snapshot.data!;
-              final occupied = data.tables
-                  .where((t) => t.status != 'free')
-                  .length;
-              final total = data.tables.length;
 
               return ListView(
                 padding: const EdgeInsets.fromLTRB(16, 16, 16, 24),
@@ -644,6 +703,8 @@ class _HomeDashboardState extends State<HomeDashboard> {
                     style: const TextStyle(color: AppColors.textSecondary),
                   ),
                   const SizedBox(height: 18),
+                  _salesSummaryCard(data.breakdown),
+                  const SizedBox(height: 10),
                   GridView(
                     shrinkWrap: true,
                     physics: const NeverScrollableScrollPhysics(),
@@ -656,21 +717,9 @@ class _HomeDashboardState extends State<HomeDashboard> {
                         ),
                     children: [
                       _statCard(
-                        icon: Icons.trending_up,
-                        label: "Ventes aujourd'hui",
-                        value: '${formatAmount(data.summary.revenue)} F',
-                        color: AppColors.green,
-                      ),
-                      _statCard(
                         icon: Icons.receipt_long_outlined,
                         label: "Commandes aujourd'hui",
                         value: '${data.summary.salesCount}',
-                        color: AppColors.orange,
-                      ),
-                      _statCard(
-                        icon: Icons.table_restaurant_outlined,
-                        label: 'Tables occupées',
-                        value: '$occupied / $total',
                         color: AppColors.orange,
                       ),
                       _statCard(
@@ -680,6 +729,90 @@ class _HomeDashboardState extends State<HomeDashboard> {
                         color: data.summary.lowStockCount > 0
                             ? AppColors.alert
                             : AppColors.green,
+                      ),
+                    ],
+                  ),
+                  const SizedBox(height: 20),
+                  const Text(
+                    'RECETTES DU JOUR',
+                    style: TextStyle(
+                      fontWeight: FontWeight.bold,
+                      fontSize: 13,
+                      color: AppColors.textSecondary,
+                      letterSpacing: 0.5,
+                    ),
+                  ),
+                  const SizedBox(height: 10),
+                  GridView(
+                    shrinkWrap: true,
+                    physics: const NeverScrollableScrollPhysics(),
+                    gridDelegate:
+                        const SliverGridDelegateWithFixedCrossAxisCount(
+                          crossAxisCount: 2,
+                          crossAxisSpacing: 10,
+                          mainAxisSpacing: 10,
+                          mainAxisExtent: 110,
+                        ),
+                    children: [
+                      _statCard(
+                        icon: Icons.sports_bar_outlined,
+                        label: 'Recettes boissons aujourd\'hui',
+                        value: '${formatAmount(data.breakdown.boissonsRevenue)} F',
+                        color: AppColors.green,
+                      ),
+                      _statCard(
+                        icon: Icons.restaurant_outlined,
+                        label: 'Recettes plats aujourd\'hui',
+                        value: '${formatAmount(data.breakdown.platsRevenue)} F',
+                        color: AppColors.orange,
+                      ),
+                    ],
+                  ),
+                  const SizedBox(height: 20),
+                  const Text(
+                    'DÉTAIL PAR MODE DE PAIEMENT',
+                    style: TextStyle(
+                      fontWeight: FontWeight.bold,
+                      fontSize: 13,
+                      color: AppColors.textSecondary,
+                      letterSpacing: 0.5,
+                    ),
+                  ),
+                  const SizedBox(height: 10),
+                  GridView(
+                    shrinkWrap: true,
+                    physics: const NeverScrollableScrollPhysics(),
+                    gridDelegate:
+                        const SliverGridDelegateWithFixedCrossAxisCount(
+                          crossAxisCount: 2,
+                          crossAxisSpacing: 10,
+                          mainAxisSpacing: 10,
+                          mainAxisExtent: 100,
+                        ),
+                    children: [
+                      _statCard(
+                        icon: Icons.payments_outlined,
+                        label: 'Boissons · Espèces',
+                        value: '${formatAmount(data.breakdown.boissonsCash)} F',
+                        color: AppColors.green,
+                      ),
+                      _statCard(
+                        icon: Icons.phone_iphone_outlined,
+                        label: 'Boissons · Mobile Money',
+                        value: '${formatAmount(data.breakdown.boissonsMobileMoney)} F',
+                        color: AppColors.green,
+                      ),
+                      _statCard(
+                        icon: Icons.payments_outlined,
+                        label: 'Plats · Espèces',
+                        value: '${formatAmount(data.breakdown.platsCash)} F',
+                        color: AppColors.orange,
+                      ),
+                      _statCard(
+                        icon: Icons.phone_iphone_outlined,
+                        label: 'Plats · Mobile Money',
+                        value: '${formatAmount(data.breakdown.platsMobileMoney)} F',
+                        color: AppColors.orange,
                       ),
                     ],
                   ),
@@ -725,7 +858,7 @@ class _HomeDashboardState extends State<HomeDashboard> {
                       ),
                       _quickActionButton(
                         icon: Icons.point_of_sale_outlined,
-                        label: 'Encaisser',
+                        label: 'Caisse',
                         onTap: () => _openPage(
                           (_) =>
                               PosPage(establishmentId: widget.establishmentId),

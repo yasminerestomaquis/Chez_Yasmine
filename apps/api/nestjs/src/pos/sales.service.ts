@@ -117,6 +117,8 @@ export class SalesService {
           discount: totals.discount,
           total: totals.total,
           createdBy: userId,
+          orderNumber: dto.orderNumber,
+          marketNumber: dto.marketNumber,
           items: {
             create: dto.items.map((item, index) => ({
               productId: item.productId,
@@ -146,6 +148,26 @@ export class SalesService {
     });
     await this.activityNotifier.notify(establishmentId, 'Nouvelle vente', `${totals.total.toLocaleString('fr-FR')} FCFA`);
     return sale;
+  }
+
+  /** Suggestion éditable pour la caisse : N° de la dernière commande d'achat enregistrée (toutes catégories/fournisseurs confondus), ou null s'il n'y en a aucune. Jamais imposé côté serveur. */
+  async lastOrderNumber(establishmentId: string): Promise<number | null> {
+    const last = await this.prisma.purchase.findFirst({
+      where: { establishmentId },
+      orderBy: { createdAt: 'desc' },
+      select: { orderNumber: true },
+    });
+    return last?.orderNumber ?? null;
+  }
+
+  /** Même principe pour le dernier N° de marché (dépense « Marché ») enregistré. */
+  async lastMarketNumber(establishmentId: string): Promise<number | null> {
+    const last = await this.prisma.expense.findFirst({
+      where: { establishmentId, category: 'Marché' },
+      orderBy: { createdAt: 'desc' },
+      select: { marketNumber: true },
+    });
+    return last?.marketNumber ?? null;
   }
 
   async get(establishmentId: string, saleId: string) {

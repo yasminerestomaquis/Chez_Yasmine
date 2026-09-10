@@ -1,5 +1,5 @@
 import { Type } from 'class-transformer';
-import { ArrayMinSize, IsArray, IsIn, IsNumber, IsOptional, IsString, IsUUID, Min, ValidateNested } from 'class-validator';
+import { ArrayMinSize, IsArray, IsIn, IsInt, IsNumber, IsOptional, IsString, IsUUID, Min, ValidateNested } from 'class-validator';
 
 export class SaleItemDto {
   @IsUUID()
@@ -83,4 +83,16 @@ export class CreateSaleDto {
   @IsOptional()
   @IsString()
   reason?: string;
+
+  /** N° de la commande d'achat (Bières/Vins/Sucreries) dont provient cette vente — saisi en caisse, jamais imposé ni vérifié contre Purchase.orderNumber. */
+  @IsOptional()
+  @IsInt()
+  @Min(1)
+  orderNumber?: number;
+
+  /** N° de marché (Poulets/Poissons/Plats africains) dont provient cette vente — même principe, voir Expense.marketNumber. */
+  @IsOptional()
+  @IsInt()
+  @Min(1)
+  marketNumber?: number;
 }

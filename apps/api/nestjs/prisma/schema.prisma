@@ -425,6 +425,10 @@ model Sale {
   createdBy       String?   @map("created_by")
   createdAt       DateTime  @default(now()) @map("created_at")
   voidedAt        DateTime? @map("voided_at")
+  /** Rattache les lignes Bières/Vins/Sucreries de cette vente à Purchase.orderNumber — saisi en caisse, jamais imposé ni vérifié contre une commande existante. */
+  orderNumber     Int?      @map("order_number")
+  /** Rattache les lignes Poulets/Poissons/Plats africains de cette vente à Expense.marketNumber — même principe. */
+  marketNumber    Int?      @map("market_number")
 
   establishment Establishment    @relation(fields: [establishmentId], references: [id], onDelete: Cascade)
   pointOfSale   PointOfSale?     @relation(fields: [pointOfSaleId], references: [id])

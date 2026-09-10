@@ -16,6 +16,8 @@ function makePrismaMock() {
     credit: { create: vi.fn() },
     order: { findFirst: vi.fn(), update: vi.fn() },
     restaurantTable: { update: vi.fn() },
+    purchase: { findFirst: vi.fn() },
+    expense: { findFirst: vi.fn() },
     $transaction: vi.fn(async (callback: (tx: unknown) => unknown) => callback(prisma)),
   };
   return prisma;
@@ -237,6 +239,62 @@ describe('SalesService.create', () => {
 
     expect(prisma.customer.update).toHaveBeenCalledWith({ where: { id: 'cust-1' }, data: { creditBalance: 2000 } });
     expect(prisma.credit.create).toHaveBeenCalledWith({ data: { customerId: 'cust-1', saleId: 'sale-1', amount: 2000 } });
+  });
+
+  it('passes through orderNumber/marketNumber to the sale record', async () => {
+    (prisma.product as any).findMany.mockResolvedValue([product()]);
+    (prisma.sale as any).create.mockResolvedValue({ id: 'sale-1', items: [], payments: [] });
+
+    await service.create('est-1', 'user-1', {
+      items: [{ productId: 'p1', quantity: 1 }],
+      payments: [{ method: 'cash', amount: 1000 }],
+      orderNumber: 3,
+      marketNumber: 7,
+    } as any);
+
+    expect(prisma.sale.create).toHaveBeenCalledWith(
+      expect.objectContaining({ data: expect.objectContaining({ orderNumber: 3, marketNumber: 7 }) }),
+    );
+  });
+});
+
+describe('SalesService.lastOrderNumber / lastMarketNumber', () => {
+  let prisma: ReturnType<typeof makePrismaMock>;
+  let service: SalesService;
+
+  beforeEach(() => {
+    prisma = makePrismaMock();
+    service = new SalesService(prisma as unknown as PrismaService, activityNotifierMock);
+  });
+
+  it('returns null when no purchase exists yet', async () => {
+    (prisma.purchase as any).findFirst.mockResolvedValue(null);
+    await expect(service.lastOrderNumber('est-1')).resolves.toBeNull();
+    expect(prisma.purchase.findFirst).toHaveBeenCalledWith({
+      where: { establishmentId: 'est-1' },
+      orderBy: { createdAt: 'desc' },
+      select: { orderNumber: true },
+    });
+  });
+
+  it('returns the most recently created purchase order number', async () => {
+    (prisma.purchase as any).findFirst.mockResolvedValue({ orderNumber: 5 });
+    await expect(service.lastOrderNumber('est-1')).resolves.toBe(5);
+  });
+
+  it('returns null when no "Marché" expense exists yet', async () => {
+    (prisma.expense as any).findFirst.mockResolvedValue(null);
+    await expect(service.lastMarketNumber('est-1')).resolves.toBeNull();
+    expect(prisma.expense.findFirst).toHaveBeenCalledWith({
+      where: { establishmentId: 'est-1', category: 'Marché' },
+      orderBy: { createdAt: 'desc' },
+      select: { marketNumber: true },
+    });
+  });
+
+  it('returns the most recently created market number', async () => {
+    (prisma.expense as any).findFirst.mockResolvedValue({ marketNumber: 9 });
+    await expect(service.lastMarketNumber('est-1')).resolves.toBe(9);
   });
 });
 

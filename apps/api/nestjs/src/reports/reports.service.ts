@@ -162,6 +162,96 @@ export class ReportsService {
   }
 
   /**
+   * Ventilation utilisée par le tableau de bord Accueil : chiffre d'affaires
+   * du jour réparti par mode de paiement (Espèces/Mobile Money) et par
+   * groupe de catégories (Boissons = `hasCasePricing`, ex. Bières/Vins/
+   * Sucreries ; Plats = `hasVariablePricing`, ex. Poulets/Poissons/Plats
+   * africains — voir docs/api/catalog.md), plus le croisement des deux.
+   *
+   * Le CA par groupe de catégories est calculé ligne à ligne
+   * (`SaleItem.quantity × SaleItem.unitPrice`), **jamais réduit par une
+   * remise** — même convention que `ChartsService` (docs/api/charts.md) —
+   * alors que Espèces/Mobile Money reflètent l'argent réellement encaissé
+   * (`Payment.amount`, net de remise). Les deux ne se recoupent donc pas
+   * exactement sur une vente avec remise, choix délibéré de cohérence avec
+   * Graphiques plutôt qu'un alignement strict entre les deux totaux.
+   *
+   * Le croisement catégorie × mode de paiement répartit le CA de chaque
+   * groupe au prorata de la part Espèces/Mobile Money de chaque vente —
+   * même principe de répartition proportionnelle que l'allocation du coût
+   * « Marché » dans ChartsService. Les paiements Carte/Crédit existants
+   * (anciennes ventes, module Clients) ne comptent dans aucun des deux
+   * totaux demandés (Espèces/Mobile Money uniquement).
+   */
+  async paymentCategoryBreakdown(establishmentId: string, query: ReportQueryDto) {
+    const { from, to } = this.resolveRange(query);
+
+    const sales = await this.prisma.sale.findMany({
+      where: { establishmentId, voidedAt: null, createdAt: { gte: from, lte: to } },
+      select: {
+        payments: { select: { method: true, amount: true } },
+        items: {
+          select: {
+            quantity: true,
+            unitPrice: true,
+            product: { select: { category: { select: { hasCasePricing: true, hasVariablePricing: true } } } },
+          },
+        },
+      },
+    });
+
+    let cashRevenue = 0;
+    let mobileMoneyRevenue = 0;
+    let boissonsRevenue = 0;
+    let platsRevenue = 0;
+    let boissonsCash = 0;
+    let boissonsMobileMoney = 0;
+    let platsCash = 0;
+    let platsMobileMoney = 0;
+
+    for (const sale of sales) {
+      const cashAmount = sale.payments.filter((p) => p.method === 'cash').reduce((sum, p) => sum + p.amount.toNumber(), 0);
+      const mobileMoneyAmount = sale.payments
+        .filter((p) => p.method === 'mobile_money')
+        .reduce((sum, p) => sum + p.amount.toNumber(), 0);
+      const paidTotal = sale.payments.reduce((sum, p) => sum + p.amount.toNumber(), 0);
+      cashRevenue += cashAmount;
+      mobileMoneyRevenue += mobileMoneyAmount;
+
+      let saleBoissons = 0;
+      let salePlats = 0;
+      for (const item of sale.items) {
+        const revenue = item.quantity.toNumber() * item.unitPrice.toNumber();
+        if (item.product.category?.hasCasePricing) saleBoissons += revenue;
+        else if (item.product.category?.hasVariablePricing) salePlats += revenue;
+      }
+      boissonsRevenue += saleBoissons;
+      platsRevenue += salePlats;
+
+      if (paidTotal > 0) {
+        boissonsCash += saleBoissons * (cashAmount / paidTotal);
+        boissonsMobileMoney += saleBoissons * (mobileMoneyAmount / paidTotal);
+        platsCash += salePlats * (cashAmount / paidTotal);
+        platsMobileMoney += salePlats * (mobileMoneyAmount / paidTotal);
+      }
+    }
+
+    return {
+      from,
+      to,
+      totalRevenue: cashRevenue + mobileMoneyRevenue,
+      cashRevenue,
+      mobileMoneyRevenue,
+      boissonsRevenue,
+      platsRevenue,
+      boissonsCash,
+      boissonsMobileMoney,
+      platsCash,
+      platsMobileMoney,
+    };
+  }
+
+  /**
    * CSV export only — PDF/Excel from the master prompt's §34 are deferred
    * (see docs/api/reports.md): both need a real rendering dependency, and
    * this app has no round-trip-verified deployment yet to justify adding

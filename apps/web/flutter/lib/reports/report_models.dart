@@ -41,6 +41,46 @@ class ServerPerformance {
       );
 }
 
+/// Correspond à `ReportsService.paymentCategoryBreakdown` — voir
+/// `docs/api/reports.md`. Boissons = Bières/Vins/Sucreries
+/// (`Category.hasCasePricing`), Plats = Poulets/Poissons/Plats africains
+/// (`Category.hasVariablePricing`).
+class PaymentCategoryBreakdown {
+  PaymentCategoryBreakdown({
+    required this.totalRevenue,
+    required this.cashRevenue,
+    required this.mobileMoneyRevenue,
+    required this.boissonsRevenue,
+    required this.platsRevenue,
+    required this.boissonsCash,
+    required this.boissonsMobileMoney,
+    required this.platsCash,
+    required this.platsMobileMoney,
+  });
+
+  final double totalRevenue;
+  final double cashRevenue;
+  final double mobileMoneyRevenue;
+  final double boissonsRevenue;
+  final double platsRevenue;
+  final double boissonsCash;
+  final double boissonsMobileMoney;
+  final double platsCash;
+  final double platsMobileMoney;
+
+  factory PaymentCategoryBreakdown.fromJson(Map<String, dynamic> json) => PaymentCategoryBreakdown(
+        totalRevenue: (json['totalRevenue'] as num).toDouble(),
+        cashRevenue: (json['cashRevenue'] as num).toDouble(),
+        mobileMoneyRevenue: (json['mobileMoneyRevenue'] as num).toDouble(),
+        boissonsRevenue: (json['boissonsRevenue'] as num).toDouble(),
+        platsRevenue: (json['platsRevenue'] as num).toDouble(),
+        boissonsCash: (json['boissonsCash'] as num).toDouble(),
+        boissonsMobileMoney: (json['boissonsMobileMoney'] as num).toDouble(),
+        platsCash: (json['platsCash'] as num).toDouble(),
+        platsMobileMoney: (json['platsMobileMoney'] as num).toDouble(),
+      );
+}
+
 class ReportSummary {
   ReportSummary({
     required this.from,

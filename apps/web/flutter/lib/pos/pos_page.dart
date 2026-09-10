@@ -147,7 +147,20 @@ class _PosPageState extends State<PosPage> {
   Future<void> _checkout() async {
     if (_cart.isEmpty) return;
     final total = _subtotal;
-    final outcome = await showPaymentDialog(context, total: total);
+    // Bières/Vins/Sucreries -> N° de la commande ; Poulets/Poissons/Plats
+    // africains -> N° de marché (voir docs/api/pos.md) — un seul champ de
+    // chaque affiché si le panier contient au moins un produit du groupe
+    // concerné, jamais par ligne.
+    final hasCasePricingItems = _cart.any((l) => l.product.hasCasePricing);
+    final hasVariablePricingItems = _cart.any((l) => l.product.hasVariablePricing);
+    final outcome = await showPaymentDialog(
+      context,
+      total: total,
+      showOrderNumberField: hasCasePricingItems,
+      showMarketNumberField: hasVariablePricingItems,
+      fetchLastOrderNumber: hasCasePricingItems ? _pos.lastOrderNumber : null,
+      fetchLastMarketNumber: hasVariablePricingItems ? _pos.lastMarketNumber : null,
+    );
     if (outcome == null) return;
 
     final saleId = const Uuid().v4();
@@ -170,6 +183,8 @@ class _PosPageState extends State<PosPage> {
         id: saleId,
         items: items,
         payments: payments,
+        orderNumber: outcome.orderNumber,
+        marketNumber: outcome.marketNumber,
       );
       if (!mounted) return;
       setState(() {
@@ -193,7 +208,12 @@ class _PosPageState extends State<PosPage> {
           id: saleId,
           entityType: 'sale',
           deviceId: await getDeviceId(),
-          payload: {'items': items, 'payments': payments},
+          payload: {
+            'items': items,
+            'payments': payments,
+            'orderNumber': ?outcome.orderNumber,
+            'marketNumber': ?outcome.marketNumber,
+          },
           createdAt: DateTime.now(),
         ),
       );

@@ -17,26 +17,57 @@ class PaymentLine {
   final double amount;
 }
 
-/// Un paiement validé (une ou plusieurs lignes couvrant le total).
+/// Un paiement validé (une ou plusieurs lignes couvrant le total), avec le
+/// N° de commande/N° de marché éventuellement rattachés à cette vente — voir
+/// `docs/api/pos.md`.
 class PaymentOutcome {
-  PaymentOutcome(this.lines);
+  PaymentOutcome(this.lines, {this.orderNumber, this.marketNumber});
   final List<PaymentLine> lines;
+  final int? orderNumber;
+  final int? marketNumber;
 }
 
 /// Retourne le résultat du paiement, ou `null` si annulé.
+///
+/// [showOrderNumberField]/[showMarketNumberField] affichent respectivement le
+/// champ N° de la commande (panier contenant un produit Bières/Vins/
+/// Sucreries) et N° de marché (panier contenant un produit Poulets/Poissons/
+/// Plats africains) — pré-remplis via [fetchLastOrderNumber]/
+/// [fetchLastMarketNumber] (simple suggestion de convenance, jamais
+/// bloquante), librement éditables.
 Future<PaymentOutcome?> showPaymentDialog(
   BuildContext context, {
   required double total,
+  bool showOrderNumberField = false,
+  bool showMarketNumberField = false,
+  Future<int?> Function()? fetchLastOrderNumber,
+  Future<int?> Function()? fetchLastMarketNumber,
 }) {
   return showDialog<PaymentOutcome>(
     context: context,
-    builder: (_) => _PaymentDialog(total: total),
+    builder: (_) => _PaymentDialog(
+      total: total,
+      showOrderNumberField: showOrderNumberField,
+      showMarketNumberField: showMarketNumberField,
+      fetchLastOrderNumber: fetchLastOrderNumber,
+      fetchLastMarketNumber: fetchLastMarketNumber,
+    ),
   );
 }
 
 class _PaymentDialog extends StatefulWidget {
-  const _PaymentDialog({required this.total});
+  const _PaymentDialog({
+    required this.total,
+    required this.showOrderNumberField,
+    required this.showMarketNumberField,
+    this.fetchLastOrderNumber,
+    this.fetchLastMarketNumber,
+  });
   final double total;
+  final bool showOrderNumberField;
+  final bool showMarketNumberField;
+  final Future<int?> Function()? fetchLastOrderNumber;
+  final Future<int?> Function()? fetchLastMarketNumber;
 
   @override
   State<_PaymentDialog> createState() => _PaymentDialogState();
@@ -46,6 +77,8 @@ class _PaymentDialogState extends State<_PaymentDialog> {
   final List<PaymentLine> _lines = [];
   String _method = _availableMethods.first;
   final _amountController = TextEditingController();
+  final _orderNumberController = TextEditingController();
+  final _marketNumberController = TextEditingController();
 
   double get _paid => _lines.fold(0, (sum, l) => sum + l.amount);
   double get _remaining => widget.total - _paid;
@@ -54,11 +87,35 @@ class _PaymentDialogState extends State<_PaymentDialog> {
   void initState() {
     super.initState();
     _amountController.text = widget.total.toStringAsFixed(0);
+    if (widget.showOrderNumberField) _loadLastOrderNumber();
+    if (widget.showMarketNumberField) _loadLastMarketNumber();
+  }
+
+  Future<void> _loadLastOrderNumber() async {
+    try {
+      final last = await widget.fetchLastOrderNumber?.call();
+      if (last == null || !mounted) return;
+      setState(() => _orderNumberController.text = '$last');
+    } catch (_) {
+      // Simple suggestion de convenance — jamais bloquant, saisie manuelle toujours possible.
+    }
+  }
+
+  Future<void> _loadLastMarketNumber() async {
+    try {
+      final last = await widget.fetchLastMarketNumber?.call();
+      if (last == null || !mounted) return;
+      setState(() => _marketNumberController.text = '$last');
+    } catch (_) {
+      // Simple suggestion de convenance — jamais bloquant, saisie manuelle toujours possible.
+    }
   }
 
   @override
   void dispose() {
     _amountController.dispose();
+    _orderNumberController.dispose();
+    _marketNumberController.dispose();
     super.dispose();
   }
 
@@ -90,6 +147,22 @@ class _PaymentDialogState extends State<_PaymentDialog> {
               'Total à payer : ${formatAmount(widget.total)} FCFA',
               style: const TextStyle(fontWeight: FontWeight.bold),
             ),
+            if (widget.showOrderNumberField) ...[
+              const SizedBox(height: 12),
+              TextFormField(
+                controller: _orderNumberController,
+                keyboardType: TextInputType.number,
+                decoration: const InputDecoration(labelText: 'N° de la commande'),
+              ),
+            ],
+            if (widget.showMarketNumberField) ...[
+              const SizedBox(height: 12),
+              TextFormField(
+                controller: _marketNumberController,
+                keyboardType: TextInputType.number,
+                decoration: const InputDecoration(labelText: 'N° de marché'),
+              ),
+            ],
             const SizedBox(height: 12),
             for (final line in _lines)
               ListTile(
@@ -153,7 +226,11 @@ class _PaymentDialogState extends State<_PaymentDialog> {
         ),
         FilledButton(
           onPressed: _remaining.abs() < 0.01
-              ? () => Navigator.of(context).pop(PaymentOutcome(_lines))
+              ? () => Navigator.of(context).pop(PaymentOutcome(
+                    _lines,
+                    orderNumber: int.tryParse(_orderNumberController.text.trim()),
+                    marketNumber: int.tryParse(_marketNumberController.text.trim()),
+                  ))
               : null,
           child: const Text('Valider le paiement'),
         ),

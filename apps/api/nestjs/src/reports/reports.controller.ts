@@ -16,6 +16,11 @@ export class ReportsController {
     return this.reports.summary(establishmentId, query);
   }
 
+  @Get('payment-category-breakdown')
+  paymentCategoryBreakdown(@Param('establishmentId') establishmentId: string, @Query() query: ReportQueryDto) {
+    return this.reports.paymentCategoryBreakdown(establishmentId, query);
+  }
+
   @Get('summary.csv')
   @Header('Content-Type', 'text/csv; charset=utf-8')
   @Header('Content-Disposition', 'attachment; filename="rapport.csv"')

@@ -3,8 +3,9 @@
 ## Routes
 
 ```
-GET /establishments/:establishmentId/reports/summary        (reports.view, ?from=&to=&period=day|week|month|year)
-GET /establishments/:establishmentId/reports/summary.csv    (reports.view, mêmes paramètres)
+GET /establishments/:establishmentId/reports/summary                       (reports.view, ?from=&to=&period=day|week|month|year)
+GET /establishments/:establishmentId/reports/summary.csv                   (reports.view, mêmes paramètres)
+GET /establishments/:establishmentId/reports/payment-category-breakdown    (reports.view, mêmes paramètres — voir ci-dessous)
 ```
 
 `from`/`to` (ISO 8601) prennent le pas sur `period` s'ils sont fournis ; sinon `period` (par défaut `day`) est résolu par rapport à maintenant — c'est ce qui couvre les quatre périodicités demandées par le prompt maître (§34 : journalier/hebdomadaire/mensuel/annuel) sans quatre endpoints séparés.
@@ -23,6 +24,14 @@ Tout est calculé à partir des tables existantes, sans nouvelle table :
 - **Bénéfice par produit (`productProfitability`)** : même agrégation par produit, complétée du coût (`quantité × prix d'achat actuel`) et du bénéfice (`chiffre d'affaires − coût`), pour **tous** les produits vendus sur la période (pas limité à 5), triée par bénéfice décroissant. Partage la même simplification que `cogs` ci-dessus : le prix d'achat utilisé est celui du produit *aujourd'hui*, pas celui en vigueur au moment de chaque vente historique — un changement de prix d'achat fausse donc légèrement le bénéfice affiché pour les périodes passées, exactement comme pour la marge brute globale.
 - **Performance des serveurs** : ventes agrégées par `Sale.createdBy` (total, nombre de ventes), avec le nom depuis `UserProfile.fullName`. Le prompt maître mentionne aussi des « commissions » (table `ServerCommission`, Phase 3) — elle existe dans le schéma mais rien ne l'alimente nulle part dans le code (aucune phase précédente n'y a jamais écrit) ; la performance ici se base donc sur les ventes réelles, pas sur des commissions qui n'existent pas encore en pratique.
 
+## Ventilation Espèces/Mobile Money × Boissons/Plats (`ReportsService.paymentCategoryBreakdown`, décision actée 2026-09-10)
+
+Alimente les cartes de l'écran Accueil (`lib/home/home_dashboard.dart`), toujours appelée sans paramètre donc résolue sur **aujourd'hui** (même défaut `period=day` que `summary`) :
+
+- **Boissons** = catégories `hasCasePricing` (Bières, Vins, Sucreries) ; **Plats** = catégories `hasVariablePricing` (Poulets, Poissons, Plats africains) — voir `docs/api/catalog.md`. Chiffre d'affaires ligne à ligne (`SaleItem.quantity × SaleItem.unitPrice`), **jamais réduit par une remise** — même convention que `ChartsService` (`docs/api/charts.md`), volontairement différente de `revenue` ci-dessus (`Sale.total`, net de remise).
+- **Espèces/Mobile Money** (`cashRevenue`/`mobileMoneyRevenue`) : somme de `Payment.amount` par méthode — reflète l'argent réellement encaissé, donc net de remise. `totalRevenue` est construit comme leur somme exacte (jamais un troisième chiffre indépendant) : sur une vente avec remise, `boissonsRevenue + platsRevenue` peut donc légèrement différer de `totalRevenue`, choix délibéré de cohérence interne plutôt qu'un alignement strict entre les deux.
+- **Croisement catégorie × mode de paiement** (`boissonsCash`, `boissonsMobileMoney`, `platsCash`, `platsMobileMoney`) : chaque vente répartit son chiffre d'affaires Boissons/Plats au prorata de sa propre part Espèces/Mobile Money — même principe de répartition proportionnelle que l'allocation du coût « Marché » dans `ChartsService`. Une vente payée en partie Carte/Crédit (anciennes données — ces méthodes ne sont plus sélectionnables en Caisse depuis le 2026-09-10) ne compte dans aucun des deux totaux demandés.
+
 ## Exports
 
 Le prompt maître (§34) demande PDF/Excel/CSV. Seul le **CSV** est livré (`GET .../summary.csv`, un indicateur par ligne, plus une ligne « Bénéfice — <produit> » par produit vendu sur la période) — sans dépendance supplémentaire, entièrement testable en pur TypeScript. PDF et Excel sont délibérément **reportés** : les deux demandent une vraie bibliothèque de rendu, non encore choisie ni testée — les ajouter maintenant aurait été une fonctionnalité non vérifiable plutôt qu'un vrai livrable.
@@ -38,5 +47,6 @@ Corrigé dans `ReportsPage._changePeriod` avec `future.ignore()` (l'API Dart pr�
 - `ReportsService.resolveRange` : 3 tests (from/to prioritaire, défaut « jour », résolution « mois »).
 - `ReportsService.summary` : 5 tests (Prisma mocké) — exclusion des ventes annulées et filtrage établissement/période, calcul chiffre d'affaires/marge/bénéfice net, classement des produits les plus vendus, **bénéfice par produit non plafonné trié par bénéfice décroissant**, agrégation par serveur.
 - `ReportsService.summaryCsv` : 1 test — en-tête et au moins un indicateur présents.
+- `ReportsService.paymentCategoryBreakdown` : 3 tests — somme Espèces/Mobile Money et Boissons/Plats, répartition proportionnelle d'une vente à paiement mixte, exclusion Carte/Crédit des deux totaux demandés.
 - UI Flutter (`lib/reports/`) : sélecteur de période, export CSV affiché dans un dialogue (copiable), section « Bénéfice par produit », et — comme détaillé ci-dessus — un test qui exerce spécifiquement le changement de période jusqu'à son rechargement complet. `flutter analyze`/`test`/`build web` ✅.
 - **Vérifié en conditions réelles** (2026-09-06, avant l'ajout du bénéfice par produit) : round-trip complet navigateur → API de production → base réelle, avec de vraies ventes/dépenses/pertes, voir `PROJECT_PLAN.md` — le bénéfice par produit lui-même repose sur la même requête déjà vérifiée, non rejoué en conditions réelles séparément après son ajout.

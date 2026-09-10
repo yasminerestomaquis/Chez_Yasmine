@@ -223,3 +223,80 @@ describe('ReportsService.summaryCsv', () => {
     expect(csv).toContain('"Chiffre d\'affaires",0');
   });
 });
+
+describe('ReportsService.paymentCategoryBreakdown', () => {
+  let prisma: ReturnType<typeof makePrismaMock>;
+  let stockMovements: ReturnType<typeof makeStockMovementsMock>;
+  let service: ReportsService;
+
+  beforeEach(() => {
+    prisma = makePrismaMock();
+    stockMovements = makeStockMovementsMock();
+    service = new ReportsService(prisma as unknown as PrismaService, stockMovements as unknown as StockMovementsService);
+  });
+
+  it('sums Espèces/Mobile Money and Boissons/Plats revenue across sales', async () => {
+    (prisma.sale as any).findMany.mockResolvedValue([
+      {
+        payments: [{ method: 'cash', amount: new Decimal(2000) }],
+        items: [
+          { quantity: new Decimal(2), unitPrice: new Decimal(1000), product: { category: { hasCasePricing: true, hasVariablePricing: false } } },
+        ],
+      },
+      {
+        payments: [{ method: 'mobile_money', amount: new Decimal(1500) }],
+        items: [
+          { quantity: new Decimal(1), unitPrice: new Decimal(1500), product: { category: { hasCasePricing: false, hasVariablePricing: true } } },
+        ],
+      },
+    ]);
+
+    const result = await service.paymentCategoryBreakdown('est-1', {});
+
+    expect(result.cashRevenue).toBe(2000);
+    expect(result.mobileMoneyRevenue).toBe(1500);
+    expect(result.totalRevenue).toBe(3500);
+    expect(result.boissonsRevenue).toBe(2000);
+    expect(result.platsRevenue).toBe(1500);
+  });
+
+  it('pro-rates a category group across payment methods when a single sale splits its payment', async () => {
+    (prisma.sale as any).findMany.mockResolvedValue([
+      {
+        payments: [
+          { method: 'cash', amount: new Decimal(600) },
+          { method: 'mobile_money', amount: new Decimal(400) },
+        ],
+        items: [
+          { quantity: new Decimal(1), unitPrice: new Decimal(1000), product: { category: { hasCasePricing: true, hasVariablePricing: false } } },
+        ],
+      },
+    ]);
+
+    const result = await service.paymentCategoryBreakdown('est-1', {});
+
+    expect(result.boissonsCash).toBeCloseTo(600);
+    expect(result.boissonsMobileMoney).toBeCloseTo(400);
+    expect(result.platsCash).toBe(0);
+    expect(result.platsMobileMoney).toBe(0);
+  });
+
+  it('excludes card/credit payments from cash/mobile-money totals', async () => {
+    (prisma.sale as any).findMany.mockResolvedValue([
+      {
+        payments: [{ method: 'credit', amount: new Decimal(1000) }],
+        items: [
+          { quantity: new Decimal(1), unitPrice: new Decimal(1000), product: { category: { hasCasePricing: true, hasVariablePricing: false } } },
+        ],
+      },
+    ]);
+
+    const result = await service.paymentCategoryBreakdown('est-1', {});
+
+    expect(result.cashRevenue).toBe(0);
+    expect(result.mobileMoneyRevenue).toBe(0);
+    expect(result.boissonsRevenue).toBe(1000);
+    expect(result.boissonsCash).toBe(0);
+    expect(result.boissonsMobileMoney).toBe(0);
+  });
+});

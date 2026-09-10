@@ -17,6 +17,18 @@ export class SalesController {
     return this.sales.create(establishmentId, request.user!.sub, dto);
   }
 
+  @Get('last-order-number')
+  @RequirePermissions('pos.sell')
+  lastOrderNumber(@Param('establishmentId') establishmentId: string) {
+    return this.sales.lastOrderNumber(establishmentId).then((orderNumber) => ({ orderNumber }));
+  }
+
+  @Get('last-market-number')
+  @RequirePermissions('pos.sell')
+  lastMarketNumber(@Param('establishmentId') establishmentId: string) {
+    return this.sales.lastMarketNumber(establishmentId).then((marketNumber) => ({ marketNumber }));
+  }
+
   @Get(':saleId')
   @RequirePermissions('pos.sell')
   get(@Param('establishmentId') establishmentId: string, @Param('saleId') saleId: string) {
