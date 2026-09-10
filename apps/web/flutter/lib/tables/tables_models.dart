@@ -28,6 +28,7 @@ class RestaurantTable {
     required this.status,
     this.guestCount,
     this.currentTotal,
+    this.openOrderCount = 0,
     this.reservation,
   });
 
@@ -36,12 +37,16 @@ class RestaurantTable {
   final String? zone;
   final String status;
 
-  /// Nombre de convives de la commande ouverte, le cas échéant (saisi à
-  /// l'ouverture de la table — voir `TablesRepository.openTable`).
+  /// Nombre de convives de l'addition ouverte la plus ancienne, le cas
+  /// échéant (saisi à l'ouverture de la table — voir `TablesRepository.openTable`).
   final int? guestCount;
 
-  /// Total de la commande ouverte, le cas échéant.
+  /// Somme des totaux de toutes les additions ouvertes, le cas échéant.
   final double? currentTotal;
+
+  /// Nombre d'additions ouvertes sur cette table — si > 1, l'UI affiche
+  /// "N additions" plutôt que le total agrégé (ambigu sinon).
+  final int openOrderCount;
 
   /// Réservation active (statut 'pending'), le cas échéant.
   final ReservationInfo? reservation;
@@ -54,6 +59,7 @@ class RestaurantTable {
         status: json['status'] as String,
         guestCount: json['guestCount'] as int?,
         currentTotal: (json['currentTotal'] as num?)?.toDouble(),
+        openOrderCount: json['openOrderCount'] as int? ?? 0,
         reservation: json['reservation'] != null
             ? ReservationInfo.fromJson(
                 json['reservation'] as Map<String, dynamic>,
