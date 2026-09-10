@@ -5,7 +5,6 @@ import '../api/api_client.dart';
 import '../catalog/catalog_cache.dart';
 import '../catalog/catalog_repository.dart';
 import '../catalog/models.dart';
-import '../customers/customers_repository.dart';
 import '../sync/device_id.dart';
 import '../sync/pending_operation.dart';
 import '../sync/sync_queue_service.dart';
@@ -42,10 +41,6 @@ class _PosPageState extends State<PosPage> {
   );
   late final CatalogCache _cache = CatalogCache(widget.establishmentId);
   late final SyncQueueService _syncQueue = SyncQueueService(
-    ApiClient(),
-    widget.establishmentId,
-  );
-  late final CustomersRepository _customers = CustomersRepository(
     ApiClient(),
     widget.establishmentId,
   );
@@ -151,11 +146,7 @@ class _PosPageState extends State<PosPage> {
   Future<void> _checkout() async {
     if (_cart.isEmpty) return;
     final total = _subtotal;
-    final outcome = await showPaymentDialog(
-      context,
-      total: total,
-      customersRepository: _customers,
-    );
+    final outcome = await showPaymentDialog(context, total: total);
     if (outcome == null) return;
 
     final saleId = const Uuid().v4();
@@ -178,7 +169,6 @@ class _PosPageState extends State<PosPage> {
         id: saleId,
         items: items,
         payments: payments,
-        customerId: outcome.customerId,
       );
       if (!mounted) return;
       setState(() {
