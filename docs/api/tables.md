@@ -11,8 +11,11 @@ PATCH  /establishments/:establishmentId/tables/:tableId
 DELETE /establishments/:establishmentId/tables/:tableId
 
 POST   /establishments/:establishmentId/tables/:tableId/open
-GET    /establishments/:establishmentId/tables/:tableId/order
-POST   /establishments/:establishmentId/orders/:orderId/items        { productId, quantity }
+POST   /establishments/:establishmentId/tables/:tableId/additions    { guestCount? }
+GET    /establishments/:establishmentId/tables/:tableId/orders
+POST   /establishments/:establishmentId/tables/:tableId/release
+POST   /establishments/:establishmentId/orders/:orderId/items        { productId, quantity, unitPrice? }
+PATCH  /establishments/:establishmentId/orders/:orderId/items/:itemId { quantity }
 DELETE /establishments/:establishmentId/orders/:orderId/items/:itemId
 POST   /establishments/:establishmentId/orders/:orderId/transfer     { toTableId }
 POST   /establishments/:establishmentId/orders/:orderId/merge        { intoOrderId }
@@ -23,16 +26,17 @@ L'encaissement d'une addition passe par la route de vente existante (Phase 7) : 
 
 ## Règles d'état
 
-- **Une seule addition ouverte par table**, imposée uniquement par `openTable()` (pas de contrainte au niveau base) — `split()` est l'exception délibérée : diviser une addition entre deux groupes assis à la même table crée volontairement une seconde commande ouverte sur cette table, sans la marquer libre.
+- **Plusieurs additions ouvertes par table sont supportées** : `openTable()` en crée la première (exige la table `free`/`reserved`) ; `openAdditionalOrder()` en ouvre une supplémentaire sur une table déjà `occupied`, sans toucher son statut ; `split()` reste l'autre façon d'en obtenir une seconde (diviser une addition existante). `TablesService.list()` agrège toutes les additions ouvertes d'une table (`openOrderCount`, `currentTotal` = somme, `guestCount` = celui de la plus ancienne).
+- `release()` libère une table sans condition : toutes ses additions ouvertes passent `cancelled` (aucune vente, aucun impact stock), la table repasse `free`. Idempotent, aucune confirmation ni vérification de contenu côté serveur (décision utilisateur 2026-09-10).
 - `addItem`/`removeItem` échouent si l'addition n'est plus `open` (déjà clôturée).
-- Le prix unitaire appliqué à chaque article est toujours relu depuis `product.salePrice` au moment de l'ajout — jamais transmis par le client.
+- Le prix unitaire d'un produit à prix fixe est toujours relu depuis `product.salePrice` — jamais transmis par le client. Un produit à prix variable (Poulets, Poissons, Plats africains) exige `unitPrice` dans le corps de la requête. Ajouter le même produit au même prix incrémente la ligne existante plutôt que d'en créer une nouvelle (`OrdersService.addItem`) ; `PATCH .../items/:itemId` modifie la quantité d'une ligne déjà présente.
 - `transfer` exige que la table de destination soit **libre** (sinon `ConflictException`) ; l'ancienne table redevient libre.
 - `merge` déplace tous les `OrderItem` de la commande source vers la cible, ferme la source (`status: closed`) et libère sa table — jamais de suppression, l'historique reste consultable.
-- La clôture (`SalesService.create` avec `orderId`) vérifie que l'addition est encore `open`, puis dans la même transaction que la vente : ferme l'addition et libère la table.
+- La clôture (`SalesService.create` avec `orderId`) vérifie que l'addition est encore `open`, puis dans la même transaction que la vente : ferme l'addition, et ne libère la table que si plus aucune autre addition n'y est ouverte (`SalesService.create`, corrigé le 2026-09-10 pour le multi-addition).
 
 ## UI Flutter
 
-[lib/tables/floor_plan_page.dart](../../apps/web/flutter/lib/tables/floor_plan_page.dart) : tables groupées par zone, couleur selon statut (vert = libre, orange = occupée, rouge = à encaisser). Un tap sur une table libre l'ouvre directement ; sur une table occupée, va au détail de l'addition en cours. [lib/tables/order_detail_page.dart](../../apps/web/flutter/lib/tables/order_detail_page.dart) : liste des articles, ajout depuis le catalogue, suppression, encaissement (réutilise le dialogue de paiement de la Phase 7).
+[lib/tables/floor_plan_page.dart](../../apps/web/flutter/lib/tables/floor_plan_page.dart) : tables groupées par zone, couleur selon statut. Un tap sur une table occupée ouvre un menu (Gérer les additions / Nouvelle addition / Libérer la table / Modifier la table) plutôt que d'aller directement à l'addition — cohérent avec les menus déjà utilisés pour une table libre/réservée, qui gagnent aussi une entrée « Modifier la table » (en plus de l'appui long existant, conservé). [lib/tables/table_order_page.dart](../../apps/web/flutter/lib/tables/table_order_page.dart) (remplace l'ancien `order_detail_page.dart`) : reprend la grille produits + panier de la Caisse (composants partagés `lib/pos/product_grid.dart`/`lib/pos/cart_panel.dart`), avec un onglet par addition ouverte quand il y en a plusieurs. Chaque ajout/retrait/changement de quantité continue d'appeler le serveur immédiatement (pas de panier local en attente) — voir `docs/superpowers/specs/2026-09-10-table-order-caisse-design.md` pour le raisonnement complet.
 
 **Fusion et division ne sont pas encore exposées dans l'UI** — le backend les supporte et sont testées, mais l'interface (choisir une addition/une table cible parmi plusieurs) est reportée à une prochaine itération pour rester dans un temps raisonnable.
 
