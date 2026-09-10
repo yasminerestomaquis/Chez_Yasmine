@@ -73,6 +73,38 @@ describe('OrdersService.openTable', () => {
   });
 });
 
+describe('OrdersService.openAdditionalOrder', () => {
+  let prisma: ReturnType<typeof makePrismaMock>;
+  let service: OrdersService;
+
+  beforeEach(() => {
+    prisma = makePrismaMock();
+    service = new OrdersService(prisma as unknown as PrismaService);
+  });
+
+  it('throws NotFoundException for a table outside the establishment', async () => {
+    (prisma.restaurantTable as any).findFirst.mockResolvedValue(null);
+    await expect(service.openAdditionalOrder('est-1', 'table-x', 'user-1')).rejects.toBeInstanceOf(NotFoundException);
+  });
+
+  it('rejects opening an additional order on a table that is not occupied', async () => {
+    (prisma.restaurantTable as any).findFirst.mockResolvedValue({ id: 't1', status: 'free' });
+    await expect(service.openAdditionalOrder('est-1', 't1', 'user-1')).rejects.toBeInstanceOf(ConflictException);
+  });
+
+  it('creates a new open order without touching the table status', async () => {
+    (prisma.restaurantTable as any).findFirst.mockResolvedValue({ id: 't1', status: 'occupied' });
+    (prisma.order as any).create.mockResolvedValue({ id: 'order-2' });
+
+    await service.openAdditionalOrder('est-1', 't1', 'user-1', 2);
+
+    expect(prisma.order.create).toHaveBeenCalledWith({
+      data: { establishmentId: 'est-1', tableId: 't1', serverId: 'user-1', status: 'open', guestCount: 2 },
+    });
+    expect(prisma.restaurantTable.update).not.toHaveBeenCalled();
+  });
+});
+
 describe('OrdersService.addItem', () => {
   let prisma: ReturnType<typeof makePrismaMock>;
   let service: OrdersService;

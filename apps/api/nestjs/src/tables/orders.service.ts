@@ -51,6 +51,24 @@ export class OrdersService {
     });
   }
 
+  /**
+   * Ouvre une addition supplémentaire sur une table DÉJÀ occupée — contrairement
+   * à `openTable`, qui exige `'free'`/`'reserved'` et occupe la table. Le
+   * statut de la table reste inchangé (déjà `occupied`). Utilisé par le bouton
+   * « Nouvelle addition » de l'écran de table (décision utilisateur 2026-09-10,
+   * voir docs/superpowers/specs/2026-09-10-table-order-caisse-design.md).
+   */
+  async openAdditionalOrder(establishmentId: string, tableId: string, serverId: string, guestCount?: number) {
+    const table = await this.prisma.restaurantTable.findFirst({ where: { id: tableId, establishmentId } });
+    if (!table) {
+      throw new NotFoundException('Table introuvable pour cet établissement');
+    }
+    if (table.status !== 'occupied') {
+      throw new ConflictException("Cette table n'est pas occupée — utilisez l'ouverture normale");
+    }
+    return this.prisma.order.create({ data: { establishmentId, tableId, serverId, status: 'open', guestCount } });
+  }
+
   async getOpenOrderForTable(establishmentId: string, tableId: string) {
     const order = await this.prisma.order.findFirst({
       where: { establishmentId, tableId, status: 'open' },
