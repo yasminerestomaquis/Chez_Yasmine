@@ -37,7 +37,24 @@ class TablesRepository {
       '$_base/tables/$tableId/open',
       body: {'guestCount': ?guestCount},
     );
-    return getOpenOrderForTable(tableId);
+    final orders = await listOpenOrdersForTable(tableId);
+    return orders.first;
+  }
+
+  /// Ouvre une addition supplémentaire sur une table déjà occupée (bouton
+  /// « Nouvelle addition ») — ne touche pas au statut de la table.
+  Future<OrderDetail> openAdditionalOrder(String tableId, {int? guestCount}) async {
+    final json = await _api.post(
+      '$_base/tables/$tableId/additions',
+      body: {'guestCount': ?guestCount},
+    ) as Map<String, dynamic>;
+    return OrderDetail.fromJson(json);
+  }
+
+  /// Libère la table sans condition : annule toutes ses additions ouvertes,
+  /// aucune confirmation. Voir docs/api/tables.md.
+  Future<void> releaseTable(String tableId) {
+    return _api.post('$_base/tables/$tableId/release');
   }
 
   Future<void> createReservation(
@@ -60,20 +77,36 @@ class TablesRepository {
     return _api.post('$_base/reservations/$reservationId/cancel');
   }
 
-  Future<OrderDetail> getOpenOrderForTable(String tableId) async {
+  /// Toutes les additions ouvertes de la table (une table peut en avoir
+  /// plusieurs simultanément — voir docs/api/tables.md).
+  Future<List<OrderDetail>> listOpenOrdersForTable(String tableId) async {
     final json =
-        await _api.get('$_base/tables/$tableId/order') as Map<String, dynamic>;
-    return OrderDetail.fromJson(json);
+        await _api.get('$_base/tables/$tableId/orders') as List<dynamic>;
+    return json
+        .map((e) => OrderDetail.fromJson(e as Map<String, dynamic>))
+        .toList();
   }
 
   Future<void> addItem(
     String orderId, {
     required String productId,
     required double quantity,
+    double? unitPrice,
   }) {
     return _api.post(
       '$_base/orders/$orderId/items',
-      body: {'productId': productId, 'quantity': quantity},
+      body: {
+        'productId': productId,
+        'quantity': quantity,
+        'unitPrice': ?unitPrice,
+      },
+    );
+  }
+
+  Future<void> updateItemQuantity(String orderId, String itemId, double quantity) {
+    return _api.patch(
+      '$_base/orders/$orderId/items/$itemId',
+      body: {'quantity': quantity},
     );
   }
 
