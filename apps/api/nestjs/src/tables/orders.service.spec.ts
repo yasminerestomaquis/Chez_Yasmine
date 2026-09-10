@@ -10,7 +10,7 @@ function makePrismaMock() {
     restaurantTable: { findFirst: vi.fn(), update: vi.fn() },
     reservation: { updateMany: vi.fn() },
     product: { findFirst: vi.fn() },
-    orderItem: { create: vi.fn(), deleteMany: vi.fn(), findMany: vi.fn(), updateMany: vi.fn() },
+    orderItem: { create: vi.fn(), deleteMany: vi.fn(), findMany: vi.fn(), updateMany: vi.fn(), findFirst: vi.fn(), update: vi.fn() },
     $transaction: vi.fn(async (callback: (tx: unknown) => unknown) => callback(prisma)),
   };
   return prisma;
@@ -108,13 +108,44 @@ describe('OrdersService.addItem', () => {
     });
   });
 
-  it('rejects a variable-pricing product (ex. Poulets, Poissons, Plats africains) — no price entry here yet', async () => {
+  it('accepts a variable-pricing product when a unit price is supplied, and looks up the existing line at that exact price', async () => {
+    // Un produit à prix variable peut avoir plusieurs lignes à des prix
+    // différents (deux pièces vendues à des prix différents le même jour) —
+    // la recherche de fusion doit filtrer par unitPrice, pas seulement par
+    // productId, sinon une nouvelle ligne à 2000 fusionnerait à tort avec une
+    // éventuelle ligne existante à un autre prix.
+    (prisma.order as any).findFirst.mockResolvedValue({ id: 'order-1', status: 'open' });
+    (prisma.product as any).findFirst.mockResolvedValue({ id: 'p1', name: 'Poulet braisé', salePrice: null });
+    (prisma.orderItem as any).findFirst.mockResolvedValue(null);
+
+    await service.addItem('est-1', 'order-1', { productId: 'p1', quantity: 1, unitPrice: 2000 });
+
+    expect(prisma.orderItem.findFirst).toHaveBeenCalledWith({
+      where: { orderId: 'order-1', productId: 'p1', unitPrice: 2000 },
+    });
+    expect(prisma.orderItem.create).toHaveBeenCalledWith({
+      data: { orderId: 'order-1', productId: 'p1', quantity: 1, unitPrice: 2000 },
+    });
+  });
+
+  it('rejects a variable-pricing product without a unit price', async () => {
     (prisma.order as any).findFirst.mockResolvedValue({ id: 'order-1', status: 'open' });
     (prisma.product as any).findFirst.mockResolvedValue({ id: 'p1', name: 'Poulet braisé', salePrice: null });
 
     await expect(service.addItem('est-1', 'order-1', { productId: 'p1', quantity: 1 })).rejects.toBeInstanceOf(
       BadRequestException,
     );
+    expect(prisma.orderItem.create).not.toHaveBeenCalled();
+  });
+
+  it('merges into the existing line when the same product at the same price is already on the order', async () => {
+    (prisma.order as any).findFirst.mockResolvedValue({ id: 'order-1', status: 'open' });
+    (prisma.product as any).findFirst.mockResolvedValue({ id: 'p1', salePrice: new Decimal(1500) });
+    (prisma.orderItem as any).findFirst.mockResolvedValue({ id: 'item-1', quantity: new Decimal(2), unitPrice: new Decimal(1500) });
+
+    await service.addItem('est-1', 'order-1', { productId: 'p1', quantity: 1 });
+
+    expect(prisma.orderItem.update).toHaveBeenCalledWith({ where: { id: 'item-1' }, data: { quantity: 3 } });
     expect(prisma.orderItem.create).not.toHaveBeenCalled();
   });
 });

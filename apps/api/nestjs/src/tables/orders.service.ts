@@ -1,4 +1,5 @@
 import { BadRequestException, ConflictException, Injectable, NotFoundException } from '@nestjs/common';
+import type { Prisma } from '@prisma/client';
 import { PrismaService } from '../prisma/prisma.service.js';
 import type { AddOrderItemDto, SplitOrderDto, TransferOrderDto } from './dto/order-operations.dto.js';
 
@@ -61,23 +62,51 @@ export class OrdersService {
     return order;
   }
 
+  /**
+   * Un produit à prix fixe ignore tout `unitPrice` envoyé par le client (le
+   * prix catalogue prévaut toujours, relu à chaque ajout). Un produit à prix
+   * variable (Poulets, Poissons, Plats africains — `product.salePrice` nul)
+   * exige `dto.unitPrice`, même règle que `SalesService.create` en Caisse.
+   *
+   * Fusion par ligne : si l'addition a déjà une ligne pour ce même produit AU
+   * MÊME PRIX, sa quantité est incrémentée plutôt que de créer une nouvelle
+   * ligne — aligné sur le comportement du panier local de la Caisse
+   * (`PosPage._addToCart`). Deux prix différents pour un même produit à prix
+   * variable restent deux lignes distinctes (deux pièces vendues à des prix
+   * différents le même jour).
+   */
   async addItem(establishmentId: string, orderId: string, dto: AddOrderItemDto) {
     const order = await this.getOpenOrderOrThrow(establishmentId, orderId);
     const product = await this.prisma.product.findFirst({ where: { id: dto.productId, establishmentId } });
     if (!product) {
       throw new BadRequestException("Le produit indiqué n'appartient pas à cet établissement");
     }
-    // Catégorie à prix variable (docs/api/catalog.md) : pas de prix fixe à
-    // reprendre ici — les additions de table ne proposent pas encore de
-    // saisie de prix (contrairement à la Caisse), donc ces produits ne
-    // peuvent pas y être ajoutés pour l'instant.
-    if (product.salePrice == null) {
-      throw new BadRequestException(
-        `${product.name} a un prix variable : ajoutez-le depuis la Caisse plutôt que depuis une addition de table`,
-      );
+
+    // Reste en Decimal pour un produit à prix fixe (comme le faisait le code
+    // original) ; converti en number seulement côté prix variable, où il
+    // provient déjà de dto.unitPrice — évite de casser l'égalité stricte
+    // attendue par les tests existants sur le type exact écrit en base.
+    let unitPrice: number | Prisma.Decimal;
+    if (product.salePrice != null) {
+      unitPrice = product.salePrice;
+    } else {
+      if (dto.unitPrice == null) {
+        throw new BadRequestException(`Prix de vente requis pour ${product.name} (catégorie à prix variable)`);
+      }
+      unitPrice = dto.unitPrice;
+    }
+
+    const existing = await this.prisma.orderItem.findFirst({
+      where: { orderId: order.id, productId: product.id, unitPrice },
+    });
+    if (existing) {
+      return this.prisma.orderItem.update({
+        where: { id: existing.id },
+        data: { quantity: existing.quantity.toNumber() + dto.quantity },
+      });
     }
     return this.prisma.orderItem.create({
-      data: { orderId: order.id, productId: product.id, quantity: dto.quantity, unitPrice: product.salePrice },
+      data: { orderId: order.id, productId: product.id, quantity: dto.quantity, unitPrice },
     });
   }
 
