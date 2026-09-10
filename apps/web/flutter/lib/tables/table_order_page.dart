@@ -46,7 +46,11 @@ class _TableOrderPageState extends State<TableOrderPage> {
 
   Future<List<OrderDetail>>? _ordersFuture;
   Future<(List<Category>, List<Product>)>? _catalogFuture;
-  int _selectedIndex = 0;
+  // Sélection par identifiant d'addition plutôt que par position : si une
+  // autre addition de la table est encaissée depuis un autre appareil, un
+  // rechargement ne doit pas glisser silencieusement la sélection vers une
+  // addition différente de celle affichée à l'écran.
+  String? _selectedOrderId;
   String _search = '';
   String? _categoryId;
   bool _isBusy = false;
@@ -65,9 +69,9 @@ class _TableOrderPageState extends State<TableOrderPage> {
   }
 
   void _reloadOrders() {
-    // Ne pas réinitialiser _selectedIndex ici : un ajout/retrait sur
-    // l'addition 2 ne doit pas ramener l'écran sur l'addition 1 — le build()
-    // borne déjà l'index via .clamp() si la liste se réduit.
+    // Ne pas réinitialiser _selectedOrderId ici : un ajout/retrait sur
+    // l'addition 2 ne doit pas ramener l'écran sur l'addition 1 — build()
+    // retombe déjà sur l'index 0 si l'addition sélectionnée a disparu.
     final future = widget.repository.listOpenOrdersForTable(widget.tableId);
     future.ignore();
     setState(() => _ordersFuture = future);
@@ -83,13 +87,19 @@ class _TableOrderPageState extends State<TableOrderPage> {
       if (!mounted) return;
       setState(() {
         _ordersFuture = Future.value(orders);
-        _selectedIndex = orders.length - 1;
+        _selectedOrderId = orders.last.id;
       });
     } on ApiException catch (e) {
       if (!mounted) return;
-      ScaffoldMessenger.of(
-        context,
-      ).showSnackBar(SnackBar(content: Text(e.message)));
+      ScaffoldMessenger.of(context)
+          .showSnackBar(SnackBar(content: Text(e.message)));
+    } catch (_) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text("Erreur réseau — nouvelle addition non créée"),
+        ),
+      );
     } finally {
       if (mounted) setState(() => _isBusy = false);
     }
@@ -147,9 +157,13 @@ class _TableOrderPageState extends State<TableOrderPage> {
       _reloadOrders();
     } on ApiException catch (e) {
       if (!mounted) return;
-      ScaffoldMessenger.of(
-        context,
-      ).showSnackBar(SnackBar(content: Text(e.message)));
+      ScaffoldMessenger.of(context)
+          .showSnackBar(SnackBar(content: Text(e.message)));
+    } catch (_) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('Erreur réseau — article non ajouté')),
+      );
     } finally {
       if (mounted) setState(() => _isBusy = false);
     }
@@ -175,9 +189,13 @@ class _TableOrderPageState extends State<TableOrderPage> {
       _reloadOrders();
     } on ApiException catch (e) {
       if (!mounted) return;
-      ScaffoldMessenger.of(
-        context,
-      ).showSnackBar(SnackBar(content: Text(e.message)));
+      ScaffoldMessenger.of(context)
+          .showSnackBar(SnackBar(content: Text(e.message)));
+    } catch (_) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('Erreur réseau — quantité non modifiée')),
+      );
     } finally {
       if (mounted) setState(() => _isBusy = false);
     }
@@ -235,9 +253,21 @@ class _TableOrderPageState extends State<TableOrderPage> {
       );
     } on ApiException catch (e) {
       if (!mounted) return;
-      ScaffoldMessenger.of(
-        context,
-      ).showSnackBar(SnackBar(content: Text(e.message)));
+      ScaffoldMessenger.of(context)
+          .showSnackBar(SnackBar(content: Text(e.message)));
+    } catch (_) {
+      // Contrairement à PosPage, une vente de table n'est pas mise en file
+      // hors ligne ici : la vente référence une addition serveur précise
+      // (orderId) qu'il faut d'abord confirmer encore ouverte au retour du
+      // réseau — hors périmètre de cette tâche, voir docs/superpowers/specs.
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text(
+            'Erreur réseau — encaissement non enregistré, réessayez',
+          ),
+        ),
+      );
     } finally {
       if (mounted) setState(() => _isBusy = false);
     }
@@ -269,7 +299,8 @@ class _TableOrderPageState extends State<TableOrderPage> {
             return Center(child: Text(message));
           }
           final orders = ordersSnapshot.data!;
-          final selectedIndex = _selectedIndex.clamp(0, orders.length - 1);
+          final matchIndex = orders.indexWhere((o) => o.id == _selectedOrderId);
+          final selectedIndex = matchIndex >= 0 ? matchIndex : 0;
           final order = orders[selectedIndex];
 
           return Column(
@@ -291,7 +322,7 @@ class _TableOrderPageState extends State<TableOrderPage> {
                             selected: i == selectedIndex,
                             selectedColor: AppColors.green,
                             onSelected: (_) =>
-                                setState(() => _selectedIndex = i),
+                                setState(() => _selectedOrderId = orders[i].id),
                           ),
                         ),
                     ],
@@ -339,7 +370,8 @@ class _TableOrderPageState extends State<TableOrderPage> {
                               setState(() => _search = value),
                           onCategoryChanged: (value) =>
                               setState(() => _categoryId = value),
-                          onProductTap: (product) => _addProduct(order, product),
+                          onProductTap: (product) =>
+                              _addProduct(order, product),
                           crossAxisExtent: isMobile ? 130 : 160,
                         );
                         final cart = CartPanel<OrderItemDetail>(
