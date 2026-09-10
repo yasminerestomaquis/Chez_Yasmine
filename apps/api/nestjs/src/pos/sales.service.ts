@@ -140,7 +140,15 @@ export class SalesService {
       if (orderToClose) {
         await tx.order.update({ where: { id: orderToClose.id }, data: { status: 'closed', closedAt: new Date() } });
         if (orderToClose.tableId) {
-          await tx.restaurantTable.update({ where: { id: orderToClose.tableId }, data: { status: 'free' } });
+          // Ne libérer la table que si aucune autre addition n'y reste ouverte
+          // (le multi-addition par table permet plusieurs encaissements
+          // indépendants sur une même table — voir docs/api/tables.md).
+          const remainingOpenOrders = await tx.order.count({
+            where: { tableId: orderToClose.tableId, status: 'open' },
+          });
+          if (remainingOpenOrders === 0) {
+            await tx.restaurantTable.update({ where: { id: orderToClose.tableId }, data: { status: 'free' } });
+          }
         }
       }
 
