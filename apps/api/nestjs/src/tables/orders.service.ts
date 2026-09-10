@@ -69,6 +69,25 @@ export class OrdersService {
     return this.prisma.order.create({ data: { establishmentId, tableId, serverId, status: 'open', guestCount } });
   }
 
+  /**
+   * Libère une table sans condition (décision utilisateur 2026-09-10) : un
+   * client peut quitter une table sans payer, ou une table peut avoir été
+   * ouverte par erreur. Toutes ses additions ouvertes passent au statut
+   * `cancelled` (aucune vente, aucun impact stock/recettes, trace conservée
+   * en base pour l'historique) ; la table repasse `free`. Idempotent —
+   * aucune exception si la table n'a déjà aucune addition ouverte.
+   */
+  async release(establishmentId: string, tableId: string): Promise<void> {
+    const table = await this.prisma.restaurantTable.findFirst({ where: { id: tableId, establishmentId } });
+    if (!table) {
+      throw new NotFoundException('Table introuvable pour cet établissement');
+    }
+    await this.prisma.$transaction(async (tx) => {
+      await tx.order.updateMany({ where: { tableId, status: 'open' }, data: { status: 'cancelled', closedAt: new Date() } });
+      await tx.restaurantTable.update({ where: { id: tableId }, data: { status: 'free' } });
+    });
+  }
+
   async listOpenOrdersForTable(establishmentId: string, tableId: string) {
     const orders = await this.prisma.order.findMany({
       where: { establishmentId, tableId, status: 'open' },

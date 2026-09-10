@@ -6,7 +6,14 @@ import { OrdersService } from './orders.service.js';
 
 function makePrismaMock() {
   const prisma: Record<string, unknown> = {
-    order: { create: vi.fn(), findFirst: vi.fn(), findMany: vi.fn(), update: vi.fn(), findUniqueOrThrow: vi.fn() },
+    order: {
+      create: vi.fn(),
+      findFirst: vi.fn(),
+      findMany: vi.fn(),
+      update: vi.fn(),
+      updateMany: vi.fn(),
+      findUniqueOrThrow: vi.fn(),
+    },
     restaurantTable: { findFirst: vi.fn(), update: vi.fn() },
     reservation: { updateMany: vi.fn() },
     product: { findFirst: vi.fn() },
@@ -345,5 +352,41 @@ describe('OrdersService.listOpenOrdersForTable', () => {
       orderBy: { openedAt: 'asc' },
       include: { items: { include: { product: { select: { name: true } } } } },
     });
+  });
+});
+
+describe('OrdersService.release', () => {
+  let prisma: ReturnType<typeof makePrismaMock>;
+  let service: OrdersService;
+
+  beforeEach(() => {
+    prisma = makePrismaMock();
+    service = new OrdersService(prisma as unknown as PrismaService);
+  });
+
+  it('throws NotFoundException for a table outside the establishment', async () => {
+    (prisma.restaurantTable as any).findFirst.mockResolvedValue(null);
+    await expect(service.release('est-1', 'table-x')).rejects.toBeInstanceOf(NotFoundException);
+  });
+
+  it('cancels every open order and frees the table, unconditionally', async () => {
+    (prisma.restaurantTable as any).findFirst.mockResolvedValue({ id: 't1', status: 'occupied' });
+    (prisma.order as any).updateMany.mockResolvedValue({ count: 2 });
+
+    await service.release('est-1', 't1');
+
+    expect(prisma.order.updateMany).toHaveBeenCalledWith({
+      where: { tableId: 't1', status: 'open' },
+      data: { status: 'cancelled', closedAt: expect.any(Date) },
+    });
+    expect(prisma.restaurantTable.update).toHaveBeenCalledWith({ where: { id: 't1' }, data: { status: 'free' } });
+  });
+
+  it('is idempotent when the table has no open order', async () => {
+    (prisma.restaurantTable as any).findFirst.mockResolvedValue({ id: 't1', status: 'occupied' });
+    (prisma.order as any).updateMany.mockResolvedValue({ count: 0 });
+
+    await expect(service.release('est-1', 't1')).resolves.toBeUndefined();
+    expect(prisma.restaurantTable.update).toHaveBeenCalledWith({ where: { id: 't1' }, data: { status: 'free' } });
   });
 });
