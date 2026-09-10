@@ -85,7 +85,7 @@ describe('ProductsService', () => {
       });
     });
 
-    it('update() forces purchase/sale price to null when the (new or existing) category has variable pricing', async () => {
+    it('update() forces sale price to null when the (new or existing) category has variable pricing', async () => {
       prisma.product.findFirst.mockResolvedValue({ id: 'prod-1', categoryId: 'cat-poulets', salePrice: null });
       prisma.category.findFirst.mockResolvedValue({ id: 'cat-poulets', hasVariablePricing: true });
       prisma.product.updateMany.mockResolvedValue({ count: 1 });
@@ -94,8 +94,21 @@ describe('ProductsService', () => {
 
       expect(prisma.product.updateMany).toHaveBeenCalledWith({
         where: { id: 'prod-1', establishmentId: 'est-1' },
-        data: expect.objectContaining({ purchasePrice: null, salePrice: null }),
+        data: expect.objectContaining({ salePrice: null }),
       });
+    });
+
+    it('update() does NOT null out purchasePrice — PurchasesService is the sole source of cost for these categories', async () => {
+      // Un simple changement de nom ne doit jamais effacer le coût d'achat
+      // que le module Achats a posé lors d'une commande précédente.
+      prisma.product.findFirst.mockResolvedValue({ id: 'prod-1', categoryId: 'cat-poulets', salePrice: null });
+      prisma.category.findFirst.mockResolvedValue({ id: 'cat-poulets', hasVariablePricing: true });
+      prisma.product.updateMany.mockResolvedValue({ count: 1 });
+
+      await service.update('est-1', 'prod-1', { name: 'Poulet braisé (renommé)' });
+
+      const call = prisma.product.updateMany.mock.calls[0][0];
+      expect(call.data).not.toHaveProperty('purchasePrice');
     });
   });
 

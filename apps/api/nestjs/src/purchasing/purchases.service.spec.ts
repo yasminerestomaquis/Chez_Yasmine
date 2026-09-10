@@ -37,6 +37,17 @@ const caseProduct = (over: Partial<{ id: string; name: string; bottlesPerCase: n
   category: { hasCasePricing: true },
 });
 
+/** Produit d'une catégorie à prix variable (Poulets, Poissons, Plats africains). */
+const variableProduct = (over: Partial<{ id: string; name: string }> = {}) => ({
+  id: over.id ?? 'p2',
+  establishmentId: 'est-1',
+  name: over.name ?? 'Poulet',
+  bottlesPerCase: null,
+  purchasePricePerCase: null,
+  stockQuantity: new Decimal(0),
+  category: { hasCasePricing: false, hasVariablePricing: true },
+});
+
 describe('PurchasesService.create', () => {
   let prisma: ReturnType<typeof makePrismaMock>;
   let service: PurchasesService;
@@ -105,6 +116,61 @@ describe('PurchasesService.create', () => {
         }),
       }),
     );
+  });
+
+  it('rejects a variable-pricing line missing quantityOrdered', async () => {
+    (prisma.product as any).findMany.mockResolvedValue([variableProduct()]);
+    await expect(
+      service.create('est-1', 'user-1', { orderNumber: 1, items: [{ productId: 'p2', unitPurchasePrice: 3500 }] }),
+    ).rejects.toBeInstanceOf(BadRequestException);
+  });
+
+  it('rejects a variable-pricing line missing unitPurchasePrice', async () => {
+    (prisma.product as any).findMany.mockResolvedValue([variableProduct()]);
+    await expect(
+      service.create('est-1', 'user-1', { orderNumber: 1, items: [{ productId: 'p2', quantityOrdered: 20 }] }),
+    ).rejects.toBeInstanceOf(BadRequestException);
+  });
+
+  it('computes a variable-pricing line directly from quantityOrdered/unitPurchasePrice, and snapshots Product.purchasePrice', async () => {
+    (prisma.product as any).findMany.mockResolvedValue([variableProduct()]);
+    (prisma.purchase as any).create.mockResolvedValue({ id: 'purchase-1', supplier: null, items: [] });
+
+    await service.create('est-1', 'user-1', {
+      orderNumber: 4,
+      items: [{ productId: 'p2', quantityOrdered: 20, unitPurchasePrice: 3500 }],
+    });
+
+    expect(prisma.purchase.create).toHaveBeenCalledWith(
+      expect.objectContaining({
+        data: expect.objectContaining({
+          total: 70000, // 20 × 3500
+          items: {
+            create: [
+              expect.objectContaining({
+                productId: 'p2',
+                quantity: 20,
+                unitPrice: 3500,
+                casesOrdered: null,
+                bottlesPerCase: null,
+                purchasePricePerCase: null,
+              }),
+            ],
+          },
+        }),
+      }),
+    );
+    expect(prisma.product.update).toHaveBeenCalledWith({
+      where: { id: 'p2' },
+      data: { stockQuantity: { increment: 20 }, purchasePrice: 3500 },
+    });
+  });
+
+  it('rejects a product whose category is neither case-pricing nor variable-pricing', async () => {
+    (prisma.product as any).findMany.mockResolvedValue([{ ...variableProduct(), category: { hasCasePricing: false, hasVariablePricing: false } }]);
+    await expect(
+      service.create('est-1', 'user-1', { orderNumber: 1, items: [{ productId: 'p2', quantityOrdered: 1, unitPurchasePrice: 1 }] }),
+    ).rejects.toBeInstanceOf(BadRequestException);
   });
 
   it('increments stock immediately (no separate reception step) and notifies', async () => {

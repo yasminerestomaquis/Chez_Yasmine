@@ -2,6 +2,13 @@
 
 ## [Unreleased]
 
+### Ajouté (post-plan, 2026-09-10) — Achats à prix variable (Poulets, Poissons, Plats africains)
+- Le module Achats accepte désormais aussi les catégories **à prix variable** (`Category.hasVariablePricing`), en plus des catégories à prix par casier — jusqu'ici, ces produits n'avaient aucune donnée de coût (`Product.purchasePrice` toujours `null`), donc aucun bénéfice par catégorie calculable pour Poulets/Poissons/Plats africains, contrairement à Bières/Vins/Sucreries. Décision explicite de l'utilisateur : la quantité achetée et le prix d'achat unitaire sont directement connus (pas de casier, pas de moyenne à calculer) — une ligne de commande pour ces catégories saisit donc `quantityOrdered`/`unitPurchasePrice` au lieu de `casesOrdered`.
+- Chaque achat écrase `Product.purchasePrice` avec le dernier prix unitaire payé (pas de moyenne pondérée, cohérent avec le reste de l'application qui ne connaît que le coût *actuel*) — `effectiveUnitCost()` (déjà utilisé par Rapports/Graphiques) le prend en compte automatiquement, sans aucune modification de ces services.
+- Correctif au passage : `ProductsService.update()` forçait `purchasePrice = null` sur *toute* modification d'un produit à prix variable, y compris un simple changement de nom — ce qui aurait effacé le coût posé par Achats au fil des éditions. Seul `salePrice` reste forcé à `null` désormais.
+- Migration `20260910140000_add_variable_pricing_purchases.sql` : `casesOrdered`/`bottlesPerCase`/`purchasePricePerCase` de `PurchaseItem` deviennent nullables (une ligne à prix variable ne les renseigne pas, s'appuie uniquement sur `quantity`/`unitPrice`, déjà génériques).
+- Le sélecteur de produit d'Achats regroupe désormais les deux types sous deux en-têtes ; le formulaire de ligne s'adapte au type choisi. 265/265 tests NestJS, `flutter analyze`/tests propres.
+
 ### Ajouté (post-plan, 2026-09-10) — Sélection multiple de catégories (graphiques Recettes/Bénéfices)
 - Les graphiques « Recettes journalières totales par catégorie » et « Bénéfices journaliers totaux par catégorie » (`MetricChartsTab`, partagé par les deux sous-modules) proposent désormais des puces à sélection multiple au lieu d'un menu déroulant à un seul choix. Aucune catégorie cochée : comportement inchangé (une série par catégorie). Une ou plusieurs catégories cochées : une seule série, somme jour par jour des catégories choisies — répond à « le calcul des bénéfices/recettes selon les catégories sélectionnées ».
 - `ChartsService.weeklyByCategory` (`apps/api/nestjs/src/charts`) accepte `categoryIds` (CSV) à la place de `categoryId` ; 260/260 tests NestJS (nouveau : agrégation de plusieurs catégories), `flutter analyze`/tests propres.

@@ -13,7 +13,7 @@ DELETE /establishments/:establishmentId/suppliers/:supplierId
 GET    /establishments/:establishmentId/purchases
 GET    /establishments/:establishmentId/purchases/next-order-number?supplierId=   { orderNumber }  — suggestion, jamais imposée
 GET    /establishments/:establishmentId/purchases/:purchaseId
-POST   /establishments/:establishmentId/purchases           { supplierId?, orderNumber, orderDate?, items: [{ productId, casesOrdered }] }
+POST   /establishments/:establishmentId/purchases           { supplierId?, orderNumber, orderDate?, items: [{ productId, casesOrdered? } | { productId, quantityOrdered?, unitPurchasePrice? }] }
 PATCH  /establishments/:establishmentId/purchases/:purchaseId   (même corps que POST — remplace l'intégralité des lignes)
 DELETE /establishments/:establishmentId/purchases/:purchaseId
 POST   /establishments/:establishmentId/purchases/:id/receive   (déprécié, flux hérité)
@@ -36,6 +36,30 @@ Purchase.total                                     = Σ casesOrdered × purchase
 
 `orderNumber` (N° de la commande) est une suggestion **par fournisseur** (`GET .../next-order-number?supplierId=`, dernier + 1, ou 1 si aucun), librement éditable et jamais contrainte en unicité côté serveur — l'utilisateur reste maître du numéro affiché.
 
+## Commande à prix variable (2026-09-10)
+
+Extension d'Achats aux catégories **à prix variable** (`Category.hasVariablePricing`, ex. Poulets, Poissons, Plats africains — voir `docs/api/catalog.md`) : contrairement aux catégories à prix par casier, le Catalogue ne connaît ni `purchasePrice` ni `salePrice` pour ces produits (`ProductsService` les force à `null`), donc il n'existe aucune donnée de coût à dériver côté serveur. L'utilisateur a précisé que la quantité achetée et le prix d'achat unitaire sont **directement connus** au moment de l'achat (ex. 20 poulets à 3500 F l'unité) — pas de casier, pas de moyenne à calculer sur un montant global.
+
+`PurchaseItemDto` accepte donc, par ligne, **l'un ou l'autre** jeu de champs selon la catégorie réelle du produit (jamais les deux, jamais un troisième cas — `PurchasesService.resolveLines` rejette (400) un produit dont la catégorie n'est ni `hasCasePricing` ni `hasVariablePricing`) :
+
+```
+Casier          : { productId, casesOrdered }
+Prix variable   : { productId, quantityOrdered, unitPurchasePrice }
+```
+
+Pour une ligne à prix variable :
+
+```
+quantity  (ce qui bouge le stock)   = quantityOrdered
+unitPrice (figé sur PurchaseItem)   = unitPurchasePrice
+```
+
+`casesOrdered`/`bottlesPerCase`/`purchasePricePerCase` sont **nullables** sur `PurchaseItem` (migration `20260910140000_add_variable_pricing_purchases.sql`) et restent `null` pour ces lignes — `quantity`/`unitPrice` (déjà génériques) portent seule la vérité, y compris pour `Purchase.total` (`Σ quantity × unitPrice`, valable pour les deux types de ligne sans branchement).
+
+**Chaque achat écrase `Product.purchasePrice` avec le prix unitaire payé** (`PurchasesService.applyStock`, dernier prix connu — pas de moyenne pondérée ni de coût historique, cohérent avec le reste de l'application qui ne connaît que le coût d'achat *actuel* d'un produit, jamais un coût figé par vente). C'est la seule source de coût pour ces catégories : `effectiveUnitCost()` (voir plus bas) retombe sur `purchasePrice`, qui vaut désormais autre chose que `0`, et les rapports/graphiques par catégorie deviennent exploitables pour Poulets/Poissons/Plats africains exactement comme pour les catégories à casier — sans aucune modification de `product-cost.util.ts`/`reports.service.ts`/`charts.service.ts`.
+
+Un piège corrigé au passage : `ProductsService.update()` forçait *inconditionnellement* `purchasePrice = null` pour toute catégorie à prix variable, y compris sur une simple modification de nom — ce qui aurait effacé le coût posé par Achats au moindre édit du produit. Seul `salePrice` reste forcé à `null` désormais ; `purchasePrice` n'est plus touché par `ProductsService` pour ces catégories (Achats en reste l'unique source).
+
 ## Le stock entre directement à la création (décision explicite, 2026-09-09)
 
 Contrairement au flux hérité ci-dessous, **`create` fait immédiatement entrer le stock** (incrémente `product.stockQuantity`, écrit un mouvement `in` par ligne) dans la même transaction que la création de la commande — pas d'étape de réception séparée pour ce flux. `Purchase.status` vaut directement `'received'`.
@@ -54,7 +78,7 @@ Contrairement au flux hérité ci-dessous, **`create` fait immédiatement entrer
 ## UI Flutter
 
 Trois sous-modules ([lib/purchasing/purchases_page.dart](../../apps/web/flutter/lib/purchasing/purchases_page.dart)) :
-- **Créer une commande** : Date (éditable, défaut aujourd'hui), N° de la commande (suggéré, éditable), Fournisseur, puis un produit à la fois — vignette photo (reprise du Catalogue), Nbre de bouteilles par casier (non éditable), Nbre de casiers commandés (éditable), Nbre total de bouteilles (calculé) — bouton **Ajouter la commande** qui ajoute la ligne à la commande en cours et bascule sur Liste de commandes.
+- **Créer une commande** : Date (éditable, défaut aujourd'hui), N° de la commande (suggéré, éditable), Fournisseur, puis un produit à la fois — le sélecteur regroupe les produits sous deux en-têtes ("Prix par casier" / "Prix variable") selon `Product.hasCasePricing`/`hasVariablePricing`. Pour un produit par casier : vignette photo, Nbre de bouteilles par casier (non éditable), Nbre de casiers commandés (éditable), Nbre total de bouteilles (calculé). Pour un produit à prix variable : Quantité achetée + Prix d'achat unitaire (tous deux éditables), Total (calculé). Bouton **Ajouter la commande** qui ajoute la ligne à la commande en cours et bascule sur Liste de commandes.
 - **Liste de commandes** : Date/N° de commande (non éditables, reconduits), lignes accumulées (nom, prix d'achat par casier, casiers commandés, prix total), totaux en gras, bouton **Créer la commande** qui enregistre réellement côté serveur.
 - **Historique** ([lib/purchasing/purchase_order_detail_page.dart](../../apps/web/flutter/lib/purchasing/purchase_order_detail_page.dart)) : liste des commandes enregistrées ; un tap ouvre le détail dans la même présentation, avec modification (mêmes champs, lignes ajoutables/supprimables/éditables) et suppression.
 
@@ -62,7 +86,8 @@ Trois sous-modules ([lib/purchasing/purchases_page.dart](../../apps/web/flutter/
 
 ## Vérifications effectuées
 
-- `PurchasesService` : testé avec Prisma mocké — rejet produit/catégorie hors périmètre casier, calcul quantity/unitPrice/total depuis casesOrdered, entrée en stock immédiate, modification (annule puis réapplique), suppression (clampée à 0), suggestion de N° de commande par fournisseur, flux hérité `receive`/`cancel` inchangé.
-- `effectiveUnitCost` : testé via `ReportsService`/`ChartsService` — coût par casier utilisé pour une catégorie `hasCasePricing`, repli sur `purchasePrice` si les champs casier manquent.
+- `PurchasesService` : testé avec Prisma mocké — rejet produit/catégorie hors périmètre (ni casier ni prix variable), calcul quantity/unitPrice/total depuis casesOrdered (casier) ou quantityOrdered/unitPurchasePrice (prix variable), rejet d'une ligne prix variable incomplète, snapshot de `Product.purchasePrice` sur `applyStock`, entrée en stock immédiate, modification (annule puis réapplique), suppression (clampée à 0), suggestion de N° de commande par fournisseur, flux hérité `receive`/`cancel` inchangé.
+- `ProductsService.update()` : testé — `salePrice` toujours forcé à `null` pour une catégorie à prix variable, `purchasePrice` non touché (absent de la requête Prisma) sur une modification qui ne le concerne pas.
+- `effectiveUnitCost` : testé via `ReportsService`/`ChartsService` — coût par casier utilisé pour une catégorie `hasCasePricing`, repli sur `purchasePrice` si les champs casier manquent (donc désormais non nul pour Poulets/Poissons/Plats africains dès qu'un premier achat existe).
 - UI Flutter : `flutter analyze`/`flutter test`/`flutter build web` ✅. Pas de test widget dédié pour les 3 sous-modules (écrans majoritairement des vues de données/formulaires déjà couverts côté logique métier par les tests backend).
 - **Non vérifié en conditions réelles** : round-trip HTTP complet — même limitation `DATABASE_URL` que les phases précédentes.

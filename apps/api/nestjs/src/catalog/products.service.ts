@@ -71,7 +71,13 @@ export class ProductsService {
 
     const data: Prisma.ProductUpdateManyMutationInput = { ...dto };
     if (hasVariablePricing) {
-      data.purchasePrice = null;
+      // `salePrice` reste toujours nul (saisi en caisse à chaque vente).
+      // `purchasePrice` n'est volontairement PAS forcé ici (ne pas ajouter
+      // `data.purchasePrice = null`) : ces catégories n'ont aucun prix
+      // d'achat catalogue, mais PurchasesService y écrit un instantané du
+      // dernier prix d'achat payé (voir docs/api/purchasing.md) — l'écraser
+      // à chaque modification du produit (même un simple changement de nom)
+      // effacerait ce coût et casserait les rapports/graphiques par catégorie.
       data.salePrice = null;
     } else {
       const nextSalePrice = dto.salePrice !== undefined ? dto.salePrice : existing.salePrice?.toNumber();

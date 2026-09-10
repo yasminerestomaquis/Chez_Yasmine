@@ -10,18 +10,24 @@ import 'purchasing_repository.dart';
 final _dateFormat = DateFormat('dd/MM/yyyy');
 
 /// Détail d'une commande de l'Historique — même présentation que le sous-module
-/// Liste de commandes (nom du produit, Prix d'achat par casier, Nbre de
-/// casiers commandés, Prix total des casiers), avec modification (remplace
-/// l'intégralité des lignes) et suppression.
+/// Liste de commandes (nom du produit + résumé de la ligne, par casier ou à
+/// prix variable), avec modification (remplace l'intégralité des lignes) et
+/// suppression.
 class PurchaseOrderDetailPage extends StatefulWidget {
-  const PurchaseOrderDetailPage({super.key, required this.repository, required this.catalog, required this.purchase});
+  const PurchaseOrderDetailPage({
+    super.key,
+    required this.repository,
+    required this.catalog,
+    required this.purchase,
+  });
 
   final PurchasingRepository repository;
   final CatalogRepository catalog;
   final Purchase purchase;
 
   @override
-  State<PurchaseOrderDetailPage> createState() => _PurchaseOrderDetailPageState();
+  State<PurchaseOrderDetailPage> createState() =>
+      _PurchaseOrderDetailPageState();
 }
 
 class _PurchaseOrderDetailPageState extends State<PurchaseOrderDetailPage> {
@@ -30,6 +36,7 @@ class _PurchaseOrderDetailPageState extends State<PurchaseOrderDetailPage> {
   bool _isBusy = false;
 
   List<Product> _caseProducts = [];
+  List<Product> _variableProducts = [];
   List<Supplier> _suppliers = [];
   late List<_EditLine> _editLines;
   late final TextEditingController _orderNumberController;
@@ -39,7 +46,9 @@ class _PurchaseOrderDetailPageState extends State<PurchaseOrderDetailPage> {
   @override
   void initState() {
     super.initState();
-    _orderNumberController = TextEditingController(text: '${_purchase.orderNumber}');
+    _orderNumberController = TextEditingController(
+      text: '${_purchase.orderNumber}',
+    );
     _orderDate = _purchase.orderDate;
     _supplierId = _purchase.supplierId;
     _editLines = _purchase.items.map(_EditLine.fromItem).toList();
@@ -51,18 +60,23 @@ class _PurchaseOrderDetailPageState extends State<PurchaseOrderDetailPage> {
     final suppliers = await widget.repository.listSuppliers();
     if (!mounted) return;
     setState(() {
-      _caseProducts = products.where((p) => p.status == 'active' && p.hasCasePricing).toList();
+      _caseProducts = products
+          .where((p) => p.status == 'active' && p.hasCasePricing)
+          .toList();
+      _variableProducts = products
+          .where((p) => p.status == 'active' && p.hasVariablePricing)
+          .toList();
       _suppliers = suppliers;
     });
   }
 
   void _startEditing() => setState(() {
-        _isEditing = true;
-        _orderNumberController.text = '${_purchase.orderNumber}';
-        _orderDate = _purchase.orderDate;
-        _supplierId = _purchase.supplierId;
-        _editLines = _purchase.items.map(_EditLine.fromItem).toList();
-      });
+    _isEditing = true;
+    _orderNumberController.text = '${_purchase.orderNumber}';
+    _orderDate = _purchase.orderDate;
+    _supplierId = _purchase.supplierId;
+    _editLines = _purchase.items.map(_EditLine.fromItem).toList();
+  });
 
   void _cancelEditing() => setState(() => _isEditing = false);
 
@@ -84,8 +98,40 @@ class _PurchaseOrderDetailPageState extends State<PurchaseOrderDetailPage> {
       builder: (_) => SimpleDialog(
         title: const Text('Choisir un produit'),
         children: [
-          for (final product in _caseProducts)
-            SimpleDialogOption(onPressed: () => Navigator.of(context).pop(product), child: Text(product.name)),
+          if (_caseProducts.isNotEmpty) ...[
+            const Padding(
+              padding: EdgeInsets.symmetric(horizontal: 24, vertical: 4),
+              child: Text(
+                'Prix par casier',
+                style: TextStyle(
+                  fontWeight: FontWeight.bold,
+                  color: Colors.grey,
+                ),
+              ),
+            ),
+            for (final product in _caseProducts)
+              SimpleDialogOption(
+                onPressed: () => Navigator.of(context).pop(product),
+                child: Text(product.name),
+              ),
+          ],
+          if (_variableProducts.isNotEmpty) ...[
+            const Padding(
+              padding: EdgeInsets.symmetric(horizontal: 24, vertical: 4),
+              child: Text(
+                'Prix variable',
+                style: TextStyle(
+                  fontWeight: FontWeight.bold,
+                  color: Colors.grey,
+                ),
+              ),
+            ),
+            for (final product in _variableProducts)
+              SimpleDialogOption(
+                onPressed: () => Navigator.of(context).pop(product),
+                child: Text(product.name),
+              ),
+          ],
         ],
       ),
     );
@@ -97,7 +143,9 @@ class _PurchaseOrderDetailPageState extends State<PurchaseOrderDetailPage> {
     if (_editLines.isEmpty) return;
     final orderNumber = int.tryParse(_orderNumberController.text.trim());
     if (orderNumber == null) {
-      ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('N° de commande invalide')));
+      ScaffoldMessenger.of(
+        context,
+      ).showSnackBar(const SnackBar(content: Text('N° de commande invalide')));
       return;
     }
     setState(() => _isBusy = true);
@@ -107,17 +155,19 @@ class _PurchaseOrderDetailPageState extends State<PurchaseOrderDetailPage> {
         supplierId: _supplierId,
         orderNumber: orderNumber,
         orderDate: _orderDate,
-        items: _editLines.map((l) => {'productId': l.productId, 'casesOrdered': l.casesOrdered}).toList(),
+        items: _editLines.map((l) => l.toApiItem()).toList(),
       );
       if (!mounted) return;
       setState(() {
         _purchase = updated;
         _isEditing = false;
       });
-      ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('Commande modifiée.')));
+      ScaffoldMessenger.of(context)
+          .showSnackBar(const SnackBar(content: Text('Commande modifiée.')));
     } on ApiException catch (e) {
       if (!mounted) return;
-      ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text(e.message)));
+      ScaffoldMessenger.of(context)
+          .showSnackBar(SnackBar(content: Text(e.message)));
     } finally {
       if (mounted) setState(() => _isBusy = false);
     }
@@ -133,8 +183,14 @@ class _PurchaseOrderDetailPageState extends State<PurchaseOrderDetailPage> {
           '(sans jamais passer sous 0, même si une partie a déjà été vendue).',
         ),
         actions: [
-          TextButton(onPressed: () => Navigator.of(context).pop(false), child: const Text('Annuler')),
-          FilledButton(onPressed: () => Navigator.of(context).pop(true), child: const Text('Supprimer')),
+          TextButton(
+            onPressed: () => Navigator.of(context).pop(false),
+            child: const Text('Annuler'),
+          ),
+          FilledButton(
+            onPressed: () => Navigator.of(context).pop(true),
+            child: const Text('Supprimer'),
+          ),
         ],
       ),
     );
@@ -146,7 +202,8 @@ class _PurchaseOrderDetailPageState extends State<PurchaseOrderDetailPage> {
       Navigator.of(context).pop();
     } on ApiException catch (e) {
       if (!mounted) return;
-      ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text(e.message)));
+      ScaffoldMessenger.of(context)
+          .showSnackBar(SnackBar(content: Text(e.message)));
       setState(() => _isBusy = false);
     }
   }
@@ -159,9 +216,6 @@ class _PurchaseOrderDetailPageState extends State<PurchaseOrderDetailPage> {
 
   @override
   Widget build(BuildContext context) {
-    final totalCases = _isEditing
-        ? _editLines.fold<double>(0, (sum, l) => sum + l.casesOrdered)
-        : _purchase.items.fold<double>(0, (sum, l) => sum + l.casesOrdered);
     final totalPrice = _isEditing
         ? _editLines.fold<double>(0, (sum, l) => sum + l.lineTotal)
         : _purchase.items.fold<double>(0, (sum, l) => sum + l.lineTotal);
@@ -170,13 +224,34 @@ class _PurchaseOrderDetailPageState extends State<PurchaseOrderDetailPage> {
       appBar: AppBar(
         title: Text('Commande n°${_purchase.orderNumber}'),
         actions: _isEditing
-            ? [TextButton(onPressed: _isBusy ? null : _cancelEditing, child: const Text('Annuler', style: TextStyle(color: Colors.white)))]
+            ? [
+                TextButton(
+                  onPressed: _isBusy ? null : _cancelEditing,
+                  child: const Text(
+                    'Annuler',
+                    style: TextStyle(color: Colors.white),
+                  ),
+                ),
+              ]
             : [
-                IconButton(tooltip: 'Modifier', icon: const Icon(Icons.edit_outlined), onPressed: _isBusy ? null : _startEditing),
-                IconButton(tooltip: 'Supprimer', icon: const Icon(Icons.delete_outline), onPressed: _isBusy ? null : _delete),
+                IconButton(
+                  tooltip: 'Modifier',
+                  icon: const Icon(Icons.edit_outlined),
+                  onPressed: _isBusy ? null : _startEditing,
+                ),
+                IconButton(
+                  tooltip: 'Supprimer',
+                  icon: const Icon(Icons.delete_outline),
+                  onPressed: _isBusy ? null : _delete,
+                ),
               ],
       ),
-      floatingActionButton: _isEditing ? FloatingActionButton(onPressed: _addLine, child: const Icon(Icons.add)) : null,
+      floatingActionButton: _isEditing
+          ? FloatingActionButton(
+              onPressed: _addLine,
+              child: const Icon(Icons.add),
+            )
+          : null,
       body: Column(
         children: [
           Padding(
@@ -193,26 +268,48 @@ class _PurchaseOrderDetailPageState extends State<PurchaseOrderDetailPage> {
                       TextFormField(
                         controller: _orderNumberController,
                         keyboardType: TextInputType.number,
-                        decoration: const InputDecoration(labelText: 'N° de la commande'),
+                        decoration: const InputDecoration(
+                          labelText: 'N° de la commande',
+                        ),
                       ),
                       const SizedBox(height: 12),
                       DropdownButtonFormField<String>(
                         initialValue: _supplierId,
                         isExpanded: true,
-                        decoration: const InputDecoration(labelText: 'Fournisseur'),
+                        decoration: const InputDecoration(
+                          labelText: 'Fournisseur',
+                        ),
                         items: [
-                          const DropdownMenuItem(value: null, child: Text('Aucun')),
-                          for (final supplier in _suppliers) DropdownMenuItem(value: supplier.id, child: Text(supplier.name)),
+                          const DropdownMenuItem(
+                            value: null,
+                            child: Text('Aucun'),
+                          ),
+                          for (final supplier in _suppliers)
+                            DropdownMenuItem(
+                              value: supplier.id,
+                              child: Text(supplier.name),
+                            ),
                         ],
-                        onChanged: (value) => setState(() => _supplierId = value),
+                        onChanged: (value) =>
+                            setState(() => _supplierId = value),
                       ),
                     ],
                   )
                 : Row(
                     children: [
-                      Expanded(child: _field('Date', _dateFormat.format(_purchase.orderDate))),
+                      Expanded(
+                        child: _field(
+                          'Date',
+                          _dateFormat.format(_purchase.orderDate),
+                        ),
+                      ),
                       const SizedBox(width: 12),
-                      Expanded(child: _field('N° de la commande', '${_purchase.orderNumber}')),
+                      Expanded(
+                        child: _field(
+                          'N° de la commande',
+                          '${_purchase.orderNumber}',
+                        ),
+                      ),
                     ],
                   ),
           ),
@@ -223,22 +320,53 @@ class _PurchaseOrderDetailPageState extends State<PurchaseOrderDetailPage> {
                       for (final line in _editLines)
                         ListTile(
                           title: Text(line.productName),
-                          subtitle: Text('${line.purchasePricePerCase.toStringAsFixed(0)} FCFA/casier'),
+                          subtitle: Text(
+                            line.isCasePricing
+                                ? '${line.purchasePricePerCase.toStringAsFixed(0)} FCFA/casier'
+                                : '${line.unitPurchasePrice.toStringAsFixed(0)} FCFA/unité',
+                          ),
                           trailing: Row(
                             mainAxisSize: MainAxisSize.min,
                             children: [
                               SizedBox(
                                 width: 72,
                                 child: TextFormField(
-                                  initialValue: line.casesOrdered.toStringAsFixed(0),
+                                  initialValue: line.quantity.toStringAsFixed(
+                                    0,
+                                  ),
                                   keyboardType: TextInputType.number,
-                                  decoration: const InputDecoration(labelText: 'Casiers'),
-                                  onChanged: (v) => setState(() => line.casesOrdered = double.tryParse(v) ?? line.casesOrdered),
+                                  decoration: InputDecoration(
+                                    labelText: line.isCasePricing
+                                        ? 'Casiers'
+                                        : 'Quantité',
+                                  ),
+                                  onChanged: (v) => setState(
+                                    () => line.quantity =
+                                        double.tryParse(v) ?? line.quantity,
+                                  ),
                                 ),
                               ),
+                              if (!line.isCasePricing)
+                                SizedBox(
+                                  width: 88,
+                                  child: TextFormField(
+                                    initialValue: line.unitPurchasePrice
+                                        .toStringAsFixed(0),
+                                    keyboardType: TextInputType.number,
+                                    decoration: const InputDecoration(
+                                      labelText: 'Prix unit.',
+                                    ),
+                                    onChanged: (v) => setState(
+                                      () => line.unitPurchasePrice =
+                                          double.tryParse(v) ??
+                                          line.unitPurchasePrice,
+                                    ),
+                                  ),
+                                ),
                               IconButton(
                                 icon: const Icon(Icons.delete_outline),
-                                onPressed: () => setState(() => _editLines.remove(line)),
+                                onPressed: () =>
+                                    setState(() => _editLines.remove(line)),
                               ),
                             ],
                           ),
@@ -251,10 +379,13 @@ class _PurchaseOrderDetailPageState extends State<PurchaseOrderDetailPage> {
                         ListTile(
                           title: Text(line.productName),
                           subtitle: Text(
-                            '${line.purchasePricePerCase.toStringAsFixed(0)} FCFA/casier × '
-                            '${line.casesOrdered.toStringAsFixed(0)} casier(s)',
+                            line.isCasePricing
+                                ? '${line.purchasePricePerCase!.toStringAsFixed(0)} FCFA/casier × ${line.casesOrdered!.toStringAsFixed(0)} casier(s)'
+                                : '${line.unitPrice.toStringAsFixed(0)} FCFA/unité × ${line.quantity.toStringAsFixed(0)}',
                           ),
-                          trailing: Text('${line.lineTotal.toStringAsFixed(0)} FCFA'),
+                          trailing: Text(
+                            '${line.lineTotal.toStringAsFixed(0)} FCFA',
+                          ),
                         ),
                     ],
                   ),
@@ -265,11 +396,15 @@ class _PurchaseOrderDetailPageState extends State<PurchaseOrderDetailPage> {
               children: [
                 Row(
                   children: [
-                    const Text('Total', style: TextStyle(fontWeight: FontWeight.bold)),
+                    const Text(
+                      'Total',
+                      style: TextStyle(fontWeight: FontWeight.bold),
+                    ),
                     const Spacer(),
-                    Text('${totalCases.toStringAsFixed(0)} casier(s)', style: const TextStyle(fontWeight: FontWeight.bold)),
-                    const SizedBox(width: 16),
-                    Text('${totalPrice.toStringAsFixed(0)} FCFA', style: const TextStyle(fontWeight: FontWeight.bold)),
+                    Text(
+                      '${totalPrice.toStringAsFixed(0)} FCFA',
+                      style: const TextStyle(fontWeight: FontWeight.bold),
+                    ),
                   ],
                 ),
                 if (_isEditing) ...[
@@ -277,7 +412,11 @@ class _PurchaseOrderDetailPageState extends State<PurchaseOrderDetailPage> {
                   FilledButton(
                     onPressed: _isBusy || _editLines.isEmpty ? null : _save,
                     child: _isBusy
-                        ? const SizedBox(height: 18, width: 18, child: CircularProgressIndicator(strokeWidth: 2))
+                        ? const SizedBox(
+                            height: 18,
+                            width: 18,
+                            child: CircularProgressIndicator(strokeWidth: 2),
+                          )
                         : const Text('Enregistrer les modifications'),
                   ),
                 ],
@@ -290,41 +429,63 @@ class _PurchaseOrderDetailPageState extends State<PurchaseOrderDetailPage> {
   }
 
   Widget _field(String label, String value) => InputDecorator(
-        decoration: InputDecoration(labelText: label),
-        child: Text(value),
-      );
+    decoration: InputDecoration(labelText: label),
+    child: Text(value),
+  );
 }
 
+/// Ligne éditable, des deux types (voir purchases_page.dart) : [quantity]
+/// porte le nbre de casiers OU la quantité achetée selon [isCasePricing] ;
+/// [unitPurchasePrice] n'est éditable/pertinent que pour une ligne à prix
+/// variable ([purchasePricePerCase] pour une ligne par casier, figé, non
+/// éditable ici comme avant).
 class _EditLine {
   _EditLine({
     required this.productId,
     required this.productName,
-    required this.bottlesPerCase,
-    required this.purchasePricePerCase,
-    required this.casesOrdered,
+    required this.isCasePricing,
+    required this.quantity,
+    this.bottlesPerCase = 0,
+    this.purchasePricePerCase = 0,
+    this.unitPurchasePrice = 0,
   });
 
   final String productId;
   final String productName;
+  final bool isCasePricing;
+  double quantity;
   final int bottlesPerCase;
   final double purchasePricePerCase;
-  double casesOrdered;
+  double unitPurchasePrice;
 
-  double get lineTotal => casesOrdered * purchasePricePerCase;
+  double get lineTotal => isCasePricing
+      ? quantity * purchasePricePerCase
+      : quantity * unitPurchasePrice;
 
   factory _EditLine.fromItem(PurchaseItem item) => _EditLine(
-        productId: item.productId,
-        productName: item.productName,
-        bottlesPerCase: item.bottlesPerCase,
-        purchasePricePerCase: item.purchasePricePerCase,
-        casesOrdered: item.casesOrdered,
-      );
+    productId: item.productId,
+    productName: item.productName,
+    isCasePricing: item.isCasePricing,
+    quantity: item.isCasePricing ? item.casesOrdered! : item.quantity,
+    bottlesPerCase: item.bottlesPerCase ?? 0,
+    purchasePricePerCase: item.purchasePricePerCase ?? 0,
+    unitPurchasePrice: item.isCasePricing ? 0 : item.unitPrice,
+  );
 
   factory _EditLine.fromProduct(Product product) => _EditLine(
-        productId: product.id,
-        productName: product.name,
-        bottlesPerCase: product.bottlesPerCase ?? 0,
-        purchasePricePerCase: product.purchasePricePerCase ?? 0,
-        casesOrdered: 1,
-      );
+    productId: product.id,
+    productName: product.name,
+    isCasePricing: product.hasCasePricing,
+    quantity: 1,
+    bottlesPerCase: product.bottlesPerCase ?? 0,
+    purchasePricePerCase: product.purchasePricePerCase ?? 0,
+  );
+
+  Map<String, dynamic> toApiItem() => isCasePricing
+      ? {'productId': productId, 'casesOrdered': quantity}
+      : {
+          'productId': productId,
+          'quantityOrdered': quantity,
+          'unitPurchasePrice': unitPurchasePrice,
+        };
 }

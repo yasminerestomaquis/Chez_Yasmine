@@ -304,10 +304,13 @@ model PurchaseItem {
   /// Nbre de casiers commandés (saisi par l'utilisateur) et copie figée
   /// (au moment de la commande) de Product.bottlesPerCase/purchasePricePerCase
   /// — jamais recalculées rétroactivement si la fiche produit change ensuite,
-  /// même principe que SaleItem.name (voir docs/api/purchasing.md).
-  casesOrdered         Decimal @map("cases_ordered") @db.Decimal(12, 2)
-  bottlesPerCase       Int     @map("bottles_per_case")
-  purchasePricePerCase Decimal @map("purchase_price_per_case") @db.Decimal(12, 2)
+  /// même principe que SaleItem.name (voir docs/api/purchasing.md). Nulles
+  /// pour une ligne "prix variable" (Poulets/Poissons/Plats africains), qui
+  /// s'appuie uniquement sur quantity/unitPrice ci-dessus (quantité achetée
+  /// et prix d'achat unitaire, directement connus — pas de casier).
+  casesOrdered         Decimal? @map("cases_ordered") @db.Decimal(12, 2)
+  bottlesPerCase       Int?     @map("bottles_per_case")
+  purchasePricePerCase Decimal? @map("purchase_price_per_case") @db.Decimal(12, 2)
 
   purchase Purchase @relation(fields: [purchaseId], references: [id], onDelete: Cascade)
   product  Product  @relation(fields: [productId], references: [id])
