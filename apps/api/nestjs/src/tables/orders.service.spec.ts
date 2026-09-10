@@ -6,7 +6,7 @@ import { OrdersService } from './orders.service.js';
 
 function makePrismaMock() {
   const prisma: Record<string, unknown> = {
-    order: { create: vi.fn(), findFirst: vi.fn(), update: vi.fn(), findUniqueOrThrow: vi.fn() },
+    order: { create: vi.fn(), findFirst: vi.fn(), findMany: vi.fn(), update: vi.fn(), findUniqueOrThrow: vi.fn() },
     restaurantTable: { findFirst: vi.fn(), update: vi.fn() },
     reservation: { updateMany: vi.fn() },
     product: { findFirst: vi.fn() },
@@ -317,5 +317,33 @@ describe('OrdersService.split', () => {
     await expect(service.split('est-1', 'order-1', { itemIds: ['item-1'], toTableId: 't2' })).rejects.toBeInstanceOf(
       ConflictException,
     );
+  });
+});
+
+describe('OrdersService.listOpenOrdersForTable', () => {
+  let prisma: ReturnType<typeof makePrismaMock>;
+  let service: OrdersService;
+
+  beforeEach(() => {
+    prisma = makePrismaMock();
+    service = new OrdersService(prisma as unknown as PrismaService);
+  });
+
+  it('throws NotFoundException when the table has no open order', async () => {
+    (prisma.order as any).findMany.mockResolvedValue([]);
+    await expect(service.listOpenOrdersForTable('est-1', 't1')).rejects.toBeInstanceOf(NotFoundException);
+  });
+
+  it('returns every open order for the table, each with its items', async () => {
+    (prisma.order as any).findMany.mockResolvedValue([{ id: 'order-1' }, { id: 'order-2' }]);
+
+    const result = await service.listOpenOrdersForTable('est-1', 't1');
+
+    expect(result).toEqual([{ id: 'order-1' }, { id: 'order-2' }]);
+    expect(prisma.order.findMany).toHaveBeenCalledWith({
+      where: { establishmentId: 'est-1', tableId: 't1', status: 'open' },
+      orderBy: { openedAt: 'asc' },
+      include: { items: { include: { product: { select: { name: true } } } } },
+    });
   });
 });

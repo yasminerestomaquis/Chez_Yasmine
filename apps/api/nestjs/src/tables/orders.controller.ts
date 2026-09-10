@@ -22,9 +22,9 @@ export class OrdersController {
     return this.orders.openTable(establishmentId, tableId, request.user!.sub, dto.guestCount);
   }
 
-  @Get('tables/:tableId/order')
-  getOpenOrderForTable(@Param('establishmentId') establishmentId: string, @Param('tableId') tableId: string) {
-    return this.orders.getOpenOrderForTable(establishmentId, tableId);
+  @Get('tables/:tableId/orders')
+  listOpenOrdersForTable(@Param('establishmentId') establishmentId: string, @Param('tableId') tableId: string) {
+    return this.orders.listOpenOrdersForTable(establishmentId, tableId);
   }
 
   @Post('orders/:orderId/items')

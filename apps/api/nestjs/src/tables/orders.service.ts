@@ -69,15 +69,16 @@ export class OrdersService {
     return this.prisma.order.create({ data: { establishmentId, tableId, serverId, status: 'open', guestCount } });
   }
 
-  async getOpenOrderForTable(establishmentId: string, tableId: string) {
-    const order = await this.prisma.order.findFirst({
+  async listOpenOrdersForTable(establishmentId: string, tableId: string) {
+    const orders = await this.prisma.order.findMany({
       where: { establishmentId, tableId, status: 'open' },
+      orderBy: { openedAt: 'asc' },
       include: { items: { include: { product: { select: { name: true } } } } },
     });
-    if (!order) {
+    if (orders.length === 0) {
       throw new NotFoundException('Aucune addition ouverte pour cette table');
     }
-    return order;
+    return orders;
   }
 
   /**
