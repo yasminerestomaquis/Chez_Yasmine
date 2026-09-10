@@ -12,15 +12,24 @@ export class TablesService {
       where: { establishmentId },
       orderBy: [{ zone: 'asc' }, { name: 'asc' }],
       include: {
-        orders: { where: { status: 'open' }, include: { items: true }, take: 1 },
+        // Toutes les additions ouvertes (pas juste la première — une table
+        // peut en avoir plusieurs simultanément, voir docs/api/tables.md).
+        orders: { where: { status: 'open' }, orderBy: { openedAt: 'asc' }, include: { items: true } },
         reservations: { where: { status: 'pending' }, orderBy: { reservedAt: 'asc' }, take: 1 },
       },
     });
     return tables.map((table) => {
-      const order = table.orders[0];
-      const currentTotal = order
-        ? order.items.reduce((sum, item) => sum + Number(item.quantity) * Number(item.unitPrice), 0)
-        : null;
+      const orders = table.orders;
+      const currentTotal =
+        orders.length > 0
+          ? orders.reduce(
+              (sum, order) => sum + order.items.reduce((s, item) => s + Number(item.quantity) * Number(item.unitPrice), 0),
+              0,
+            )
+          : null;
+      // Le nombre de convives n'a pas vocation à se sommer entre plusieurs
+      // additions — celui de la première addition ouverte (la plus ancienne).
+      const guestCount = orders[0]?.guestCount ?? null;
       const reservation = table.reservations[0];
       return {
         id: table.id,
@@ -29,8 +38,9 @@ export class TablesService {
         zone: table.zone,
         status: table.status,
         createdAt: table.createdAt,
-        guestCount: order?.guestCount ?? null,
+        guestCount,
         currentTotal,
+        openOrderCount: orders.length,
         reservation: reservation
           ? {
               id: reservation.id,

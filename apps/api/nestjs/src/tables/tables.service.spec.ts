@@ -31,7 +31,7 @@ describe('TablesService', () => {
       where: { establishmentId: 'est-1' },
       orderBy: [{ zone: 'asc' }, { name: 'asc' }],
       include: {
-        orders: { where: { status: 'open' }, include: { items: true }, take: 1 },
+        orders: { where: { status: 'open' }, orderBy: { openedAt: 'asc' }, include: { items: true } },
         reservations: { where: { status: 'pending' }, orderBy: { reservedAt: 'asc' }, take: 1 },
       },
     });
@@ -61,8 +61,28 @@ describe('TablesService', () => {
       },
     ]);
     const result = await service.list('est-1');
-    expect(result[0]).toMatchObject({ guestCount: 4, currentTotal: 2000, reservation: null });
-    expect(result[1]).toMatchObject({ guestCount: null, currentTotal: null, reservation: null });
+    expect(result[0]).toMatchObject({ guestCount: 4, currentTotal: 2000, openOrderCount: 1, reservation: null });
+    expect(result[1]).toMatchObject({ guestCount: null, currentTotal: null, openOrderCount: 0, reservation: null });
+  });
+
+  it('aggregates currentTotal across several open additions, using the guestCount of the oldest one', async () => {
+    prisma.restaurantTable.findMany.mockResolvedValue([
+      {
+        id: 't1',
+        establishmentId: 'est-1',
+        name: 'T1',
+        zone: null,
+        status: 'occupied',
+        createdAt: new Date('2026-01-01'),
+        orders: [
+          { guestCount: 2, items: [{ quantity: 1, unitPrice: 1000 }] },
+          { guestCount: 3, items: [{ quantity: 1, unitPrice: 500 }] },
+        ],
+        reservations: [],
+      },
+    ]);
+    const result = await service.list('est-1');
+    expect(result[0]).toMatchObject({ guestCount: 2, currentTotal: 1500, openOrderCount: 2 });
   });
 
   it('surfaces the pending reservation for a reserved table', async () => {
