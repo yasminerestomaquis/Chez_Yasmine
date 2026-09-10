@@ -3,7 +3,7 @@ import 'package:flutter/material.dart';
 import '../api/api_client.dart';
 import '../common/formatting.dart';
 import '../theme/app_theme.dart';
-import 'order_detail_page.dart';
+import 'table_order_page.dart';
 import 'tables_models.dart';
 import 'tables_repository.dart';
 
@@ -53,7 +53,7 @@ class _FloorPlanPageState extends State<FloorPlanPage> {
         await _showReservedTableActions(table);
         return;
       default:
-        await _goToOrder(table);
+        await _showOccupiedTableActions(table);
     }
   }
 
@@ -62,7 +62,7 @@ class _FloorPlanPageState extends State<FloorPlanPage> {
       if (!mounted) return;
       await Navigator.of(context).push(
         MaterialPageRoute(
-          builder: (_) => OrderDetailPage(
+          builder: (_) => TableOrderPage(
             repository: _repository,
             establishmentId: widget.establishmentId,
             tableId: table.id,
@@ -154,6 +154,14 @@ class _FloorPlanPageState extends State<FloorPlanPage> {
               title: const Text('Réserver'),
               onTap: () => Navigator.of(sheetContext).pop('reserve'),
             ),
+            ListTile(
+              leading: const Icon(
+                Icons.edit_outlined,
+                color: AppColors.textSecondary,
+              ),
+              title: const Text('Modifier la table'),
+              onTap: () => Navigator.of(sheetContext).pop('edit'),
+            ),
             const SizedBox(height: 8),
           ],
         ),
@@ -164,6 +172,8 @@ class _FloorPlanPageState extends State<FloorPlanPage> {
       await _openTableWithGuestCount(table);
     } else if (action == 'reserve') {
       await _showReserveDialog(table);
+    } else if (action == 'edit') {
+      await _showEditTableDialog(table);
     }
   }
 
@@ -315,6 +325,14 @@ class _FloorPlanPageState extends State<FloorPlanPage> {
               title: const Text('Annuler la réservation'),
               onTap: () => Navigator.of(sheetContext).pop('cancel'),
             ),
+            ListTile(
+              leading: const Icon(
+                Icons.edit_outlined,
+                color: AppColors.textSecondary,
+              ),
+              title: const Text('Modifier la table'),
+              onTap: () => Navigator.of(sheetContext).pop('edit'),
+            ),
             const SizedBox(height: 8),
           ],
         ),
@@ -332,6 +350,92 @@ class _FloorPlanPageState extends State<FloorPlanPage> {
         ScaffoldMessenger.of(context)
             .showSnackBar(SnackBar(content: Text(e.message)));
       }
+    } else if (action == 'edit') {
+      await _showEditTableDialog(table);
+    }
+  }
+
+  Future<void> _showOccupiedTableActions(RestaurantTable table) async {
+    final action = await showModalBottomSheet<String>(
+      context: context,
+      builder: (sheetContext) => SafeArea(
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            Padding(
+              padding: const EdgeInsets.fromLTRB(16, 16, 16, 4),
+              child: Align(
+                alignment: Alignment.centerLeft,
+                child: Text(
+                  table.name,
+                  style: const TextStyle(
+                    fontWeight: FontWeight.bold,
+                    fontSize: 16,
+                  ),
+                ),
+              ),
+            ),
+            ListTile(
+              leading: const Icon(
+                Icons.receipt_long_outlined,
+                color: AppColors.green,
+              ),
+              title: const Text('Gérer les additions'),
+              onTap: () => Navigator.of(sheetContext).pop('manage'),
+            ),
+            ListTile(
+              leading: const Icon(
+                Icons.add_box_outlined,
+                color: AppColors.orange,
+              ),
+              title: const Text('Nouvelle addition'),
+              onTap: () => Navigator.of(sheetContext).pop('new_addition'),
+            ),
+            ListTile(
+              leading: const Icon(
+                Icons.event_seat_outlined,
+                color: AppColors.alert,
+              ),
+              title: const Text('Libérer la table'),
+              onTap: () => Navigator.of(sheetContext).pop('release'),
+            ),
+            ListTile(
+              leading: const Icon(
+                Icons.edit_outlined,
+                color: AppColors.textSecondary,
+              ),
+              title: const Text('Modifier la table'),
+              onTap: () => Navigator.of(sheetContext).pop('edit'),
+            ),
+            const SizedBox(height: 8),
+          ],
+        ),
+      ),
+    );
+    if (!mounted || action == null) return;
+    switch (action) {
+      case 'manage':
+        await _goToOrder(table);
+      case 'new_addition':
+        try {
+          await _repository.openAdditionalOrder(table.id);
+          await _goToOrder(table);
+        } on ApiException catch (e) {
+          if (!mounted) return;
+          ScaffoldMessenger.of(context)
+              .showSnackBar(SnackBar(content: Text(e.message)));
+        }
+      case 'release':
+        try {
+          await _repository.releaseTable(table.id);
+          _reload();
+        } on ApiException catch (e) {
+          if (!mounted) return;
+          ScaffoldMessenger.of(context)
+              .showSnackBar(SnackBar(content: Text(e.message)));
+        }
+      case 'edit':
+        await _showEditTableDialog(table);
     }
   }
 
@@ -710,6 +814,11 @@ class _TableCard extends StatelessWidget {
             ? 'Réservée ${t.hour.toString().padLeft(2, '0')}:${t.minute.toString().padLeft(2, '0')}'
             : 'Réservée';
       default:
+        // Plusieurs additions ouvertes : le total agrégé serait ambigu
+        // (à quelle addition l'attribuer ?), on affiche leur nombre à la place.
+        if (table.openOrderCount > 1) {
+          return '${table.openOrderCount} additions';
+        }
         if (table.guestCount != null && table.currentTotal != null) {
           return '${table.guestCount} pers. · ${formatAmount(table.currentTotal!)} F';
         }
