@@ -5,24 +5,16 @@ import 'api/api_client.dart';
 import 'auth/auth_gate.dart';
 import 'auth/link_confirmation_gate.dart';
 import 'auth/me_repository.dart';
-import 'cash/cash_page.dart';
-import 'catalog/catalog_page.dart';
-import 'charts/graphiques_page.dart';
 import 'config/supabase_config.dart';
-import 'customers/customers_page.dart';
-import 'expenses/expenses_page.dart';
-import 'losses/losses_page.dart';
-import 'notifications/notifications_page.dart';
-import 'pos/pos_page.dart';
-import 'purchasing/purchases_page.dart';
-import 'reports/reports_page.dart';
-import 'stock/stock_page.dart';
-import 'tables/floor_plan_page.dart';
-import 'users/users_page.dart';
+import 'home/home_dashboard.dart';
+import 'theme/app_theme.dart';
 
 Future<void> main() async {
   WidgetsFlutterBinding.ensureInitialized();
-  await Supabase.initialize(url: SupabaseConfig.url, publishableKey: SupabaseConfig.publishableKey);
+  await Supabase.initialize(
+    url: SupabaseConfig.url,
+    publishableKey: SupabaseConfig.publishableKey,
+  );
   runApp(const ChezYasmineApp());
 }
 
@@ -31,22 +23,18 @@ class ChezYasmineApp extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    // Texte noir partout dans l'application (demande explicite), quel que
-    // soit le rôle du texte (titre, corps, légende...) : `.apply` réécrit
-    // uniformément `bodyColor`/`displayColor` sur tout le `TextTheme` généré
-    // par le thème plutôt que de fixer chaque style un par un.
-    final baseTheme = ThemeData(colorScheme: ColorScheme.fromSeed(seedColor: const Color(0xFFE07A1F)));
     return MaterialApp(
       title: 'Chez Yasmine',
-      theme: baseTheme.copyWith(
-        textTheme: baseTheme.textTheme.apply(bodyColor: Colors.black, displayColor: Colors.black),
-        primaryTextTheme: baseTheme.primaryTextTheme.apply(bodyColor: Colors.black, displayColor: Colors.black),
+      theme: buildAppTheme(),
+      home: LinkConfirmationGate(
+        child: AuthGate(authenticated: (context) => const HomePage()),
       ),
-      home: LinkConfirmationGate(child: AuthGate(authenticated: (context) => const HomePage())),
     );
   }
 }
 
+/// Point d'entrée après connexion : charge le profil puis affiche le tableau
+/// de bord du seul établissement de l'utilisateur, ou un sélecteur si plusieurs.
 class HomePage extends StatefulWidget {
   const HomePage({super.key});
 
@@ -66,37 +54,20 @@ class _HomePageState extends State<HomePage> {
   @override
   Widget build(BuildContext context) {
     final user = Supabase.instance.client.auth.currentUser;
-    return Scaffold(
-      appBar: AppBar(
-        backgroundColor: Theme.of(context).colorScheme.surface,
-        titleSpacing: 12,
-        title: Row(
-          mainAxisSize: MainAxisSize.min,
-          children: [
-            ClipOval(
-              child: Image.asset('assets/logo.png', height: 36, width: 36, fit: BoxFit.cover),
-            ),
-            const SizedBox(width: 10),
-            const Text('Chez Yasmine', style: TextStyle(fontWeight: FontWeight.bold)),
-          ],
-        ),
-        actions: [
-          IconButton(
-            tooltip: 'Se déconnecter',
-            icon: const Icon(Icons.logout),
-            onPressed: () => Supabase.instance.client.auth.signOut(),
-          ),
-        ],
-      ),
-      body: FutureBuilder<MyProfile>(
-        future: _future,
-        builder: (context, snapshot) {
-          if (snapshot.connectionState != ConnectionState.done) {
-            return const Center(child: CircularProgressIndicator());
-          }
-          if (snapshot.hasError) {
-            final message = snapshot.error is ApiException ? (snapshot.error as ApiException).message : '${snapshot.error}';
-            return Center(
+    return FutureBuilder<MyProfile>(
+      future: _future,
+      builder: (context, snapshot) {
+        if (snapshot.connectionState != ConnectionState.done) {
+          return const Scaffold(
+            body: Center(child: CircularProgressIndicator()),
+          );
+        }
+        if (snapshot.hasError) {
+          final message = snapshot.error is ApiException
+              ? (snapshot.error as ApiException).message
+              : '${snapshot.error}';
+          return Scaffold(
+            body: Center(
               child: Padding(
                 padding: const EdgeInsets.all(24),
                 child: Column(
@@ -104,143 +75,84 @@ class _HomePageState extends State<HomePage> {
                   children: [
                     const Icon(Icons.cloud_off, size: 40),
                     const SizedBox(height: 12),
-                    Text("Impossible de joindre l'API : $message", textAlign: TextAlign.center),
+                    Text(
+                      "Impossible de joindre l'API : $message",
+                      textAlign: TextAlign.center,
+                    ),
                     const SizedBox(height: 4),
-                    if (user?.email != null) Text('Connecté en tant que ${user!.email}'),
+                    if (user?.email != null)
+                      Text('Connecté en tant que ${user!.email}'),
                     const SizedBox(height: 12),
                     OutlinedButton(
-                      onPressed: () => setState(() => _future = MeRepository(ApiClient()).fetchMe()),
+                      onPressed: () => setState(
+                        () => _future = MeRepository(ApiClient()).fetchMe(),
+                      ),
                       child: const Text('Réessayer'),
                     ),
                   ],
                 ),
               ),
-            );
-          }
+            ),
+          );
+        }
 
-          final profile = snapshot.data!;
-          if (profile.establishments.isEmpty) {
-            return const Center(child: Text('Aucun établissement associé à ce compte.'));
-          }
+        final profile = snapshot.data!;
+        if (profile.establishments.isEmpty) {
+          return const Scaffold(
+            body: Center(
+              child: Text('Aucun établissement associé à ce compte.'),
+            ),
+          );
+        }
 
-          return ListView(
-            padding: const EdgeInsets.all(16),
-            children: [
-              for (final establishment in profile.establishments)
-                Card(
-                  child: Padding(
-                    padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
-                    child: Column(
-                      crossAxisAlignment: CrossAxisAlignment.start,
-                      children: [
-                        ListTile(
-                          leading: const Icon(Icons.storefront_outlined),
-                          title: Text(establishment.name),
-                          subtitle: Text(establishment.role),
-                        ),
-                        OverflowBar(
-                          alignment: MainAxisAlignment.end,
-                          children: [
-                            TextButton.icon(
-                              icon: const Icon(Icons.table_restaurant_outlined),
-                              label: const Text('Tables'),
-                              onPressed: () => Navigator.of(context).push(
-                                MaterialPageRoute(builder: (_) => FloorPlanPage(establishmentId: establishment.id)),
-                              ),
-                            ),
-                            TextButton.icon(
-                              icon: const Icon(Icons.point_of_sale_outlined),
-                              label: const Text('Caisse'),
-                              onPressed: () => Navigator.of(context).push(
-                                MaterialPageRoute(builder: (_) => PosPage(establishmentId: establishment.id)),
-                              ),
-                            ),
-                            TextButton.icon(
-                              icon: const Icon(Icons.inventory_2_outlined),
-                              label: const Text('Stock'),
-                              onPressed: () => Navigator.of(context).push(
-                                MaterialPageRoute(builder: (_) => StockPage(establishmentId: establishment.id)),
-                              ),
-                            ),
-                            TextButton.icon(
-                              icon: const Icon(Icons.shopping_cart_outlined),
-                              label: const Text('Achats'),
-                              onPressed: () => Navigator.of(context).push(
-                                MaterialPageRoute(builder: (_) => PurchasesPage(establishmentId: establishment.id)),
-                              ),
-                            ),
-                            TextButton.icon(
-                              icon: const Icon(Icons.people_outline),
-                              label: const Text('Clients'),
-                              onPressed: () => Navigator.of(context).push(
-                                MaterialPageRoute(builder: (_) => CustomersPage(establishmentId: establishment.id)),
-                              ),
-                            ),
-                            TextButton.icon(
-                              icon: const Icon(Icons.storefront_outlined),
-                              label: const Text('Catalogue'),
-                              onPressed: () => Navigator.of(context).push(
-                                MaterialPageRoute(builder: (_) => CatalogPage(establishmentId: establishment.id)),
-                              ),
-                            ),
-                            TextButton.icon(
-                              icon: const Icon(Icons.receipt_long_outlined),
-                              label: const Text('Dépenses'),
-                              onPressed: () => Navigator.of(context).push(
-                                MaterialPageRoute(builder: (_) => ExpensesPage(establishmentId: establishment.id)),
-                              ),
-                            ),
-                            TextButton.icon(
-                              icon: const Icon(Icons.report_gmailerrorred_outlined),
-                              label: const Text('Pertes'),
-                              onPressed: () => Navigator.of(context).push(
-                                MaterialPageRoute(builder: (_) => LossesPage(establishmentId: establishment.id)),
-                              ),
-                            ),
-                            TextButton.icon(
-                              icon: const Icon(Icons.savings_outlined),
-                              label: const Text('Caisse'),
-                              onPressed: () => Navigator.of(context).push(
-                                MaterialPageRoute(builder: (_) => CashPage(establishmentId: establishment.id)),
-                              ),
-                            ),
-                            TextButton.icon(
-                              icon: const Icon(Icons.bar_chart_outlined),
-                              label: const Text('Rapports'),
-                              onPressed: () => Navigator.of(context).push(
-                                MaterialPageRoute(builder: (_) => ReportsPage(establishmentId: establishment.id)),
-                              ),
-                            ),
-                            TextButton.icon(
-                              icon: const Icon(Icons.notifications_outlined),
-                              label: const Text('Notifications'),
-                              onPressed: () => Navigator.of(context).push(
-                                MaterialPageRoute(builder: (_) => NotificationsPage(establishmentId: establishment.id)),
-                              ),
-                            ),
-                            TextButton.icon(
-                              icon: const Icon(Icons.manage_accounts_outlined),
-                              label: const Text('Utilisateurs'),
-                              onPressed: () => Navigator.of(context).push(
-                                MaterialPageRoute(builder: (_) => UsersPage(establishmentId: establishment.id)),
-                              ),
-                            ),
-                            TextButton.icon(
-                              icon: const Icon(Icons.insert_chart_outlined),
-                              label: const Text('Graphiques'),
-                              onPressed: () => Navigator.of(context).push(
-                                MaterialPageRoute(builder: (_) => GraphiquesPage(establishmentId: establishment.id)),
-                              ),
-                            ),
-                          ],
-                        ),
-                      ],
+        if (profile.establishments.length == 1) {
+          final establishment = profile.establishments.single;
+          return HomeDashboard(
+            establishmentId: establishment.id,
+            establishmentName: establishment.name,
+            roleName: establishment.role,
+          );
+        }
+
+        return _EstablishmentPicker(establishments: profile.establishments);
+      },
+    );
+  }
+}
+
+/// Rare cas d'un compte rattaché à plusieurs établissements : un sélecteur
+/// simple avant d'entrer dans le tableau de bord de l'un d'eux.
+class _EstablishmentPicker extends StatelessWidget {
+  const _EstablishmentPicker({required this.establishments});
+
+  final List<MyEstablishment> establishments;
+
+  @override
+  Widget build(BuildContext context) {
+    return Scaffold(
+      appBar: AppBar(title: const Text('Choisir un établissement')),
+      body: ListView(
+        padding: const EdgeInsets.all(16),
+        children: [
+          for (final establishment in establishments)
+            Card(
+              child: ListTile(
+                leading: const Icon(Icons.storefront_outlined),
+                title: Text(establishment.name),
+                subtitle: Text(establishment.role),
+                trailing: const Icon(Icons.chevron_right),
+                onTap: () => Navigator.of(context).push(
+                  MaterialPageRoute(
+                    builder: (_) => HomeDashboard(
+                      establishmentId: establishment.id,
+                      establishmentName: establishment.name,
+                      roleName: establishment.role,
                     ),
                   ),
                 ),
-            ],
-          );
-        },
+              ),
+            ),
+        ],
       ),
     );
   }
