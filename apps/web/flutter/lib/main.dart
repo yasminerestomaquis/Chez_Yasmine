@@ -3,6 +3,7 @@ import 'package:supabase_flutter/supabase_flutter.dart';
 
 import 'api/api_client.dart';
 import 'auth/auth_gate.dart';
+import 'auth/link_confirmation_gate.dart';
 import 'auth/me_repository.dart';
 import 'cash/cash_page.dart';
 import 'catalog/catalog_page.dart';
@@ -41,7 +42,7 @@ class ChezYasmineApp extends StatelessWidget {
         textTheme: baseTheme.textTheme.apply(bodyColor: Colors.black, displayColor: Colors.black),
         primaryTextTheme: baseTheme.primaryTextTheme.apply(bodyColor: Colors.black, displayColor: Colors.black),
       ),
-      home: AuthGate(authenticated: (context) => const HomePage()),
+      home: LinkConfirmationGate(child: AuthGate(authenticated: (context) => const HomePage())),
     );
   }
 }

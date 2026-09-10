@@ -44,6 +44,13 @@ export class SupabaseAdminService {
    * pour comment `invited_establishment_id`/`invited_role_id` y sont lus.
    * Lève une erreur brute (message Supabase tel quel) — UsersService décide
    * du type d'exception HTTP renvoyé.
+   *
+   * Reste vulnérable au problème documenté sur generateInviteLink/generateRecoveryLink
+   * ci-dessous (un lien à usage unique consommé par un robot d'aperçu avant
+   * le vrai clic) côté client e-mail du destinataire (Outlook Safe Links et
+   * certains antivirus font la même chose) — aucun correctif possible ici
+   * sans changer le modèle d'e-mail Supabase, hors d'accès (pas de tableau
+   * de bord).
    */
   async inviteUserByEmail(email: string, metadata: Record<string, string | boolean>): Promise<void> {
     const { error } = await this.getClient().auth.admin.inviteUserByEmail(email, {
@@ -58,10 +65,19 @@ export class SupabaseAdminService {
   /**
    * Même effet que inviteUserByEmail (crée le compte, mêmes métadonnées) mais
    * ne passe jamais par le service d'e-mail de Supabase — utile quand son
-   * quota gratuit partagé est atteint (voir docs/api/users.md). Renvoie le
-   * lien tel quel ; à afficher/copier côté UI pour que l'appelant l'envoie
-   * lui-même par le canal de son choix (jamais Claude qui l'envoie à sa
-   * place).
+   * quota gratuit partagé est atteint (voir docs/api/users.md).
+   *
+   * Renvoie un lien vers l'application elle-même (`?token_hash=&type=`),
+   * **pas** `action_link` (le `/auth/v1/verify?token=...` fourni par
+   * Supabase) : ce dernier est à usage unique et la vérification s'y
+   * déclenche sur un simple GET — or WhatsApp (confirmé en conditions
+   * réelles le 2026-09-09 via les journaux Supabase) et d'autres apps de
+   * messagerie visitent automatiquement tout lien partagé pour en générer
+   * un aperçu, ce qui consomme le jeton avant même que la personne ne
+   * clique elle-même. `LinkConfirmationGate` côté Flutter appelle
+   * `verifyOTP(tokenHash: ...)` lui-même, uniquement quand du code Dart
+   * s'exécute réellement dans un navigateur — un robot d'aperçu qui ne
+   * charge jamais JavaScript ne consomme donc plus le jeton.
    */
   async generateInviteLink(email: string, metadata: Record<string, string | boolean>): Promise<string> {
     const { data, error } = await this.getClient().auth.admin.generateLink({
@@ -69,21 +85,20 @@ export class SupabaseAdminService {
       email,
       options: { data: metadata, redirectTo: APP_REDIRECT_URL },
     });
-    if (error || !data.properties?.action_link) {
+    if (error || !data.properties?.hashed_token) {
       throw new Error(error?.message ?? 'Lien non généré');
     }
-    return data.properties.action_link;
+    return `${APP_REDIRECT_URL}/?token_hash=${data.properties.hashed_token}&type=invite`;
   }
 
   /**
    * Génère un lien de réinitialisation de mot de passe pour un utilisateur
    * *déjà existant* (contrairement à generateInviteLink, ne crée aucun
    * compte) — même principe : ne passe jamais par le mailer de Supabase,
-   * renvoie le lien pour que l'appelant le transmette lui-même. Pose
+   * renvoie un lien vers l'application (`?token_hash=&type=recovery`,
+   * jamais `action_link` — voir generateInviteLink pour pourquoi). Pose
    * `needs_password_setup: true` sur le compte cible *avant* de générer le
-   * lien (jamais dans les métadonnées du lien lui-même, dont le
-   * comportement pour type: 'recovery' n'est pas garanti) pour que
-   * SetPasswordPage s'affiche bien au clic, comme pour une invitation.
+   * lien pour que `SetPasswordPage` s'affiche bien une fois vérifié.
    */
   async generateRecoveryLink(userId: string): Promise<string> {
     const client = this.getClient();
@@ -102,9 +117,9 @@ export class SupabaseAdminService {
       email: userData.user.email,
       options: { redirectTo: APP_REDIRECT_URL },
     });
-    if (error || !data.properties?.action_link) {
+    if (error || !data.properties?.hashed_token) {
       throw new Error(error?.message ?? 'Lien non généré');
     }
-    return data.properties.action_link;
+    return `${APP_REDIRECT_URL}/?token_hash=${data.properties.hashed_token}&type=recovery`;
   }
 }
