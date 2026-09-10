@@ -2,6 +2,10 @@
 
 ## [Unreleased]
 
+### Ajouté (post-plan, 2026-09-10) — Sélection multiple de catégories (graphiques Recettes/Bénéfices)
+- Les graphiques « Recettes journalières totales par catégorie » et « Bénéfices journaliers totaux par catégorie » (`MetricChartsTab`, partagé par les deux sous-modules) proposent désormais des puces à sélection multiple au lieu d'un menu déroulant à un seul choix. Aucune catégorie cochée : comportement inchangé (une série par catégorie). Une ou plusieurs catégories cochées : une seule série, somme jour par jour des catégories choisies — répond à « le calcul des bénéfices/recettes selon les catégories sélectionnées ».
+- `ChartsService.weeklyByCategory` (`apps/api/nestjs/src/charts`) accepte `categoryIds` (CSV) à la place de `categoryId` ; 260/260 tests NestJS (nouveau : agrégation de plusieurs catégories), `flutter analyze`/tests propres.
+
 ### Ajouté (post-plan, 2026-09-10) — Configuration des tables, réservations et refonte visuelle Tables
 - **Création/modification/suppression d'une table depuis l'application** — un vrai manque jusqu'ici : l'API et le repository Flutter le permettaient déjà, mais aucune interface n'y donnait accès (relevé par l'utilisateur : « comment se fait la configuration de la table »). Bouton flottant « + » sur l'écran Tables (dialogue Nom/Zone) ; appui long sur une carte pour modifier son nom/sa zone ou la supprimer (confirmation requise).
 - **Module Réservations** (`apps/api/nestjs/src/tables/reservations.{service,controller}.ts`) : exploite pour la première fois la table `reservations` du schéma (nom du client, téléphone, heure — présente en base depuis l'origine du projet mais jamais reliée à aucun code). Réserver une table libre la fait passer au statut `reserved` ; ouvrir une table réservée consomme automatiquement la réservation (`status: 'seated'`) au lieu de la rejeter comme occupée ; annuler une réservation libère la table (sauf si elle a été ouverte entre-temps par un autre chemin).

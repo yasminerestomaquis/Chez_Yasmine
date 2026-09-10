@@ -13,9 +13,10 @@ export class WeeklyChartQueryDto {
 }
 
 export class WeeklyByCategoryQueryDto extends WeeklyChartQueryDto {
+  /** CSV d'identifiants de catégorie — sélection multiple, agrégée en une seule série (somme). */
   @IsOptional()
   @IsString()
-  categoryId?: string;
+  categoryIds?: string;
 }
 
 export class WeeklyByProductQueryDto extends WeeklyChartQueryDto {

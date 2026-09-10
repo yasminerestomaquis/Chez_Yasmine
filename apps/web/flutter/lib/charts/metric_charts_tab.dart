@@ -48,8 +48,18 @@ class ChartTitles {
 }
 
 const _monthNames = [
-  'Janvier', 'Février', 'Mars', 'Avril', 'Mai', 'Juin',
-  'Juillet', 'Août', 'Septembre', 'Octobre', 'Novembre', 'Décembre',
+  'Janvier',
+  'Février',
+  'Mars',
+  'Avril',
+  'Mai',
+  'Juin',
+  'Juillet',
+  'Août',
+  'Septembre',
+  'Octobre',
+  'Novembre',
+  'Décembre',
 ];
 
 /// Les 5 graphiques d'un sous-module (Recettes ou Bénéfices), identiques dans
@@ -77,12 +87,18 @@ class MetricChartsTab extends StatefulWidget {
 }
 
 class _MetricChartsTabState extends State<MetricChartsTab> {
-  late final ChartsRepository _charts = ChartsRepository(ApiClient(), widget.establishmentId);
-  late final CatalogRepository _catalog = CatalogRepository(ApiClient(), widget.establishmentId);
+  late final ChartsRepository _charts = ChartsRepository(
+    ApiClient(),
+    widget.establishmentId,
+  );
+  late final CatalogRepository _catalog = CatalogRepository(
+    ApiClient(),
+    widget.establishmentId,
+  );
   static final DateFormat _dayFormat = DateFormat('dd/MM/yyyy');
 
   late DateTime _weekAnchor = _clampToYear(DateTime.now(), widget.year);
-  String? _categoryId;
+  final Set<String> _selectedCategoryIds = {};
   String? _productId;
   int? _topMonth;
 
@@ -94,14 +110,28 @@ class _MetricChartsTabState extends State<MetricChartsTab> {
   // appel réseau par un faux échec quasi instantané, assez tôt pour parfois
   // rejeter avant que `FutureBuilder` ne s'y abonne, ce que Dart signalerait
   // sinon comme une erreur non gérée alors que l'UI l'affiche normalement.
-  late Future<WeeklyChart> _totalFuture = _charts.getWeekly(metric: widget.metric, weekStart: _weekStartParam)..ignore();
-  late Future<WeeklyChart> _byCategoryFuture =
-      (_charts.getWeeklyByCategory(metric: widget.metric, weekStart: _weekStartParam)..ignore());
-  late Future<WeeklyChart> _byProductFuture =
-      (_charts.getWeeklyByProduct(metric: widget.metric, weekStart: _weekStartParam)..ignore());
-  late Future<RankingChart> _topFuture = _charts.getTop(metric: widget.metric, from: _topFrom, to: _topTo)..ignore();
-  late final Future<MonthlyChart> _monthlyFuture =
-      _charts.getMonthly(metric: widget.metric, year: widget.year)..ignore();
+  late Future<WeeklyChart> _totalFuture = _charts.getWeekly(
+    metric: widget.metric,
+    weekStart: _weekStartParam,
+  )..ignore();
+  late Future<WeeklyChart> _byCategoryFuture = (_charts.getWeeklyByCategory(
+    metric: widget.metric,
+    weekStart: _weekStartParam,
+    categoryIds: _selectedCategoryIds,
+  )..ignore());
+  late Future<WeeklyChart> _byProductFuture = (_charts.getWeeklyByProduct(
+    metric: widget.metric,
+    weekStart: _weekStartParam,
+  )..ignore());
+  late Future<RankingChart> _topFuture = _charts.getTop(
+    metric: widget.metric,
+    from: _topFrom,
+    to: _topTo,
+  )..ignore();
+  late final Future<MonthlyChart> _monthlyFuture = _charts.getMonthly(
+    metric: widget.metric,
+    year: widget.year,
+  )..ignore();
 
   @override
   void initState() {
@@ -121,13 +151,17 @@ class _MetricChartsTabState extends State<MetricChartsTab> {
 
   String get _weekStartParam => _weekAnchor.toIso8601String().split('T').first;
 
-  String get _topFrom => (_topMonth == null ? DateTime(widget.year, 1, 1) : DateTime(widget.year, _topMonth! + 1, 1))
-      .toIso8601String();
+  String get _topFrom =>
+      (_topMonth == null
+              ? DateTime(widget.year, 1, 1)
+              : DateTime(widget.year, _topMonth! + 1, 1))
+          .toIso8601String();
 
-  String get _topTo => (_topMonth == null
-          ? DateTime(widget.year, 12, 31, 23, 59, 59)
-          : DateTime(widget.year, _topMonth! + 2, 0, 23, 59, 59))
-      .toIso8601String();
+  String get _topTo =>
+      (_topMonth == null
+              ? DateTime(widget.year, 12, 31, 23, 59, 59)
+              : DateTime(widget.year, _topMonth! + 2, 0, 23, 59, 59))
+          .toIso8601String();
 
   Future<void> _loadFilters() async {
     try {
@@ -147,27 +181,51 @@ class _MetricChartsTabState extends State<MetricChartsTab> {
   }
 
   void _reloadTotal() {
-    final future = _charts.getWeekly(metric: widget.metric, weekStart: _weekStartParam);
+    final future = _charts.getWeekly(
+      metric: widget.metric,
+      weekStart: _weekStartParam,
+    );
     future.ignore();
     setState(() => _totalFuture = future);
   }
 
   void _reloadByCategory() {
-    final future =
-        _charts.getWeeklyByCategory(metric: widget.metric, weekStart: _weekStartParam, categoryId: _categoryId);
+    final future = _charts.getWeeklyByCategory(
+      metric: widget.metric,
+      weekStart: _weekStartParam,
+      categoryIds: _selectedCategoryIds,
+    );
     future.ignore();
     setState(() => _byCategoryFuture = future);
   }
 
+  void _toggleCategory(String categoryId) {
+    setState(() {
+      if (_selectedCategoryIds.contains(categoryId)) {
+        _selectedCategoryIds.remove(categoryId);
+      } else {
+        _selectedCategoryIds.add(categoryId);
+      }
+    });
+    _reloadByCategory();
+  }
+
   void _reloadByProduct() {
-    final future =
-        _charts.getWeeklyByProduct(metric: widget.metric, weekStart: _weekStartParam, productId: _productId);
+    final future = _charts.getWeeklyByProduct(
+      metric: widget.metric,
+      weekStart: _weekStartParam,
+      productId: _productId,
+    );
     future.ignore();
     setState(() => _byProductFuture = future);
   }
 
   void _reloadTop() {
-    final future = _charts.getTop(metric: widget.metric, from: _topFrom, to: _topTo);
+    final future = _charts.getTop(
+      metric: widget.metric,
+      from: _topFrom,
+      to: _topTo,
+    );
     future.ignore();
     setState(() => _topFuture = future);
   }
@@ -187,7 +245,11 @@ class _MetricChartsTabState extends State<MetricChartsTab> {
     _reloadByProduct();
   }
 
-  Widget _card({required String title, required Widget child, List<Widget>? controls}) {
+  Widget _card({
+    required String title,
+    required Widget child,
+    List<Widget>? controls,
+  }) {
     return Card(
       margin: const EdgeInsets.only(bottom: 16),
       child: Padding(
@@ -195,7 +257,10 @@ class _MetricChartsTabState extends State<MetricChartsTab> {
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
-            Text(title, style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 16)),
+            Text(
+              title,
+              style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 16),
+            ),
             if (controls != null) ...[
               const SizedBox(height: 8),
               Wrap(spacing: 12, runSpacing: 8, children: controls),
@@ -227,7 +292,9 @@ class _MetricChartsTabState extends State<MetricChartsTab> {
           );
         }
         if (snapshot.hasError) {
-          final message = snapshot.error is ApiException ? (snapshot.error as ApiException).message : '${snapshot.error}';
+          final message = snapshot.error is ApiException
+              ? (snapshot.error as ApiException).message
+              : '${snapshot.error}';
           return Padding(
             padding: const EdgeInsets.symmetric(vertical: 24),
             child: Center(child: Text(message)),
@@ -258,7 +325,10 @@ class _MetricChartsTabState extends State<MetricChartsTab> {
                       style: Theme.of(context).textTheme.bodySmall,
                     ),
                   ),
-                WeeklyBarChartWidget(series: chart.series, baseColor: widget.palette.dailyTotal),
+                WeeklyBarChartWidget(
+                  series: chart.series,
+                  baseColor: widget.palette.dailyTotal,
+                ),
               ],
             );
           }),
@@ -266,22 +336,36 @@ class _MetricChartsTabState extends State<MetricChartsTab> {
         _card(
           title: widget.titles.dailyByCategory,
           controls: [
-            DropdownButton<String?>(
-              value: _categoryId,
-              hint: const Text('Toutes les catégories'),
-              items: [
-                const DropdownMenuItem<String?>(value: null, child: Text('Toutes les catégories')),
-                for (final category in _categories) DropdownMenuItem(value: category.id, child: Text(category.name)),
-              ],
-              onChanged: (value) {
-                setState(() => _categoryId = value);
-                _reloadByCategory();
-              },
-            ),
+            if (_categories.isEmpty)
+              const Text('Aucune catégorie au catalogue')
+            else
+              Wrap(
+                spacing: 8,
+                runSpacing: 4,
+                children: [
+                  FilterChip(
+                    label: const Text('Toutes'),
+                    selected: _selectedCategoryIds.isEmpty,
+                    onSelected: (_) {
+                      setState(() => _selectedCategoryIds.clear());
+                      _reloadByCategory();
+                    },
+                  ),
+                  for (final category in _categories)
+                    FilterChip(
+                      label: Text(category.name),
+                      selected: _selectedCategoryIds.contains(category.id),
+                      onSelected: (_) => _toggleCategory(category.id),
+                    ),
+                ],
+              ),
           ],
           child: _futureChart(
             _byCategoryFuture,
-            (chart) => WeeklyBarChartWidget(series: chart.series, baseColor: widget.palette.dailyByCategory),
+            (chart) => WeeklyBarChartWidget(
+              series: chart.series,
+              baseColor: widget.palette.dailyByCategory,
+            ),
           ),
         ),
         _card(
@@ -290,7 +374,13 @@ class _MetricChartsTabState extends State<MetricChartsTab> {
             if (_products.isNotEmpty)
               DropdownButton<String?>(
                 value: _productId,
-                items: [for (final product in _products) DropdownMenuItem(value: product.id, child: Text(product.name))],
+                items: [
+                  for (final product in _products)
+                    DropdownMenuItem(
+                      value: product.id,
+                      child: Text(product.name),
+                    ),
+                ],
                 onChanged: (value) {
                   setState(() => _productId = value);
                   _reloadByProduct();
@@ -301,7 +391,10 @@ class _MetricChartsTabState extends State<MetricChartsTab> {
           ],
           child: _futureChart(
             _byProductFuture,
-            (chart) => WeeklyBarChartWidget(series: chart.series, baseColor: widget.palette.dailyByProduct),
+            (chart) => WeeklyBarChartWidget(
+              series: chart.series,
+              baseColor: widget.palette.dailyByProduct,
+            ),
           ),
         ),
         _card(
@@ -310,8 +403,12 @@ class _MetricChartsTabState extends State<MetricChartsTab> {
             DropdownButton<int?>(
               value: _topMonth,
               items: [
-                const DropdownMenuItem<int?>(value: null, child: Text("Toute l'année")),
-                for (var i = 0; i < _monthNames.length; i++) DropdownMenuItem(value: i, child: Text(_monthNames[i])),
+                const DropdownMenuItem<int?>(
+                  value: null,
+                  child: Text("Toute l'année"),
+                ),
+                for (var i = 0; i < _monthNames.length; i++)
+                  DropdownMenuItem(value: i, child: Text(_monthNames[i])),
               ],
               onChanged: (value) {
                 setState(() => _topMonth = value);
@@ -321,14 +418,20 @@ class _MetricChartsTabState extends State<MetricChartsTab> {
           ],
           child: _futureChart(
             _topFuture,
-            (chart) => RankingBarChartWidget(items: chart.items, color: widget.palette.top),
+            (chart) => RankingBarChartWidget(
+              items: chart.items,
+              color: widget.palette.top,
+            ),
           ),
         ),
         _card(
           title: widget.titles.monthly,
           child: _futureChart(
             _monthlyFuture,
-            (chart) => MonthlyLineChartWidget(months: chart.months, color: widget.palette.monthly),
+            (chart) => MonthlyLineChartWidget(
+              months: chart.months,
+              color: widget.palette.monthly,
+            ),
           ),
         ),
       ],

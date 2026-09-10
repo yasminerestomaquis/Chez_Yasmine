@@ -142,13 +142,32 @@ export class ChartsService {
     return this.buildWeekResponse(monday, [{ id: null, name: 'Total', values }]);
   }
 
-  async weeklyByCategory(establishmentId: string, metric: ChartMetric, weekStart?: string, categoryId?: string) {
+  /**
+   * `categoryIdsCsv` vide/absent : comportement historique — une série par
+   * catégorie. `categoryIdsCsv` renseigné (une ou plusieurs catégories,
+   * sélection multiple côté UI) : une seule série agrégée (somme jour par
+   * jour de toutes les catégories choisies), pour répondre à "le calcul des
+   * bénéfices/recettes selon les catégories sélectionnées" plutôt que
+   * d'afficher chaque catégorie séparément.
+   */
+  async weeklyByCategory(establishmentId: string, metric: ChartMetric, weekStart?: string, categoryIdsCsv?: string) {
     const { from, to, monday } = this.weekRange(weekStart);
     const lines = await this.soldLines(establishmentId, from, to);
-    const filtered = categoryId ? lines.filter((l) => l.categoryId === categoryId) : lines;
+    const categoryIds = categoryIdsCsv ? categoryIdsCsv.split(',').filter((id) => id.length > 0) : [];
+
+    if (categoryIds.length > 0) {
+      const filtered = lines.filter((l) => l.categoryId != null && categoryIds.includes(l.categoryId));
+      const names = [...new Set(filtered.map((l) => l.categoryName))];
+      const values = emptyWeek();
+      for (const line of filtered) {
+        values[weekdayIndex(line.createdAt)] += valueOf(metric, line);
+      }
+      const name = names.length === 1 ? names[0] : `${categoryIds.length} catégories sélectionnées`;
+      return this.buildWeekResponse(monday, [{ id: null, name, values }]);
+    }
 
     const byKey = new Map<string, WeekSeries>();
-    for (const line of filtered) {
+    for (const line of lines) {
       const key = line.categoryId ?? '__none__';
       const entry = byKey.get(key) ?? { id: line.categoryId, name: line.categoryName, values: emptyWeek() };
       entry.values[weekdayIndex(line.createdAt)] += valueOf(metric, line);

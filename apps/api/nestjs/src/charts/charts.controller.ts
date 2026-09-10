@@ -31,7 +31,7 @@ export class ChartsController {
 
   @Get('weekly-by-category')
   weeklyByCategory(@Param('establishmentId') establishmentId: string, @Query() query: WeeklyByCategoryQueryDto) {
-    return this.charts.weeklyByCategory(establishmentId, query.metric, query.weekStart, query.categoryId);
+    return this.charts.weeklyByCategory(establishmentId, query.metric, query.weekStart, query.categoryIds);
   }
 
   @Get('weekly-by-product')

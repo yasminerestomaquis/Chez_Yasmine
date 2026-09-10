@@ -149,7 +149,7 @@ describe('ChartsService.weeklyByCategory', () => {
     expect(result.series.map((s) => s.name)).toEqual(['Plats', 'Boissons', 'Sans catégorie']);
   });
 
-  it('filters to a single category when categoryId is given', async () => {
+  it('filters to a single category when categoryIds is given', async () => {
     const prisma = makePrismaMock();
     const service = new ChartsService(prisma as unknown as PrismaService);
     prisma.saleItem.findMany.mockResolvedValue([
@@ -161,6 +161,22 @@ describe('ChartsService.weeklyByCategory', () => {
 
     expect(result.series).toHaveLength(1);
     expect(result.series[0].name).toBe('Boissons');
+  });
+
+  it('aggregates several selected categories into a single summed series', async () => {
+    const prisma = makePrismaMock();
+    const service = new ChartsService(prisma as unknown as PrismaService);
+    prisma.saleItem.findMany.mockResolvedValue([
+      item({ categoryId: 'c1', categoryName: 'Boissons', quantity: 1, unitPrice: 100 }),
+      item({ categoryId: 'c2', categoryName: 'Plats', quantity: 1, unitPrice: 500 }),
+      item({ categoryId: 'c3', categoryName: 'Desserts', quantity: 1, unitPrice: 50 }),
+    ]);
+
+    const result = await service.weeklyByCategory('est-1', 'revenue', '2026-09-07', 'c1,c2');
+
+    expect(result.series).toHaveLength(1);
+    expect(result.series[0].name).toBe('2 catégories sélectionnées');
+    expect(result.series[0].points.reduce((sum, p) => sum + p.value, 0)).toBe(600);
   });
 });
 
