@@ -152,7 +152,9 @@ class _PaymentDialogState extends State<_PaymentDialog> {
               TextFormField(
                 controller: _orderNumberController,
                 keyboardType: TextInputType.number,
-                decoration: const InputDecoration(labelText: 'N° de la commande'),
+                decoration: const InputDecoration(
+                  labelText: 'N° de la commande',
+                ),
               ),
             ],
             if (widget.showMarketNumberField) ...[
@@ -226,11 +228,17 @@ class _PaymentDialogState extends State<_PaymentDialog> {
         ),
         FilledButton(
           onPressed: _remaining.abs() < 0.01
-              ? () => Navigator.of(context).pop(PaymentOutcome(
+              ? () => Navigator.of(context).pop(
+                  PaymentOutcome(
                     _lines,
-                    orderNumber: int.tryParse(_orderNumberController.text.trim()),
-                    marketNumber: int.tryParse(_marketNumberController.text.trim()),
-                  ))
+                    orderNumber: int.tryParse(
+                      _orderNumberController.text.trim(),
+                    ),
+                    marketNumber: int.tryParse(
+                      _marketNumberController.text.trim(),
+                    ),
+                  ),
+                )
               : null,
           child: const Text('Valider le paiement'),
         ),

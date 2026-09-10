@@ -43,7 +43,10 @@ class TablesRepository {
 
   /// Ouvre une addition supplémentaire sur une table déjà occupée (bouton
   /// « Nouvelle addition ») — ne touche pas au statut de la table.
-  Future<OrderDetail> openAdditionalOrder(String tableId, {int? guestCount}) async {
+  Future<OrderDetail> openAdditionalOrder(
+    String tableId, {
+    int? guestCount,
+  }) async {
     final json = await _api.post(
       '$_base/tables/$tableId/additions',
       body: {'guestCount': ?guestCount},
@@ -103,7 +106,11 @@ class TablesRepository {
     );
   }
 
-  Future<void> updateItemQuantity(String orderId, String itemId, double quantity) {
+  Future<void> updateItemQuantity(
+    String orderId,
+    String itemId,
+    double quantity,
+  ) {
     return _api.patch(
       '$_base/orders/$orderId/items/$itemId',
       body: {'quantity': quantity},

@@ -25,13 +25,33 @@ class ReceiptPage extends StatelessWidget {
                 child: Column(
                   crossAxisAlignment: CrossAxisAlignment.stretch,
                   children: [
-                    const Text('Chez Yasmine', textAlign: TextAlign.center, style: TextStyle(fontWeight: FontWeight.bold, fontSize: 18)),
-                    Text(dateFormat.format(sale.createdAt.toLocal()), textAlign: TextAlign.center),
-                    Text('Reçu n° ${sale.id.substring(0, 8)}', textAlign: TextAlign.center),
+                    const Text(
+                      'Chez Yasmine',
+                      textAlign: TextAlign.center,
+                      style: TextStyle(
+                        fontWeight: FontWeight.bold,
+                        fontSize: 18,
+                      ),
+                    ),
+                    Text(
+                      dateFormat.format(sale.createdAt.toLocal()),
+                      textAlign: TextAlign.center,
+                    ),
+                    Text(
+                      'Reçu n° ${sale.id.substring(0, 8)}',
+                      textAlign: TextAlign.center,
+                    ),
                     if (sale.voidedAt != null)
                       const Padding(
                         padding: EdgeInsets.only(top: 8),
-                        child: Text('REMBOURSÉ', textAlign: TextAlign.center, style: TextStyle(color: Colors.red, fontWeight: FontWeight.bold)),
+                        child: Text(
+                          'REMBOURSÉ',
+                          textAlign: TextAlign.center,
+                          style: TextStyle(
+                            color: Colors.red,
+                            fontWeight: FontWeight.bold,
+                          ),
+                        ),
                       ),
                     const Divider(),
                     for (final item in sale.items)
@@ -39,7 +59,11 @@ class ReceiptPage extends StatelessWidget {
                         padding: const EdgeInsets.symmetric(vertical: 2),
                         child: Row(
                           children: [
-                            Expanded(child: Text('${item.name} x${item.quantity.toStringAsFixed(0)}')),
+                            Expanded(
+                              child: Text(
+                                '${item.name} x${item.quantity.toStringAsFixed(0)}',
+                              ),
+                            ),
                             Text(formatAmount(item.quantity * item.unitPrice)),
                           ],
                         ),
@@ -50,7 +74,10 @@ class ReceiptPage extends StatelessWidget {
                     _totalRow('Total', sale.total, bold: true),
                     const SizedBox(height: 8),
                     for (final payment in sale.payments)
-                      _totalRow(paymentMethodLabels[payment.method] ?? payment.method, payment.amount),
+                      _totalRow(
+                        paymentMethodLabels[payment.method] ?? payment.method,
+                        payment.amount,
+                      ),
                   ],
                 ),
               ),

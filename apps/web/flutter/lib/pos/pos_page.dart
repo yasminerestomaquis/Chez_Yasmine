@@ -152,14 +152,18 @@ class _PosPageState extends State<PosPage> {
     // chaque affiché si le panier contient au moins un produit du groupe
     // concerné, jamais par ligne.
     final hasCasePricingItems = _cart.any((l) => l.product.hasCasePricing);
-    final hasVariablePricingItems = _cart.any((l) => l.product.hasVariablePricing);
+    final hasVariablePricingItems = _cart.any(
+      (l) => l.product.hasVariablePricing,
+    );
     final outcome = await showPaymentDialog(
       context,
       total: total,
       showOrderNumberField: hasCasePricingItems,
       showMarketNumberField: hasVariablePricingItems,
       fetchLastOrderNumber: hasCasePricingItems ? _pos.lastOrderNumber : null,
-      fetchLastMarketNumber: hasVariablePricingItems ? _pos.lastMarketNumber : null,
+      fetchLastMarketNumber: hasVariablePricingItems
+          ? _pos.lastMarketNumber
+          : null,
     );
     if (outcome == null) return;
 
