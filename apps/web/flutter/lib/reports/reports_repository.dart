@@ -10,8 +10,16 @@ class ReportsRepository {
 
   String get _base => '/establishments/$establishmentId/reports';
 
-  Future<ReportSummary> getSummary({String period = 'day'}) async {
-    final json = await _api.get('$_base/summary', query: {'period': period}) as Map<String, dynamic>;
+  /// [period] est ignoré si [from]/[to] sont fournis (même priorité que
+  /// côté serveur, voir `ReportsService.resolveRange`) — utilisé par
+  /// `ReportsPage` pour recalculer la période de comparaison précédente
+  /// (même borne `from`/`to` déjà exposée par l'API, pas de nouvelle route).
+  Future<ReportSummary> getSummary({String? period, String? from, String? to}) async {
+    final json = await _api.get('$_base/summary', query: {
+      if (from == null && to == null) 'period': period ?? 'day',
+      'from': ?from,
+      'to': ?to,
+    }) as Map<String, dynamic>;
     return ReportSummary.fromJson(json);
   }
 
