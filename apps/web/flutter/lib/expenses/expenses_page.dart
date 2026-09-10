@@ -38,6 +38,8 @@ class _ExpensesPageState extends State<ExpensesPage> {
     final formKey = GlobalKey<FormState>();
     String? selectedCategory;
     var periodicity = ExpensePeriodicity.oneOff;
+    var expenseDate = DateTime.now();
+    final dateFieldFormat = DateFormat('dd/MM/yyyy');
 
     final saved = await showDialog<bool>(
       context: context,
@@ -56,6 +58,23 @@ class _ExpensesPageState extends State<ExpensesPage> {
                       controller: labelController,
                       decoration: const InputDecoration(labelText: 'Libellé *'),
                       validator: (v) => (v == null || v.trim().isEmpty) ? 'Libellé requis' : null,
+                    ),
+                    Padding(
+                      padding: const EdgeInsets.only(top: 8, bottom: 4),
+                      child: OutlinedButton.icon(
+                        onPressed: () async {
+                          final picked = await showDatePicker(
+                            context: context,
+                            initialDate: expenseDate,
+                            firstDate: DateTime(2020),
+                            lastDate: DateTime(2100),
+                            helpText: 'Date de la dépense',
+                          );
+                          if (picked != null) setDialogState(() => expenseDate = picked);
+                        },
+                        icon: const Icon(Icons.calendar_today_outlined),
+                        label: Text('Date : ${dateFieldFormat.format(expenseDate)}'),
+                      ),
                     ),
                     DropdownButtonFormField<String>(
                       initialValue: selectedCategory,
@@ -130,6 +149,7 @@ class _ExpensesPageState extends State<ExpensesPage> {
         amount: amount,
         periodicity: periodicity,
         note: note,
+        expenseDate: expenseDate,
       );
       _reload();
     } on ApiException catch (e) {
@@ -149,6 +169,8 @@ class _ExpensesPageState extends State<ExpensesPage> {
           'amount': amount,
           'periodicity': periodicity.value,
           if (note.isNotEmpty) 'note': note,
+          'expenseDate':
+              '${expenseDate.year.toString().padLeft(4, '0')}-${expenseDate.month.toString().padLeft(2, '0')}-${expenseDate.day.toString().padLeft(2, '0')}',
         },
         createdAt: DateTime.now(),
       ));

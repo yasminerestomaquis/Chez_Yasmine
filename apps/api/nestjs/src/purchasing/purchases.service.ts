@@ -31,20 +31,11 @@ const purchaseInclude = {
 interface ResolvedLine {
   productId: string;
   productName: string;
-  /** Nulles pour une ligne "prix variable" — voir PurchaseItem dans schema.prisma. */
-  casesOrdered: number | null;
-  bottlesPerCase: number | null;
-  purchasePricePerCase: number | null;
-  quantity: number; // casesOrdered * bottlesPerCase (casier) ou quantityOrdered (prix variable) — ce qui bouge réellement le stock
-  unitPrice: number; // purchasePricePerCase / bottlesPerCase (casier) ou unitPurchasePrice (prix variable)
-  /**
-   * Prix variable uniquement : ce produit n'a aucun `purchasePrice` fixé
-   * dans le Catalogue (toujours nul pour ces catégories), donc chaque achat
-   * devient la seule source de coût pour les rapports/graphiques — écrasé
-   * par le plus récent, comme le reste de l'application qui ne connaît que
-   * le coût d'achat "actuel" du produit (pas de coût historique par vente).
-   */
-  purchasePriceToSnapshot: number | null;
+  casesOrdered: number;
+  bottlesPerCase: number;
+  purchasePricePerCase: number;
+  quantity: number; // casesOrdered * bottlesPerCase — ce qui bouge réellement le stock
+  unitPrice: number; // purchasePricePerCase / bottlesPerCase — quantity * unitPrice = casesOrdered * purchasePricePerCase
 }
 
 @Injectable()
@@ -81,6 +72,12 @@ export class PurchasesService {
    * le stock entre directement à la création, pas d'étape de réception
    * séparée pour ce flux (contrairement à receive() ci-dessous, conservé
    * pour les achats "classiques" existants).
+   *
+   * Les catégories à prix variable (Poulets, Poissons, Plats africains) ne
+   * passent PAS par ce module (décision explicite de l'utilisateur,
+   * 2026-09-10, revenant sur un essai précédent) — leur coût est réparti a
+   * posteriori depuis la dépense "Marché" au prorata du chiffre d'affaires
+   * (voir docs/api/reports.md).
    */
   async create(establishmentId: string, userId: string, dto: CreatePurchaseDto) {
     if (dto.supplierId) {
@@ -90,7 +87,7 @@ export class PurchasesService {
       }
     }
     const lines = await this.resolveLines(establishmentId, dto.items);
-    const total = lines.reduce((sum, l) => sum + l.quantity * l.unitPrice, 0);
+    const total = lines.reduce((sum, l) => sum + l.casesOrdered * l.purchasePricePerCase, 0);
 
     const purchase = await this.prisma.$transaction(async (tx) => {
       const created = await tx.purchase.create({
@@ -115,7 +112,7 @@ export class PurchasesService {
         include: purchaseInclude,
       });
       for (const line of lines) {
-        await this.applyStock(tx, line.productId, line.quantity, userId, `Commande n°${dto.orderNumber}`, line.purchasePriceToSnapshot);
+        await this.applyStock(tx, line.productId, line.quantity, userId, `Commande n°${dto.orderNumber}`);
       }
       return created;
     }, PURCHASE_TRANSACTION_OPTIONS);
@@ -143,7 +140,7 @@ export class PurchasesService {
       }
     }
     const lines = await this.resolveLines(establishmentId, dto.items);
-    const total = lines.reduce((sum, l) => sum + l.quantity * l.unitPrice, 0);
+    const total = lines.reduce((sum, l) => sum + l.casesOrdered * l.purchasePricePerCase, 0);
     const orderNumber = dto.orderNumber ?? existing.orderNumber;
 
     return this.prisma.$transaction(async (tx) => {
@@ -171,7 +168,7 @@ export class PurchasesService {
         },
       });
       for (const line of lines) {
-        await this.applyStock(tx, line.productId, line.quantity, userId, `Correction commande n°${orderNumber}`, line.purchasePriceToSnapshot);
+        await this.applyStock(tx, line.productId, line.quantity, userId, `Correction commande n°${orderNumber}`);
       }
       return tx.purchase.findUniqueOrThrow({ where: { id: purchaseId }, include: purchaseInclude });
     }, PURCHASE_TRANSACTION_OPTIONS);
@@ -258,16 +255,11 @@ export class PurchasesService {
   }
 
   /**
-   * Valide et résout chaque ligne selon la catégorie réelle du produit :
-   * - hasCasePricing (Bières, Vins, Sucreries) : nbre de casiers requis dans
-   *   la requête, bottlesPerCase/purchasePricePerCase toujours dérivés du
-   *   Catalogue, jamais acceptés du client (défense en profondeur).
-   * - hasVariablePricing (Poulets, Poissons, Plats africains) : quantité
-   *   achetée + prix d'achat unitaire requis dans la requête (aucune donnée
-   *   de coût n'existe dans le Catalogue pour ces catégories — voir
-   *   ProductsService, purchasePrice y est toujours nul).
-   * - Toute autre catégorie : achat non pris en charge par ce module pour
-   *   l'instant, rejeté explicitement.
+   * Valide et résout chaque ligne : le produit doit appartenir à
+   * l'établissement, à une catégorie hasCasePricing, avec
+   * bottlesPerCase/purchasePricePerCase renseignés dans le Catalogue — ces
+   * deux valeurs sont toujours lues depuis le produit, jamais acceptées du
+   * client (défense en profondeur, comme partout ailleurs dans l'application).
    */
   private async resolveLines(establishmentId: string, items: PurchaseItemDto[]): Promise<ResolvedLine[]> {
     const productIds = [...new Set(items.map((i) => i.productId))];
@@ -282,71 +274,33 @@ export class PurchasesService {
 
     return items.map((item) => {
       const product = productById.get(item.productId)!;
-
-      if (product.category?.hasCasePricing) {
-        if (item.casesOrdered == null) {
-          throw new BadRequestException(`${product.name} : nombre de casiers commandés requis`);
-        }
-        if (!product.bottlesPerCase || product.bottlesPerCase < 1) {
-          throw new BadRequestException(`${product.name} : "Nbre de bouteilles par casier" non renseigné dans le Catalogue`);
-        }
-        if (product.purchasePricePerCase == null) {
-          throw new BadRequestException(`${product.name} : "Prix d'achat par casier" non renseigné dans le Catalogue`);
-        }
-        const bottlesPerCase = product.bottlesPerCase;
-        const purchasePricePerCase = product.purchasePricePerCase.toNumber();
-        return {
-          productId: product.id,
-          productName: product.name,
-          casesOrdered: item.casesOrdered,
-          bottlesPerCase,
-          purchasePricePerCase,
-          quantity: item.casesOrdered * bottlesPerCase,
-          unitPrice: purchasePricePerCase / bottlesPerCase,
-          purchasePriceToSnapshot: null,
-        };
+      if (!product.category?.hasCasePricing) {
+        throw new BadRequestException(
+          `${product.name} n'appartient pas à une catégorie à prix par casier (Bières, Vins, Sucreries)`,
+        );
       }
-
-      if (product.category?.hasVariablePricing) {
-        if (item.quantityOrdered == null) {
-          throw new BadRequestException(`${product.name} : quantité achetée requise`);
-        }
-        if (item.unitPurchasePrice == null) {
-          throw new BadRequestException(`${product.name} : prix d'achat unitaire requis`);
-        }
-        return {
-          productId: product.id,
-          productName: product.name,
-          casesOrdered: null,
-          bottlesPerCase: null,
-          purchasePricePerCase: null,
-          quantity: item.quantityOrdered,
-          unitPrice: item.unitPurchasePrice,
-          purchasePriceToSnapshot: item.unitPurchasePrice,
-        };
+      if (!product.bottlesPerCase || product.bottlesPerCase < 1) {
+        throw new BadRequestException(`${product.name} : "Nbre de bouteilles par casier" non renseigné dans le Catalogue`);
       }
-
-      throw new BadRequestException(
-        `${product.name} n'appartient ni à une catégorie à prix par casier (Bières, Vins, Sucreries) ni à prix variable (Poulets, Poissons, Plats africains)`,
-      );
+      if (product.purchasePricePerCase == null) {
+        throw new BadRequestException(`${product.name} : "Prix d'achat par casier" non renseigné dans le Catalogue`);
+      }
+      const bottlesPerCase = product.bottlesPerCase;
+      const purchasePricePerCase = product.purchasePricePerCase.toNumber();
+      return {
+        productId: product.id,
+        productName: product.name,
+        casesOrdered: item.casesOrdered,
+        bottlesPerCase,
+        purchasePricePerCase,
+        quantity: item.casesOrdered * bottlesPerCase,
+        unitPrice: purchasePricePerCase / bottlesPerCase,
+      };
     });
   }
 
-  private async applyStock(
-    tx: Tx,
-    productId: string,
-    quantity: number,
-    userId: string,
-    reason: string,
-    purchasePriceToSnapshot?: number | null,
-  ): Promise<void> {
-    await tx.product.update({
-      where: { id: productId },
-      data: {
-        stockQuantity: { increment: quantity },
-        ...(purchasePriceToSnapshot != null ? { purchasePrice: purchasePriceToSnapshot } : {}),
-      },
-    });
+  private async applyStock(tx: Tx, productId: string, quantity: number, userId: string, reason: string): Promise<void> {
+    await tx.product.update({ where: { id: productId }, data: { stockQuantity: { increment: quantity } } });
     await tx.stockMovement.create({ data: { productId, type: 'in', quantity, reason, createdBy: userId } });
   }
 

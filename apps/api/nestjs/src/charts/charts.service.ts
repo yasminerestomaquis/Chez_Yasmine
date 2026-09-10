@@ -28,6 +28,8 @@ interface SoldLine {
   productName: string;
   categoryId: string | null;
   categoryName: string;
+  /** Usage interne à soldLines()/allocateMarcheCost() uniquement — jamais exposé dans une réponse. */
+  isVariablePricing: boolean;
 }
 
 interface WeekSeries {
@@ -50,6 +52,11 @@ function mondayOf(date: Date): Date {
 
 function emptyWeek(): number[] {
   return [0, 0, 0, 0, 0, 0, 0];
+}
+
+/** Clé "jour civil" (mêmes composantes locales que weekdayIndex/mondayOf ci-dessus), pour regrouper ventes et dépenses "Marché" du même jour. */
+function dayKey(date: Date): string {
+  return `${date.getFullYear()}-${date.getMonth()}-${date.getDate()}`;
 }
 
 function valueOf(metric: ChartMetric, line: Pick<SoldLine, 'revenue' | 'cost'>): number {
@@ -75,6 +82,14 @@ function valueOf(metric: ChartMetric, line: Pick<SoldLine, 'revenue' | 'cost'>):
 export class ChartsService {
   constructor(private readonly prisma: PrismaService) {}
 
+  /**
+   * Poulets, Poissons, Plats africains (`Category.hasVariablePricing`) n'ont
+   * aucun prix d'achat catalogue (`effectiveUnitCost` y retombe toujours sur
+   * `purchasePrice`, resté nul par design — voir docs/api/catalog.md), donc
+   * `cost` vaut 0 pour ces lignes ici ; `allocateMarcheCost` le corrige juste
+   * après en répartissant la dépense "Marché" du jour au prorata du chiffre
+   * d'affaires (voir docs/api/reports.md pour le raisonnement complet).
+   */
   private async soldLines(establishmentId: string, from: Date, to: Date): Promise<SoldLine[]> {
     const items = await this.prisma.saleItem.findMany({
       where: { sale: { establishmentId, voidedAt: null, createdAt: { gte: from, lte: to } } },
@@ -90,12 +105,12 @@ export class ChartsService {
             bottlesPerCase: true,
             purchasePricePerCase: true,
             categoryId: true,
-            category: { select: { name: true, hasCasePricing: true } },
+            category: { select: { name: true, hasCasePricing: true, hasVariablePricing: true } },
           },
         },
       },
     });
-    return items.map((item) => {
+    const lines = items.map((item) => {
       const quantity = item.quantity.toNumber();
       const unitPrice = item.unitPrice.toNumber();
       return {
@@ -106,8 +121,51 @@ export class ChartsService {
         productName: item.name,
         categoryId: item.product.categoryId,
         categoryName: item.product.category?.name ?? 'Sans catégorie',
+        isVariablePricing: item.product.category?.hasVariablePricing ?? false,
       };
     });
+    await this.allocateMarcheCost(establishmentId, from, to, lines);
+    return lines;
+  }
+
+  /**
+   * Répartit chaque jour la dépense "Marché" entre les lignes de vente des
+   * catégories à prix variable (Poulets, Poissons, Plats africains), au
+   * prorata du chiffre d'affaires de CE jour parmi ces catégories — décision
+   * explicite de l'utilisateur (2026-09-10), après abandon d'un suivi du
+   * coût produit par produit (le prix d'achat varie trop d'un jour à l'autre
+   * pour qu'un "dernier prix connu" reste fiable rétroactivement). Aucune
+   * dépense "Marché" ce jour-là (ou aucune vente de ces catégories) : coût
+   * nul pour ces lignes ce jour, comme aujourd'hui.
+   */
+  private async allocateMarcheCost(establishmentId: string, from: Date, to: Date, lines: SoldLine[]): Promise<void> {
+    const variableLines = lines.filter((l) => l.isVariablePricing);
+    if (variableLines.length === 0) return;
+
+    const marcheExpenses = await this.prisma.expense.findMany({
+      where: { establishmentId, category: 'Marché', expenseDate: { gte: from, lte: to } },
+      select: { amount: true, expenseDate: true },
+    });
+    if (marcheExpenses.length === 0) return;
+
+    const marcheByDay = new Map<string, number>();
+    for (const e of marcheExpenses) {
+      const key = dayKey(e.expenseDate);
+      marcheByDay.set(key, (marcheByDay.get(key) ?? 0) + e.amount.toNumber());
+    }
+
+    const revenueByDay = new Map<string, number>();
+    for (const line of variableLines) {
+      const key = dayKey(line.createdAt);
+      revenueByDay.set(key, (revenueByDay.get(key) ?? 0) + line.revenue);
+    }
+
+    for (const line of variableLines) {
+      const key = dayKey(line.createdAt);
+      const marcheForDay = marcheByDay.get(key) ?? 0;
+      const dayRevenue = revenueByDay.get(key) ?? 0;
+      line.cost = dayRevenue > 0 ? marcheForDay * (line.revenue / dayRevenue) : 0;
+    }
   }
 
   private weekRange(weekStart?: string): { from: Date; to: Date; monday: Date } {

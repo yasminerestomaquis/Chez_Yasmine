@@ -11,17 +11,11 @@ import 'suppliers_page.dart';
 
 final _dateFormat = DateFormat('dd/MM/yyyy');
 
-/// Deux types de produits achetables (voir docs/api/purchasing.md), en 3
-/// sous-modules : Créer une commande (choix produit + quantité, un produit à
-/// la fois) → Liste de commandes (lignes accumulées de la commande en cours,
-/// "Créer la commande" l'enregistre) → Historique (commandes déjà
-/// enregistrées, avec modification/suppression).
-/// - **Par casier** (Bières, Vins, Sucreries) : nbre de casiers commandés,
-///   bottlesPerCase/purchasePricePerCase toujours dérivés du Catalogue.
-/// - **Prix variable** (Poulets, Poissons, Plats africains) : quantité
-///   achetée + prix d'achat unitaire, saisis directement (pas de casier) —
-///   met à jour Product.purchasePrice pour que les rapports/graphiques par
-///   catégorie fonctionnent pour ces produits.
+/// Commande par casier (Bières, Vins, Sucreries — voir docs/api/purchasing.md),
+/// en 3 sous-modules : Créer une commande (choix produit + casiers commandés,
+/// un produit à la fois) → Liste de commandes (lignes accumulées de la
+/// commande en cours, "Créer la commande" l'enregistre) → Historique
+/// (commandes déjà enregistrées, avec modification/suppression).
 class PurchasesPage extends StatefulWidget {
   const PurchasesPage({super.key, required this.establishmentId});
 
@@ -31,25 +25,14 @@ class PurchasesPage extends StatefulWidget {
   State<PurchasesPage> createState() => _PurchasesPageState();
 }
 
-class _PurchasesPageState extends State<PurchasesPage>
-    with SingleTickerProviderStateMixin {
-  late final PurchasingRepository _repository = PurchasingRepository(
-    ApiClient(),
-    widget.establishmentId,
-  );
-  late final CatalogRepository _catalog = CatalogRepository(
-    ApiClient(),
-    widget.establishmentId,
-  );
-  late final TabController _tabController = TabController(
-    length: 3,
-    vsync: this,
-  );
+class _PurchasesPageState extends State<PurchasesPage> with SingleTickerProviderStateMixin {
+  late final PurchasingRepository _repository = PurchasingRepository(ApiClient(), widget.establishmentId);
+  late final CatalogRepository _catalog = CatalogRepository(ApiClient(), widget.establishmentId);
+  late final TabController _tabController = TabController(length: 3, vsync: this);
 
   late Future<void> _future = _load();
   List<Supplier> _suppliers = [];
   List<Product> _caseProducts = [];
-  List<Product> _variableProducts = [];
   List<Purchase> _purchases = [];
 
   // État de la commande en cours (partagé entre "Créer une commande" et "Liste de commandes").
@@ -61,8 +44,6 @@ class _PurchasesPageState extends State<PurchasesPage>
   // Ligne en cours de configuration dans "Créer une commande".
   Product? _selectedProduct;
   final _casesOrderedController = TextEditingController(text: '1');
-  final _quantityOrderedController = TextEditingController(text: '1');
-  final _unitPurchasePriceController = TextEditingController();
 
   @override
   void initState() {
@@ -74,12 +55,7 @@ class _PurchasesPageState extends State<PurchasesPage>
     final products = await _catalog.listProducts();
     final suppliers = await _repository.listSuppliers();
     final purchases = await _repository.listPurchases();
-    _caseProducts = products
-        .where((p) => p.status == 'active' && p.hasCasePricing)
-        .toList();
-    _variableProducts = products
-        .where((p) => p.status == 'active' && p.hasVariablePricing)
-        .toList();
+    _caseProducts = products.where((p) => p.status == 'active' && p.hasCasePricing).toList();
     _suppliers = suppliers;
     _purchases = purchases;
   }
@@ -88,9 +64,7 @@ class _PurchasesPageState extends State<PurchasesPage>
 
   Future<void> _refreshOrderNumberSuggestion() async {
     try {
-      final next = await _repository.nextOrderNumber(
-        supplierId: _draftSupplierId,
-      );
+      final next = await _repository.nextOrderNumber(supplierId: _draftSupplierId);
       if (!mounted) return;
       setState(() => _orderNumberController.text = '$next');
     } catch (_) {
@@ -104,48 +78,16 @@ class _PurchasesPageState extends State<PurchasesPage>
       builder: (_) => SimpleDialog(
         title: const Text('Choisir un produit'),
         children: [
-          if (_caseProducts.isEmpty && _variableProducts.isEmpty)
+          if (_caseProducts.isEmpty)
             const Padding(
               padding: EdgeInsets.symmetric(horizontal: 24, vertical: 8),
               child: Text(
-                'Aucun produit achetable. Activez "Prix par casier" (Bières, Vins, Sucreries) ou '
-                '"Prix variable" (Poulets, Poissons, Plats africains) sur une catégorie dans le Catalogue.',
+                'Aucun produit à prix par casier. Activez "Prix par casier" sur une catégorie '
+                '(ex. Bières, Vins, Sucreries) dans le Catalogue.',
               ),
             ),
-          if (_caseProducts.isNotEmpty) ...[
-            const Padding(
-              padding: EdgeInsets.symmetric(horizontal: 24, vertical: 4),
-              child: Text(
-                'Prix par casier',
-                style: TextStyle(
-                  fontWeight: FontWeight.bold,
-                  color: Colors.grey,
-                ),
-              ),
-            ),
-            for (final product in _caseProducts)
-              SimpleDialogOption(
-                onPressed: () => Navigator.of(context).pop(product),
-                child: Text(product.name),
-              ),
-          ],
-          if (_variableProducts.isNotEmpty) ...[
-            const Padding(
-              padding: EdgeInsets.symmetric(horizontal: 24, vertical: 4),
-              child: Text(
-                'Prix variable',
-                style: TextStyle(
-                  fontWeight: FontWeight.bold,
-                  color: Colors.grey,
-                ),
-              ),
-            ),
-            for (final product in _variableProducts)
-              SimpleDialogOption(
-                onPressed: () => Navigator.of(context).pop(product),
-                child: Text(product.name),
-              ),
-          ],
+          for (final product in _caseProducts)
+            SimpleDialogOption(onPressed: () => Navigator.of(context).pop(product), child: Text(product.name)),
         ],
       ),
     );
@@ -153,8 +95,6 @@ class _PurchasesPageState extends State<PurchasesPage>
     setState(() {
       _selectedProduct = chosen;
       _casesOrderedController.text = '1';
-      _quantityOrderedController.text = '1';
-      _unitPurchasePriceController.clear();
     });
   }
 
@@ -173,54 +113,23 @@ class _PurchasesPageState extends State<PurchasesPage>
   void _addLineToOrder() {
     final product = _selectedProduct;
     if (product == null) return;
-    if (product.hasVariablePricing) {
-      final quantity = double.tryParse(
-        _quantityOrderedController.text.trim().replaceAll(',', '.'),
-      );
-      final unitPrice = double.tryParse(
-        _unitPurchasePriceController.text.trim().replaceAll(',', '.'),
-      );
-      if (quantity == null ||
-          quantity <= 0 ||
-          unitPrice == null ||
-          unitPrice <= 0) {
-        return;
-      }
-      setState(() {
-        _draftLines.add(
-          _DraftLine.variable(
-            product: product,
-            quantityOrdered: quantity,
-            unitPurchasePrice: unitPrice,
-          ),
-        );
-        _selectedProduct = null;
-      });
-    } else {
-      final cases = double.tryParse(
-        _casesOrderedController.text.trim().replaceAll(',', '.'),
-      );
-      if (cases == null || cases <= 0) return;
-      setState(() {
-        _draftLines.add(
-          _DraftLine.caseOrder(product: product, casesOrdered: cases),
-        );
-        _selectedProduct = null;
-      });
-    }
+    final cases = double.tryParse(_casesOrderedController.text.trim().replaceAll(',', '.'));
+    if (cases == null || cases <= 0) return;
+    setState(() {
+      _draftLines.add(_DraftLine(product: product, casesOrdered: cases));
+      _selectedProduct = null;
+      _casesOrderedController.text = '1';
+    });
     _tabController.animateTo(1);
   }
 
-  void _removeDraftLine(_DraftLine line) =>
-      setState(() => _draftLines.remove(line));
+  void _removeDraftLine(_DraftLine line) => setState(() => _draftLines.remove(line));
 
   Future<void> _submitOrder() async {
     if (_draftLines.isEmpty) return;
     final orderNumber = int.tryParse(_orderNumberController.text.trim());
     if (orderNumber == null) {
-      ScaffoldMessenger.of(
-        context,
-      ).showSnackBar(const SnackBar(content: Text('N° de commande invalide')));
+      ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('N° de commande invalide')));
       return;
     }
     try {
@@ -228,7 +137,7 @@ class _PurchasesPageState extends State<PurchasesPage>
         supplierId: _draftSupplierId,
         orderNumber: orderNumber,
         orderDate: _draftOrderDate,
-        items: _draftLines.map((l) => l.toApiItem()).toList(),
+        items: _draftLines.map((l) => {'productId': l.product.id, 'casesOrdered': l.casesOrdered}).toList(),
       );
       setState(() {
         _draftLines.clear();
@@ -238,13 +147,11 @@ class _PurchasesPageState extends State<PurchasesPage>
       _refreshOrderNumberSuggestion();
       _reload();
       if (!mounted) return;
-      ScaffoldMessenger.of(context)
-          .showSnackBar(const SnackBar(content: Text('Commande enregistrée.')));
+      ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('Commande enregistrée.')));
       _tabController.animateTo(2);
     } on ApiException catch (e) {
       if (!mounted) return;
-      ScaffoldMessenger.of(context)
-          .showSnackBar(SnackBar(content: Text(e.message)));
+      ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text(e.message)));
     }
   }
 
@@ -253,8 +160,6 @@ class _PurchasesPageState extends State<PurchasesPage>
     _tabController.dispose();
     _orderNumberController.dispose();
     _casesOrderedController.dispose();
-    _quantityOrderedController.dispose();
-    _unitPurchasePriceController.dispose();
     super.dispose();
   }
 
@@ -268,11 +173,7 @@ class _PurchasesPageState extends State<PurchasesPage>
             tooltip: 'Fournisseurs',
             icon: const Icon(Icons.local_shipping_outlined),
             onPressed: () async {
-              await Navigator.of(context).push(
-                MaterialPageRoute(
-                  builder: (_) => SuppliersPage(repository: _repository),
-                ),
-              );
+              await Navigator.of(context).push(MaterialPageRoute(builder: (_) => SuppliersPage(repository: _repository)));
               _reload();
             },
           ),
@@ -293,20 +194,11 @@ class _PurchasesPageState extends State<PurchasesPage>
             return const Center(child: CircularProgressIndicator());
           }
           if (snapshot.hasError) {
-            final message = snapshot.error is ApiException
-                ? (snapshot.error as ApiException).message
-                : '${snapshot.error}';
+            final message = snapshot.error is ApiException ? (snapshot.error as ApiException).message : '${snapshot.error}';
             return Center(
               child: Column(
                 mainAxisSize: MainAxisSize.min,
-                children: [
-                  Text(message),
-                  const SizedBox(height: 12),
-                  OutlinedButton(
-                    onPressed: _reload,
-                    child: const Text('Réessayer'),
-                  ),
-                ],
+                children: [Text(message), const SizedBox(height: 12), OutlinedButton(onPressed: _reload, child: const Text('Réessayer'))],
               ),
             );
           }
@@ -341,8 +233,7 @@ class _PurchasesPageState extends State<PurchasesPage>
           decoration: const InputDecoration(labelText: 'Fournisseur'),
           items: [
             const DropdownMenuItem(value: null, child: Text('Aucun')),
-            for (final supplier in _suppliers)
-              DropdownMenuItem(value: supplier.id, child: Text(supplier.name)),
+            for (final supplier in _suppliers) DropdownMenuItem(value: supplier.id, child: Text(supplier.name)),
           ],
           onChanged: (value) {
             setState(() => _draftSupplierId = value);
@@ -358,216 +249,101 @@ class _PurchasesPageState extends State<PurchasesPage>
                 children: [
                   const Text('Aucun produit sélectionné.'),
                   const SizedBox(height: 12),
-                  OutlinedButton.icon(
-                    onPressed: _pickProduct,
-                    icon: const Icon(Icons.add),
-                    label: const Text('Choisir un produit'),
-                  ),
+                  OutlinedButton.icon(onPressed: _pickProduct, icon: const Icon(Icons.add), label: const Text('Choisir un produit')),
                 ],
               ),
             ),
           )
         else
-          _selectedProduct!.hasVariablePricing
-              ? _buildVariableProductCard()
-              : _buildCaseProductCard(),
+          _buildSelectedProductCard(),
       ],
     );
   }
 
-  Widget _buildCaseProductCard() {
+  Widget _buildSelectedProductCard() {
     final product = _selectedProduct!;
-    final cases =
-        double.tryParse(
-          _casesOrderedController.text.trim().replaceAll(',', '.'),
-        ) ??
-        0;
+    final cases = double.tryParse(_casesOrderedController.text.trim().replaceAll(',', '.')) ?? 0;
     final totalBottles = cases * (product.bottlesPerCase ?? 0);
+    final primaryImage = product.images.where((i) => i.isPrimary).firstOrNull ?? product.images.firstOrNull;
     return Card(
       child: Padding(
         padding: const EdgeInsets.all(16),
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.stretch,
           children: [
-            _productHeader(product),
-            const SizedBox(height: 12),
-            _readOnlyField(
-              'Nbre de bouteilles par casier',
-              '${product.bottlesPerCase ?? '—'}',
+            Row(
+              children: [
+                ClipRRect(
+                  borderRadius: BorderRadius.circular(8),
+                  child: SizedBox(
+                    width: 64,
+                    height: 64,
+                    child: primaryImage == null
+                        ? const ColoredBox(color: Color(0x11000000), child: Icon(Icons.local_drink_outlined))
+                        : FutureBuilder<String>(
+                            future: _catalog.getImageUrl(product.id, primaryImage.id, variant: 'thumbnail'),
+                            builder: (context, snapshot) {
+                              if (!snapshot.hasData) return const ColoredBox(color: Color(0x11000000));
+                              return ColoredBox(
+                                color: const Color(0x11000000),
+                                child: Image.network(snapshot.data!, fit: BoxFit.contain),
+                              );
+                            },
+                          ),
+                  ),
+                ),
+                const SizedBox(width: 12),
+                Expanded(child: Text(product.name, style: const TextStyle(fontWeight: FontWeight.w600, fontSize: 16))),
+                TextButton(onPressed: _pickProduct, child: const Text('Changer')),
+              ],
             ),
+            const SizedBox(height: 12),
+            _readOnlyField('Nbre de bouteilles par casier', '${product.bottlesPerCase ?? '—'}'),
             const SizedBox(height: 12),
             TextFormField(
               controller: _casesOrderedController,
               keyboardType: TextInputType.number,
-              decoration: const InputDecoration(
-                labelText: 'Nbre de casiers commandés',
-              ),
+              decoration: const InputDecoration(labelText: 'Nbre de casiers commandés'),
               onChanged: (_) => setState(() {}),
             ),
             const SizedBox(height: 12),
-            _readOnlyField(
-              'Nbre total de bouteilles',
-              totalBottles.toStringAsFixed(0),
-            ),
+            _readOnlyField('Nbre total de bouteilles', totalBottles.toStringAsFixed(0)),
             const SizedBox(height: 16),
-            FilledButton(
-              onPressed: _addLineToOrder,
-              child: const Text('Ajouter la commande'),
-            ),
+            FilledButton(onPressed: _addLineToOrder, child: const Text('Ajouter la commande')),
           ],
         ),
       ),
-    );
-  }
-
-  Widget _buildVariableProductCard() {
-    final product = _selectedProduct!;
-    final quantity =
-        double.tryParse(
-          _quantityOrderedController.text.trim().replaceAll(',', '.'),
-        ) ??
-        0;
-    final unitPrice =
-        double.tryParse(
-          _unitPurchasePriceController.text.trim().replaceAll(',', '.'),
-        ) ??
-        0;
-    return Card(
-      child: Padding(
-        padding: const EdgeInsets.all(16),
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.stretch,
-          children: [
-            _productHeader(product),
-            const SizedBox(height: 4),
-            const Text(
-              'Prix variable : quantité et prix d\'achat unitaire saisis ici, pas de casier fixe.',
-              style: TextStyle(color: Colors.grey, fontSize: 12),
-            ),
-            const SizedBox(height: 12),
-            TextFormField(
-              controller: _quantityOrderedController,
-              keyboardType: TextInputType.number,
-              decoration: const InputDecoration(labelText: 'Quantité achetée'),
-              onChanged: (_) => setState(() {}),
-            ),
-            const SizedBox(height: 12),
-            TextFormField(
-              controller: _unitPurchasePriceController,
-              keyboardType: const TextInputType.numberWithOptions(
-                decimal: true,
-              ),
-              decoration: const InputDecoration(
-                labelText: "Prix d'achat unitaire (FCFA)",
-              ),
-              onChanged: (_) => setState(() {}),
-            ),
-            const SizedBox(height: 12),
-            _readOnlyField('Total', (quantity * unitPrice).toStringAsFixed(0)),
-            const SizedBox(height: 16),
-            FilledButton(
-              onPressed: _addLineToOrder,
-              child: const Text('Ajouter la commande'),
-            ),
-          ],
-        ),
-      ),
-    );
-  }
-
-  Widget _productHeader(Product product) {
-    final primaryImage =
-        product.images.where((i) => i.isPrimary).firstOrNull ??
-        product.images.firstOrNull;
-    return Row(
-      children: [
-        ClipRRect(
-          borderRadius: BorderRadius.circular(8),
-          child: SizedBox(
-            width: 64,
-            height: 64,
-            child: primaryImage == null
-                ? const ColoredBox(
-                    color: Color(0x11000000),
-                    child: Icon(Icons.local_drink_outlined),
-                  )
-                : FutureBuilder<String>(
-                    future: _catalog.getImageUrl(
-                      product.id,
-                      primaryImage.id,
-                      variant: 'thumbnail',
-                    ),
-                    builder: (context, snapshot) {
-                      if (!snapshot.hasData) {
-                        return const ColoredBox(color: Color(0x11000000));
-                      }
-                      return ColoredBox(
-                        color: const Color(0x11000000),
-                        child: Image.network(
-                          snapshot.data!,
-                          fit: BoxFit.contain,
-                        ),
-                      );
-                    },
-                  ),
-          ),
-        ),
-        const SizedBox(width: 12),
-        Expanded(
-          child: Text(
-            product.name,
-            style: const TextStyle(fontWeight: FontWeight.w600, fontSize: 16),
-          ),
-        ),
-        TextButton(onPressed: _pickProduct, child: const Text('Changer')),
-      ],
     );
   }
 
   Widget _buildListTab() {
-    final totalPrice = _draftLines.fold<double>(
-      0,
-      (sum, l) => sum + l.lineTotal,
-    );
+    final totalCases = _draftLines.fold<double>(0, (sum, l) => sum + l.casesOrdered);
+    final totalPrice = _draftLines.fold<double>(0, (sum, l) => sum + l.lineTotal);
     return Column(
       children: [
         Padding(
           padding: const EdgeInsets.all(16),
           child: Row(
             children: [
-              Expanded(
-                child: _readOnlyField(
-                  'Date',
-                  _dateFormat.format(_draftOrderDate),
-                ),
-              ),
+              Expanded(child: _readOnlyField('Date', _dateFormat.format(_draftOrderDate))),
               const SizedBox(width: 12),
-              Expanded(
-                child: _readOnlyField(
-                  'N° de la commande',
-                  _orderNumberController.text,
-                ),
-              ),
+              Expanded(child: _readOnlyField('N° de la commande', _orderNumberController.text)),
             ],
           ),
         ),
         Expanded(
           child: _draftLines.isEmpty
-              ? const Center(
-                  child: Text(
-                    'Aucune ligne — ajoutez un produit depuis "Créer une commande".',
-                  ),
-                )
+              ? const Center(child: Text('Aucune ligne — ajoutez un produit depuis "Créer une commande".'))
               : ListView(
                   children: [
                     for (final line in _draftLines)
                       ListTile(
                         title: Text(line.product.name),
-                        subtitle: Text(line.summary),
-                        trailing: IconButton(
-                          icon: const Icon(Icons.delete_outline),
-                          onPressed: () => _removeDraftLine(line),
+                        subtitle: Text(
+                          '${line.purchasePricePerCase.toStringAsFixed(0)} FCFA/casier × '
+                          '${line.casesOrdered.toStringAsFixed(0)} casier(s) = ${line.lineTotal.toStringAsFixed(0)} FCFA',
                         ),
+                        trailing: IconButton(icon: const Icon(Icons.delete_outline), onPressed: () => _removeDraftLine(line)),
                       ),
                   ],
                 ),
@@ -578,22 +354,15 @@ class _PurchasesPageState extends State<PurchasesPage>
             children: [
               Row(
                 children: [
-                  const Text(
-                    'Total',
-                    style: TextStyle(fontWeight: FontWeight.bold),
-                  ),
+                  const Text('Total', style: TextStyle(fontWeight: FontWeight.bold)),
                   const Spacer(),
-                  Text(
-                    '${totalPrice.toStringAsFixed(0)} FCFA',
-                    style: const TextStyle(fontWeight: FontWeight.bold),
-                  ),
+                  Text('${totalCases.toStringAsFixed(0)} casier(s)', style: const TextStyle(fontWeight: FontWeight.bold)),
+                  const SizedBox(width: 16),
+                  Text('${totalPrice.toStringAsFixed(0)} FCFA', style: const TextStyle(fontWeight: FontWeight.bold)),
                 ],
               ),
               const SizedBox(height: 12),
-              FilledButton(
-                onPressed: _draftLines.isEmpty ? null : _submitOrder,
-                child: const Text('Créer la commande'),
-              ),
+              FilledButton(onPressed: _draftLines.isEmpty ? null : _submitOrder, child: const Text('Créer la commande')),
             ],
           ),
         ),
@@ -609,22 +378,14 @@ class _PurchasesPageState extends State<PurchasesPage>
       children: [
         for (final purchase in _purchases)
           ListTile(
-            title: Text(
-              'N° ${purchase.orderNumber} — ${purchase.supplier?.name ?? 'Sans fournisseur'}',
-            ),
+            title: Text('N° ${purchase.orderNumber} — ${purchase.supplier?.name ?? 'Sans fournisseur'}'),
             subtitle: Text(
-              '${_dateFormat.format(purchase.orderDate)} — ${purchase.quantitySummary} — '
+              '${_dateFormat.format(purchase.orderDate)} — ${purchase.totalCases.toStringAsFixed(0)} casier(s) — '
               '${purchase.total.toStringAsFixed(0)} FCFA',
             ),
             onTap: () async {
               await Navigator.of(context).push(
-                MaterialPageRoute(
-                  builder: (_) => PurchaseOrderDetailPage(
-                    repository: _repository,
-                    catalog: _catalog,
-                    purchase: purchase,
-                  ),
-                ),
+                MaterialPageRoute(builder: (_) => PurchaseOrderDetailPage(repository: _repository, catalog: _catalog, purchase: purchase)),
               );
               _reload();
             },
@@ -635,54 +396,16 @@ class _PurchasesPageState extends State<PurchasesPage>
 }
 
 Widget _readOnlyField(String label, String value) => InputDecorator(
-  decoration: InputDecoration(labelText: label),
-  child: Text(value),
-);
+      decoration: InputDecoration(labelText: label),
+      child: Text(value),
+    );
 
 class _DraftLine {
-  _DraftLine._({
-    required this.product,
-    this.casesOrdered,
-    this.quantityOrdered,
-    this.unitPurchasePrice,
-  });
-
-  factory _DraftLine.caseOrder({
-    required Product product,
-    required double casesOrdered,
-  }) => _DraftLine._(product: product, casesOrdered: casesOrdered);
-
-  factory _DraftLine.variable({
-    required Product product,
-    required double quantityOrdered,
-    required double unitPurchasePrice,
-  }) => _DraftLine._(
-    product: product,
-    quantityOrdered: quantityOrdered,
-    unitPurchasePrice: unitPurchasePrice,
-  );
+  _DraftLine({required this.product, required this.casesOrdered});
 
   final Product product;
-  final double? casesOrdered;
-  final double? quantityOrdered;
-  final double? unitPurchasePrice;
+  final double casesOrdered;
 
-  bool get isCasePricing => casesOrdered != null;
   double get purchasePricePerCase => product.purchasePricePerCase ?? 0;
-
-  double get lineTotal => isCasePricing
-      ? casesOrdered! * purchasePricePerCase
-      : quantityOrdered! * unitPurchasePrice!;
-
-  String get summary => isCasePricing
-      ? '${purchasePricePerCase.toStringAsFixed(0)} FCFA/casier × ${casesOrdered!.toStringAsFixed(0)} casier(s) = ${lineTotal.toStringAsFixed(0)} FCFA'
-      : '${unitPurchasePrice!.toStringAsFixed(0)} FCFA/unité × ${quantityOrdered!.toStringAsFixed(0)} = ${lineTotal.toStringAsFixed(0)} FCFA';
-
-  Map<String, dynamic> toApiItem() => isCasePricing
-      ? {'productId': product.id, 'casesOrdered': casesOrdered}
-      : {
-          'productId': product.id,
-          'quantityOrdered': quantityOrdered,
-          'unitPurchasePrice': unitPurchasePrice,
-        };
+  double get lineTotal => casesOrdered * purchasePricePerCase;
 }

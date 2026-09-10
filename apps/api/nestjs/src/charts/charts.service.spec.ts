@@ -30,6 +30,7 @@ interface ItemOverrides {
   categoryId?: string | null;
   categoryName?: string;
   hasCasePricing?: boolean;
+  hasVariablePricing?: boolean;
   bottlesPerCase?: number | null;
   purchasePricePerCase?: number | null;
 }
@@ -50,7 +51,11 @@ function item(overrides: ItemOverrides = {}) {
       category:
         categoryId === null
           ? null
-          : { name: overrides.categoryName ?? 'Boissons', hasCasePricing: overrides.hasCasePricing ?? false },
+          : {
+              name: overrides.categoryName ?? 'Boissons',
+              hasCasePricing: overrides.hasCasePricing ?? false,
+              hasVariablePricing: overrides.hasVariablePricing ?? false,
+            },
     },
   };
 }
@@ -177,6 +182,73 @@ describe('ChartsService.weeklyByCategory', () => {
     expect(result.series).toHaveLength(1);
     expect(result.series[0].name).toBe('2 catégories sélectionnées');
     expect(result.series[0].points.reduce((sum, p) => sum + p.value, 0)).toBe(600);
+  });
+});
+
+describe('ChartsService — répartition du coût "Marché" (Poulets/Poissons/Plats africains)', () => {
+  it('allocates a day\'s Marché expense across variable-pricing sales, pro-rata to that day\'s revenue', async () => {
+    const prisma = makePrismaMock();
+    const service = new ChartsService(prisma as unknown as PrismaService);
+    // Lundi 07/09 : Poulet (CA 700) et Poisson (CA 300) — même jour, même catégorie tag.
+    prisma.saleItem.findMany.mockResolvedValue([
+      item({
+        productId: 'p-poulet',
+        name: 'Poulet',
+        categoryId: 'c-poulet',
+        categoryName: 'Poulets',
+        hasVariablePricing: true,
+        quantity: 1,
+        unitPrice: 700,
+        createdAt: new Date('2026-09-07T12:00:00Z'),
+      }),
+      item({
+        productId: 'p-poisson',
+        name: 'Poisson',
+        categoryId: 'c-poisson',
+        categoryName: 'Poissons',
+        hasVariablePricing: true,
+        quantity: 1,
+        unitPrice: 300,
+        createdAt: new Date('2026-09-07T12:00:00Z'),
+      }),
+    ]);
+    prisma.expense.findMany.mockResolvedValue([expense({ amount: 1000, category: 'Marché', createdAt: new Date('2026-09-07T09:00:00Z') })]);
+
+    const result = await service.weeklyByCategory('est-1', 'profit', '2026-09-07');
+
+    const poulet = result.series.find((s) => s.name === 'Poulets')!;
+    const poisson = result.series.find((s) => s.name === 'Poissons')!;
+    // Poulet : 70% du CA du jour → 700 de coût alloué → bénéfice 0. Poisson : 30% → 300 → bénéfice 0.
+    expect(poulet.points.reduce((sum, p) => sum + p.value, 0)).toBeCloseTo(0);
+    expect(poisson.points.reduce((sum, p) => sum + p.value, 0)).toBeCloseTo(0);
+    expect(prisma.expense.findMany).toHaveBeenCalledWith(
+      expect.objectContaining({ where: expect.objectContaining({ establishmentId: 'est-1', category: 'Marché' }) }),
+    );
+  });
+
+  it('does not allocate any cost on a day with no Marché expense, even with variable-pricing sales', async () => {
+    const prisma = makePrismaMock();
+    const service = new ChartsService(prisma as unknown as PrismaService);
+    prisma.saleItem.findMany.mockResolvedValue([
+      // purchasePrice: 0, comme en production — ProductsService force toujours
+      // Product.purchasePrice à null pour une catégorie hasVariablePricing.
+      item({ categoryId: 'c-poulet', categoryName: 'Poulets', hasVariablePricing: true, quantity: 1, unitPrice: 700, purchasePrice: 0 }),
+    ]);
+    prisma.expense.findMany.mockResolvedValue([]);
+
+    const result = await service.weeklyByCategory('est-1', 'profit', '2026-09-07');
+
+    expect(result.series[0].points.reduce((sum, p) => sum + p.value, 0)).toBe(700);
+  });
+
+  it('never queries expenses when no line belongs to a variable-pricing category', async () => {
+    const prisma = makePrismaMock();
+    const service = new ChartsService(prisma as unknown as PrismaService);
+    prisma.saleItem.findMany.mockResolvedValue([item({ hasCasePricing: true, purchasePrice: 60, quantity: 1, unitPrice: 100 })]);
+
+    await service.weeklyTotal('est-1', 'profit', '2026-09-07');
+
+    expect(prisma.expense.findMany).not.toHaveBeenCalled();
   });
 });
 

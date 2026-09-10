@@ -22,6 +22,7 @@ class ExpensesRepository {
     required double amount,
     ExpensePeriodicity periodicity = ExpensePeriodicity.oneOff,
     String? note,
+    DateTime? expenseDate,
   }) async {
     final json = await _api.post(_base, body: {
       'id': ?id,
@@ -30,9 +31,13 @@ class ExpensesRepository {
       'amount': amount,
       'periodicity': periodicity.value,
       'note': ?note,
+      'expenseDate': ?(expenseDate != null ? _dateOnly(expenseDate) : null),
     }) as Map<String, dynamic>;
     return Expense.fromJson(json);
   }
+
+  String _dateOnly(DateTime date) =>
+      '${date.year.toString().padLeft(4, '0')}-${date.month.toString().padLeft(2, '0')}-${date.day.toString().padLeft(2, '0')}';
 
   Future<void> deleteExpense(String expenseId) {
     return _api.delete('$_base/$expenseId');
