@@ -7,6 +7,20 @@ import type { UpdatePurchaseDto } from './dto/update-purchase.dto.js';
 
 type Tx = Prisma.TransactionClient;
 
+/**
+ * Le timeout interactif par défaut de Prisma (5 s) est trop court dès qu'une
+ * commande compte une quinzaine de lignes ou plus : chaque ligne coûte
+ * plusieurs allers-retours séquentiels (lecture + écriture stock + écriture
+ * mouvement), et le tout s'exécute dans UNE seule transaction. Constaté en
+ * conditions réelles (2026-09-10) : une commande de 15 articles dépassait
+ * systématiquement les 5 s et échouait en 500 générique (le timeout Prisma
+ * n'est pas une HttpException, donc NestJS ne peut pas le traduire en erreur
+ * lisible) — reproduit avec un compte de démonstration jetable avant ce
+ * correctif. 30 s laisse une marge confortable pour des commandes nettement
+ * plus grandes.
+ */
+const PURCHASE_TRANSACTION_OPTIONS = { timeout: 30_000 };
+
 const purchaseInclude = {
   supplier: true,
   items: {
@@ -104,7 +118,7 @@ export class PurchasesService {
         await this.applyStock(tx, line.productId, line.quantity, userId, `Commande n°${dto.orderNumber}`, line.purchasePriceToSnapshot);
       }
       return created;
-    });
+    }, PURCHASE_TRANSACTION_OPTIONS);
     await this.activityNotifier.notify(
       establishmentId,
       'Achat reçu',
@@ -160,7 +174,7 @@ export class PurchasesService {
         await this.applyStock(tx, line.productId, line.quantity, userId, `Correction commande n°${orderNumber}`, line.purchasePriceToSnapshot);
       }
       return tx.purchase.findUniqueOrThrow({ where: { id: purchaseId }, include: purchaseInclude });
-    });
+    }, PURCHASE_TRANSACTION_OPTIONS);
   }
 
   /** Annule l'effet stock de la commande (clampé à 0, jamais négatif) puis la supprime. */
@@ -183,7 +197,7 @@ export class PurchasesService {
         );
       }
       await tx.purchase.delete({ where: { id: purchaseId } });
-    });
+    }, PURCHASE_TRANSACTION_OPTIONS);
   }
 
   /** Retourne le prochain N° de commande suggéré pour un fournisseur (ou "aucun fournisseur") — simple convenance, jamais imposé côté serveur. */
@@ -222,7 +236,7 @@ export class PurchasesService {
         data: { status: 'received' },
         include: purchaseInclude,
       });
-    });
+    }, PURCHASE_TRANSACTION_OPTIONS);
     await this.activityNotifier.notify(
       establishmentId,
       'Achat reçu',
