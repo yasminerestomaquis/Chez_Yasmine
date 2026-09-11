@@ -21,16 +21,19 @@ class CartLine {
 
 class SaleItemResult {
   SaleItemResult({
+    required this.productId,
     required this.name,
     required this.quantity,
     required this.unitPrice,
   });
 
+  final String productId;
   final String name;
   final double quantity;
   final double unitPrice;
 
   factory SaleItemResult.fromJson(Map<String, dynamic> json) => SaleItemResult(
+    productId: json['productId'] as String,
     name: json['name'] as String,
     quantity: (json['quantity'] as num).toDouble(),
     unitPrice: (json['unitPrice'] as num).toDouble(),
@@ -59,6 +62,7 @@ class SaleResult {
     required this.items,
     required this.payments,
     this.voidedAt,
+    this.orderNumber,
   });
 
   final String id;
@@ -69,6 +73,10 @@ class SaleResult {
   final List<SaleItemResult> items;
   final List<PaymentResult> payments;
   final DateTime? voidedAt;
+
+  /// Bières/Vins/Sucreries -> N° de la commande d'achat correspondante,
+  /// saisi en caisse (voir `docs/api/pos.md`) — nul si non renseigné.
+  final int? orderNumber;
 
   factory SaleResult.fromJson(Map<String, dynamic> json) => SaleResult(
     id: json['id'] as String,
@@ -85,6 +93,7 @@ class SaleResult {
     voidedAt: json['voidedAt'] != null
         ? DateTime.parse(json['voidedAt'] as String)
         : null,
+    orderNumber: (json['orderNumber'] as num?)?.toInt(),
   );
 }
 

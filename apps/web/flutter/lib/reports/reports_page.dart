@@ -2,13 +2,14 @@ import 'package:flutter/material.dart';
 import 'package:intl/intl.dart';
 
 import '../api/api_client.dart';
+import '../catalog/catalog_repository.dart';
 import '../charts/chart_models.dart';
 import '../charts/charts_repository.dart';
 import '../charts/weekly_bar_chart.dart';
-import '../common/browser_download.dart';
 import '../common/formatting.dart';
 import '../customers/customers_page.dart';
 import '../losses/losses_page.dart';
+import '../pos/pos_repository.dart';
 import '../purchasing/purchasing_models.dart';
 import '../purchasing/purchasing_repository.dart';
 import '../stock/stock_page.dart';
@@ -69,6 +70,14 @@ class _ReportsPageState extends State<ReportsPage> {
     widget.establishmentId,
   );
   late final PurchasingRepository _purchasing = PurchasingRepository(
+    ApiClient(),
+    widget.establishmentId,
+  );
+  late final CatalogRepository _catalog = CatalogRepository(
+    ApiClient(),
+    widget.establishmentId,
+  );
+  late final PosRepository _pos = PosRepository(
     ApiClient(),
     widget.establishmentId,
   );
@@ -299,28 +308,123 @@ class _ReportsPageState extends State<ReportsPage> {
     );
   }
 
-  /// Listing Excel des produits vendus des catégories Bières/Vins/Sucreries
-  /// (`hasCasePricing`) pour un jour choisi par l'utilisateur — bouton
-  /// distinct du menu Export (§ demande utilisateur), déclenche un vrai
-  /// téléchargement de fichier (contrairement au CSV/dialogue texte
-  /// existant, un binaire .xlsx ne se copie-colle pas).
-  Future<void> _exportBeveragesSoldExcel() async {
+  /// Listing des produits vendus des catégories Bières/Vins/Sucreries
+  /// (`hasCasePricing`) pour un jour choisi par l'utilisateur, affiché
+  /// directement dans l'application — construit côté client à partir de
+  /// deux routes déjà existantes (`GET .../products` et
+  /// `GET .../sales?day=`), sans dépendre d'un nouvel endpoint serveur.
+  Future<void> _showBeveragesSoldListing() async {
     final picked = await showDatePicker(
       context: context,
       initialDate: DateTime.now(),
       firstDate: DateTime(2020),
       lastDate: DateTime(2100),
-      helpText: 'Date des ventes à exporter',
+      helpText: 'Date des ventes à afficher',
     );
     if (picked == null) return;
+
     try {
-      final result = await _repository.exportBeveragesSoldExcel(
-        _isoDateFormat.format(picked),
-      );
-      downloadBytes(
-        result.bytes,
-        result.filename ??
-            'Boissons vendues ${DateFormat('dd-MM-yyyy').format(picked)}.xlsx',
+      final day = _isoDateFormat.format(picked);
+      final (products, sales) = await (
+        _catalog.listProducts(),
+        _pos.listForDay(day),
+      ).wait;
+
+      final caseProductIds = products
+          .where((p) => p.hasCasePricing)
+          .map((p) => p.id)
+          .toSet();
+
+      final rows =
+          <({String name, int? orderNumber, double quantity, double total})>[];
+      for (final sale in sales) {
+        if (sale.voidedAt != null) continue;
+        for (final item in sale.items) {
+          if (!caseProductIds.contains(item.productId)) continue;
+          rows.add((
+            name: item.name,
+            orderNumber: sale.orderNumber,
+            quantity: item.quantity,
+            total: item.quantity * item.unitPrice,
+          ));
+        }
+      }
+      final totalQuantity = rows.fold<double>(0, (sum, r) => sum + r.quantity);
+      final totalAmount = rows.fold<double>(0, (sum, r) => sum + r.total);
+
+      if (!mounted) return;
+      await showDialog<void>(
+        context: context,
+        builder: (context) => AlertDialog(
+          title: Text('Boissons vendues — ${_orderDateFormat.format(picked)}'),
+          content: SizedBox(
+            width: double.maxFinite,
+            child: SingleChildScrollView(
+              child: rows.isEmpty
+                  ? const Padding(
+                      padding: EdgeInsets.symmetric(vertical: 16),
+                      child: Text(
+                        'Aucune vente Bières/Vins/Sucreries ce jour-là.',
+                      ),
+                    )
+                  : DataTable(
+                      columns: const [
+                        DataColumn(label: Text('Produit')),
+                        DataColumn(label: Text('N° commande')),
+                        DataColumn(label: Text('Qté'), numeric: true),
+                        DataColumn(
+                          label: Text('Montant (FCFA)'),
+                          numeric: true,
+                        ),
+                      ],
+                      rows: [
+                        for (final r in rows)
+                          DataRow(
+                            cells: [
+                              DataCell(Text(r.name)),
+                              DataCell(Text(r.orderNumber?.toString() ?? '—')),
+                              DataCell(Text(r.quantity.toStringAsFixed(0))),
+                              DataCell(Text(formatAmount(r.total))),
+                            ],
+                          ),
+                        DataRow(
+                          cells: [
+                            const DataCell(
+                              Text(
+                                'TOTAL',
+                                style: TextStyle(fontWeight: FontWeight.bold),
+                              ),
+                            ),
+                            const DataCell(Text('')),
+                            DataCell(
+                              Text(
+                                totalQuantity.toStringAsFixed(0),
+                                style: const TextStyle(
+                                  fontWeight: FontWeight.bold,
+                                ),
+                              ),
+                            ),
+                            DataCell(
+                              Text(
+                                formatAmount(totalAmount),
+                                style: const TextStyle(
+                                  fontWeight: FontWeight.bold,
+                                ),
+                              ),
+                            ),
+                          ],
+                        ),
+                      ],
+                    ),
+            ),
+          ),
+          actions: [
+            TextButton(
+              onPressed: () => Navigator.of(context).pop(),
+              child: const Text('Fermer'),
+            ),
+          ],
+        ),
       );
     } on ApiException catch (e) {
       if (!mounted) return;
@@ -671,9 +775,9 @@ class _ReportsPageState extends State<ReportsPage> {
         title: const Text('Rapports'),
         actions: [
           IconButton(
-            tooltip: 'Boissons vendues (Excel)',
+            tooltip: 'Boissons vendues',
             icon: const Icon(Icons.local_bar_outlined),
-            onPressed: _exportBeveragesSoldExcel,
+            onPressed: _showBeveragesSoldListing,
           ),
           PopupMenuButton<String>(
             tooltip: 'Exporter',
