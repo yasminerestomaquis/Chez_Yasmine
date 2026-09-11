@@ -6,6 +6,7 @@ import '../catalog/catalog_repository.dart';
 import '../charts/chart_models.dart';
 import '../charts/charts_repository.dart';
 import '../charts/weekly_bar_chart.dart';
+import '../common/browser_download.dart';
 import '../common/formatting.dart';
 import '../customers/customers_page.dart';
 import '../losses/losses_page.dart';
@@ -313,6 +314,8 @@ class _ReportsPageState extends State<ReportsPage> {
   /// directement dans l'application — construit côté client à partir de
   /// deux routes déjà existantes (`GET .../products` et
   /// `GET .../sales?day=`), sans dépendre d'un nouvel endpoint serveur.
+  /// Le dialogue propose aussi « Exporter en Excel », qui réutilise
+  /// `GET .../reports/beverages-sold.xlsx` (`ReportsRepository.exportBeveragesSoldExcel`).
   Future<void> _showBeveragesSoldListing() async {
     final picked = await showDatePicker(
       context: context,
@@ -353,7 +356,7 @@ class _ReportsPageState extends State<ReportsPage> {
       final totalAmount = rows.fold<double>(0, (sum, r) => sum + r.total);
 
       if (!mounted) return;
-      await showDialog<void>(
+      final exportRequested = await showDialog<bool>(
         context: context,
         builder: (context) => AlertDialog(
           title: Text('Boissons vendues — ${_orderDateFormat.format(picked)}'),
@@ -420,11 +423,35 @@ class _ReportsPageState extends State<ReportsPage> {
           ),
           actions: [
             TextButton(
-              onPressed: () => Navigator.of(context).pop(),
+              onPressed: () => Navigator.of(context).pop(false),
               child: const Text('Fermer'),
             ),
+            if (rows.isNotEmpty)
+              FilledButton.icon(
+                onPressed: () => Navigator.of(context).pop(true),
+                icon: const Icon(Icons.file_download_outlined),
+                label: const Text('Exporter en Excel'),
+              ),
           ],
         ),
+      );
+      if (exportRequested == true) {
+        await _downloadBeveragesSoldExcel(day, picked);
+      }
+    } on ApiException catch (e) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(context)
+          .showSnackBar(SnackBar(content: Text(e.message)));
+    }
+  }
+
+  Future<void> _downloadBeveragesSoldExcel(String day, DateTime picked) async {
+    try {
+      final result = await _repository.exportBeveragesSoldExcel(day);
+      downloadBytes(
+        result.bytes,
+        result.filename ??
+            'Boissons vendues ${DateFormat('dd-MM-yyyy').format(picked)}.xlsx',
       );
     } on ApiException catch (e) {
       if (!mounted) return;
