@@ -62,10 +62,15 @@ on conflict do nothing;
 -- Serveur : vente en salle et gestion des tables.
 -- `products.view` : même raison que pour Caissier ci-dessus — la prise de
 -- commande en salle (FloorPlanPage/TableOrderPage) liste aussi le catalogue.
+-- `reports.view` (2026-09-11, demande utilisateur) : uniquement pour que
+-- l'accueil affiche les 3 cartes "Recettes boissons" (jour/Espèces/Mobile
+-- Money) — HomeDashboard masque volontairement pour ce rôle le reste des
+-- indicateurs (ventes plats, total, commandes, alertes stock), voir
+-- lib/home/home_dashboard.dart.
 insert into role_permissions (role_id, permission_id)
 select r.id, p.id
 from roles r
-join permissions p on p.code in ('pos.sell', 'tables.manage', 'products.view')
+join permissions p on p.code in ('pos.sell', 'tables.manage', 'products.view', 'reports.view')
 where r.is_system and r.name = 'Serveur'
 on conflict do nothing;
 

@@ -2,6 +2,10 @@
 
 ## [Unreleased]
 
+### Ajouté (2026-09-11) — Vue « boissons » de l'accueil pour le Serveur
+- Le Serveur a reçu `reports.view` (nécessaire pour l'appel API sous-jacent) mais l'accueil (`HomeDashboard`) ne lui montre, à sa demande, que « Recettes boissons aujourd'hui », « Boissons · Espèces » et « Boissons · Mobile Money » — total « Ventes aujourd'hui », recettes/paiements Plats, Commandes aujourd'hui et Alertes stock restent masqués pour ce rôle (réservés aux rôles avec vue d'ensemble). Voir `docs/api/reports.md`.
+- `flutter analyze`/`test`/`build web` ✅ (47/47 tests Flutter).
+
 ### Corrigé (2026-09-11) — Caisse/Tables inutilisables par Caissier et Serveur (`products.view`)
 - Même après le correctif de l'accueil ci-dessous, un compte Serveur (ou Caissier) ne pouvait toujours pas ouvrir la Caisse ni ajouter un produit à une addition : `PosPage`/`TableOrderPage`/`FloorPlanPage` listent le catalogue via `GET .../products` et `GET .../categories`, routes qui exigeaient `products.manage` — une permission que **ni Caissier ni Serveur** n'ont (seuls Magasinier, Gérant et l'administration l'ont).
 - Corrigé en séparant lecture et gestion : nouvelle permission `products.view` (lecture seule), affectée aux routes `GET` du catalogue (produits, catégories, URL d'image) à la place de `products.manage` (qui reste réservé à la création/édition/suppression). `products.view` accordée à Caissier, Serveur et Magasinier — voir `docs/api/catalog.md`.

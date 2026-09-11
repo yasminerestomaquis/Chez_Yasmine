@@ -103,6 +103,15 @@ class _DashboardData {
 }
 
 class _HomeDashboardState extends State<HomeDashboard> {
+  // Comparaison par nom de rôle (voir supabase/seed/001_roles_permissions.sql)
+  // faute d'un identifiant de rôle stable exposé côté client (`GET /auth/me`
+  // ne renvoie que `role` en texte, pas de code de permission — voir
+  // `MyEstablishment`). Demande utilisateur du 2026-09-11 : le Serveur a
+  // `reports.view` (uniquement pour ces 3 cartes) mais ne doit voir ni le
+  // total "Ventes aujourd'hui", ni les recettes/paiements Plats, ni
+  // Commandes/Alertes stock — réservés aux rôles avec une vue d'ensemble.
+  bool get _isServeur => widget.roleName == 'Serveur';
+
   late final ReportsRepository _reports = ReportsRepository(
     ApiClient(),
     widget.establishmentId,
@@ -751,11 +760,11 @@ class _HomeDashboardState extends State<HomeDashboard> {
                     style: const TextStyle(color: AppColors.textSecondary),
                   ),
                   const SizedBox(height: 18),
-                  if (breakdown != null) ...[
+                  if (breakdown != null && !_isServeur) ...[
                     _salesSummaryCard(breakdown),
                     const SizedBox(height: 10),
                   ],
-                  if (summary != null) ...[
+                  if (summary != null && !_isServeur) ...[
                     GridView(
                       shrinkWrap: true,
                       physics: const NeverScrollableScrollPhysics(),
@@ -799,13 +808,12 @@ class _HomeDashboardState extends State<HomeDashboard> {
                     GridView(
                       shrinkWrap: true,
                       physics: const NeverScrollableScrollPhysics(),
-                      gridDelegate:
-                          const SliverGridDelegateWithFixedCrossAxisCount(
-                            crossAxisCount: 2,
-                            crossAxisSpacing: 10,
-                            mainAxisSpacing: 10,
-                            mainAxisExtent: 110,
-                          ),
+                      gridDelegate: SliverGridDelegateWithFixedCrossAxisCount(
+                        crossAxisCount: _isServeur ? 1 : 2,
+                        crossAxisSpacing: 10,
+                        mainAxisSpacing: 10,
+                        mainAxisExtent: 110,
+                      ),
                       children: [
                         _statCard(
                           icon: Icons.sports_bar_outlined,
@@ -813,12 +821,13 @@ class _HomeDashboardState extends State<HomeDashboard> {
                           value: '${formatAmount(breakdown.boissonsRevenue)} F',
                           color: AppColors.green,
                         ),
-                        _statCard(
-                          icon: Icons.restaurant_outlined,
-                          label: 'Recettes plats aujourd\'hui',
-                          value: '${formatAmount(breakdown.platsRevenue)} F',
-                          color: AppColors.orange,
-                        ),
+                        if (!_isServeur)
+                          _statCard(
+                            icon: Icons.restaurant_outlined,
+                            label: 'Recettes plats aujourd\'hui',
+                            value: '${formatAmount(breakdown.platsRevenue)} F',
+                            color: AppColors.orange,
+                          ),
                       ],
                     ),
                     const SizedBox(height: 20),
@@ -856,19 +865,21 @@ class _HomeDashboardState extends State<HomeDashboard> {
                               '${formatAmount(breakdown.boissonsMobileMoney)} F',
                           color: AppColors.green,
                         ),
-                        _statCard(
-                          icon: Icons.payments_outlined,
-                          label: 'Plats · Espèces',
-                          value: '${formatAmount(breakdown.platsCash)} F',
-                          color: AppColors.orange,
-                        ),
-                        _statCard(
-                          icon: Icons.phone_iphone_outlined,
-                          label: 'Plats · Mobile Money',
-                          value:
-                              '${formatAmount(breakdown.platsMobileMoney)} F',
-                          color: AppColors.orange,
-                        ),
+                        if (!_isServeur) ...[
+                          _statCard(
+                            icon: Icons.payments_outlined,
+                            label: 'Plats · Espèces',
+                            value: '${formatAmount(breakdown.platsCash)} F',
+                            color: AppColors.orange,
+                          ),
+                          _statCard(
+                            icon: Icons.phone_iphone_outlined,
+                            label: 'Plats · Mobile Money',
+                            value:
+                                '${formatAmount(breakdown.platsMobileMoney)} F',
+                            color: AppColors.orange,
+                          ),
+                        ],
                       ],
                     ),
                     const SizedBox(height: 20),
