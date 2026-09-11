@@ -2,6 +2,11 @@
 
 ## [Unreleased]
 
+### Corrigé (2026-09-11) — Accueil bloqué pour les rôles sans `reports.view` (Serveur, Magasinier)
+- Un compte invité avec le rôle Serveur voyait, à sa première connexion, l'écran d'accueil entier remplacé par « Impossible de joindre l'API : Permission(s) manquante(s) : reports.view » — alors qu'il a parfaitement le droit d'utiliser Tables/Caisse (`pos.sell`, `tables.manage`). Cause : `HomeDashboard._load()` groupait 3 appels réseau dans un seul `Future.wait`, dont 2 (`summary`/`paymentCategoryBreakdown`) exigent `reports.view` — une permission que Serveur et Magasinier n'ont pas (`supabase/seed/001_roles_permissions.sql`) — faisant échouer tout le chargement de la page au lieu de simplement ces 2 appels.
+- Corrigé : ces 2 appels sont désormais tolérants à un 403 (autre erreur toujours fatale, comportement inchangé) ; l'accueil masque juste les cartes de statistiques concernées et garde la navigation (modules, actions rapides) intacte pour les rôles sans `reports.view`.
+- `flutter analyze`/`test`/`build web` ✅ (47/47 tests Flutter).
+
 ### Ajouté (2026-09-11) — « Boissons vendues » (Rapports) : listing intégré + export Excel
 - Nouveau bouton dans Rapports (icône 🍺, à côté du menu Export existant) : affiche, **directement dans l'application**, le listing des produits vendus des catégories Bières/Vins/Sucreries (`hasCasePricing`) pour une date choisie — colonnes Nom du produit / N° de commande / Quantité vendue / Montant total, ligne de total en gras. Construit côté client à partir de deux routes déjà déployées (`GET .../products`, `GET .../sales?day=`).
 - Le dialogue propose aussi un bouton **« Exporter en Excel »**, qui télécharge le fichier `.xlsx` équivalent via `GET .../reports/beverages-sold.xlsx` (`exceljs`, nommé `Boissons vendues jj-mm-aaaa.xlsx`) — **les deux options coexistent** (décision utilisateur).

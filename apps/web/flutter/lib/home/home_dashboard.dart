@@ -93,8 +93,12 @@ class _DashboardData {
     required this.breakdown,
     required this.unreadCount,
   });
-  final ReportSummary summary;
-  final PaymentCategoryBreakdown breakdown;
+  // Nullable : un rôle sans la permission `reports.view` (ex. Serveur,
+  // Magasinier — voir supabase/seed/001_roles_permissions.sql) n'a pas accès
+  // à ces indicateurs. On l'affiche sans eux plutôt que de bloquer tout
+  // l'accueil derrière un 403 (voir _load()).
+  final ReportSummary? summary;
+  final PaymentCategoryBreakdown? breakdown;
   final int unreadCount;
 }
 
@@ -187,16 +191,34 @@ class _HomeDashboardState extends State<HomeDashboard> {
     ),
   ];
 
+  /// Les 3 appels partent en parallèle (démarrés avant tout `await`), comme
+  /// avant. `summary`/`breakdown` exigent `reports.view` côté serveur — un
+  /// rôle qui ne l'a pas (Serveur, Magasinier, ...) reçoit un 403 dessus,
+  /// traité ici comme "pas d'indicateurs à afficher" plutôt que de faire
+  /// échouer tout le chargement de l'accueil (`unreadCount` n'exige aucune
+  /// permission particulière, voir NotificationsController).
   Future<_DashboardData> _load() async {
-    final results = await Future.wait<dynamic>([
-      _reports.getSummary(),
-      _reports.getPaymentCategoryBreakdown(),
-      _notifications.unreadCount(),
-    ]);
+    final summaryFuture = _reports.getSummary();
+    final breakdownFuture = _reports.getPaymentCategoryBreakdown();
+    final unreadFuture = _notifications.unreadCount();
+
+    ReportSummary? summary;
+    try {
+      summary = await summaryFuture;
+    } on ApiException catch (e) {
+      if (e.statusCode != 403) rethrow;
+    }
+    PaymentCategoryBreakdown? breakdown;
+    try {
+      breakdown = await breakdownFuture;
+    } on ApiException catch (e) {
+      if (e.statusCode != 403) rethrow;
+    }
+
     return _DashboardData(
-      summary: results[0] as ReportSummary,
-      breakdown: results[1] as PaymentCategoryBreakdown,
-      unreadCount: results[2] as int,
+      summary: summary,
+      breakdown: breakdown,
+      unreadCount: await unreadFuture,
     );
   }
 
@@ -384,12 +406,19 @@ class _HomeDashboardState extends State<HomeDashboard> {
                     color: AppColors.green.withValues(alpha: 0.12),
                     shape: BoxShape.circle,
                   ),
-                  child: const Icon(Icons.trending_up, color: AppColors.green, size: 20),
+                  child: const Icon(
+                    Icons.trending_up,
+                    color: AppColors.green,
+                    size: 20,
+                  ),
                 ),
                 const SizedBox(width: 10),
                 const Text(
                   "Total ventes Aujourd'hui",
-                  style: TextStyle(color: AppColors.textSecondary, fontSize: 12),
+                  style: TextStyle(
+                    color: AppColors.textSecondary,
+                    fontSize: 12,
+                  ),
                 ),
               ],
             ),
@@ -403,7 +432,12 @@ class _HomeDashboardState extends State<HomeDashboard> {
               children: [
                 Expanded(child: _miniStat('Espèces', breakdown.cashRevenue)),
                 const SizedBox(width: 12),
-                Expanded(child: _miniStat('Mobile Money', breakdown.mobileMoneyRevenue)),
+                Expanded(
+                  child: _miniStat(
+                    'Mobile Money',
+                    breakdown.mobileMoneyRevenue,
+                  ),
+                ),
               ],
             ),
           ],
@@ -422,9 +456,18 @@ class _HomeDashboardState extends State<HomeDashboard> {
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          Text(label, style: const TextStyle(fontSize: 11, color: AppColors.textSecondary)),
+          Text(
+            label,
+            style: const TextStyle(
+              fontSize: 11,
+              color: AppColors.textSecondary,
+            ),
+          ),
           const SizedBox(height: 2),
-          Text('${formatAmount(value)} F', style: const TextStyle(fontWeight: FontWeight.w700, fontSize: 15)),
+          Text(
+            '${formatAmount(value)} F',
+            style: const TextStyle(fontWeight: FontWeight.w700, fontSize: 15),
+          ),
         ],
       ),
     );
@@ -674,6 +717,11 @@ class _HomeDashboardState extends State<HomeDashboard> {
               }
 
               final data = snapshot.data!;
+              // Variables locales : Dart peut alors "promouvoir" le type
+              // (String? -> String) dans les blocs `if (breakdown != null)`
+              // ci-dessous, ce qui serait refusé sur `data.breakdown` (getter).
+              final summary = data.summary;
+              final breakdown = data.breakdown;
 
               return ListView(
                 padding: const EdgeInsets.fromLTRB(16, 16, 16, 24),
@@ -703,120 +751,128 @@ class _HomeDashboardState extends State<HomeDashboard> {
                     style: const TextStyle(color: AppColors.textSecondary),
                   ),
                   const SizedBox(height: 18),
-                  _salesSummaryCard(data.breakdown),
-                  const SizedBox(height: 10),
-                  GridView(
-                    shrinkWrap: true,
-                    physics: const NeverScrollableScrollPhysics(),
-                    gridDelegate:
-                        const SliverGridDelegateWithFixedCrossAxisCount(
-                          crossAxisCount: 2,
-                          crossAxisSpacing: 10,
-                          mainAxisSpacing: 10,
-                          mainAxisExtent: 110,
+                  if (breakdown != null) ...[
+                    _salesSummaryCard(breakdown),
+                    const SizedBox(height: 10),
+                  ],
+                  if (summary != null) ...[
+                    GridView(
+                      shrinkWrap: true,
+                      physics: const NeverScrollableScrollPhysics(),
+                      gridDelegate:
+                          const SliverGridDelegateWithFixedCrossAxisCount(
+                            crossAxisCount: 2,
+                            crossAxisSpacing: 10,
+                            mainAxisSpacing: 10,
+                            mainAxisExtent: 110,
+                          ),
+                      children: [
+                        _statCard(
+                          icon: Icons.receipt_long_outlined,
+                          label: "Commandes aujourd'hui",
+                          value: '${summary.salesCount}',
+                          color: AppColors.orange,
                         ),
-                    children: [
-                      _statCard(
-                        icon: Icons.receipt_long_outlined,
-                        label: "Commandes aujourd'hui",
-                        value: '${data.summary.salesCount}',
-                        color: AppColors.orange,
-                      ),
-                      _statCard(
-                        icon: Icons.warning_amber_outlined,
-                        label: 'Alertes stock',
-                        value: '${data.summary.lowStockCount}',
-                        color: data.summary.lowStockCount > 0
-                            ? AppColors.alert
-                            : AppColors.green,
-                      ),
-                    ],
-                  ),
-                  const SizedBox(height: 20),
-                  const Text(
-                    'RECETTES DU JOUR',
-                    style: TextStyle(
-                      fontWeight: FontWeight.bold,
-                      fontSize: 13,
-                      color: AppColors.textSecondary,
-                      letterSpacing: 0.5,
+                        _statCard(
+                          icon: Icons.warning_amber_outlined,
+                          label: 'Alertes stock',
+                          value: '${summary.lowStockCount}',
+                          color: summary.lowStockCount > 0
+                              ? AppColors.alert
+                              : AppColors.green,
+                        ),
+                      ],
                     ),
-                  ),
-                  const SizedBox(height: 10),
-                  GridView(
-                    shrinkWrap: true,
-                    physics: const NeverScrollableScrollPhysics(),
-                    gridDelegate:
-                        const SliverGridDelegateWithFixedCrossAxisCount(
-                          crossAxisCount: 2,
-                          crossAxisSpacing: 10,
-                          mainAxisSpacing: 10,
-                          mainAxisExtent: 110,
-                        ),
-                    children: [
-                      _statCard(
-                        icon: Icons.sports_bar_outlined,
-                        label: 'Recettes boissons aujourd\'hui',
-                        value: '${formatAmount(data.breakdown.boissonsRevenue)} F',
-                        color: AppColors.green,
+                    const SizedBox(height: 20),
+                  ],
+                  if (breakdown != null) ...[
+                    const Text(
+                      'RECETTES DU JOUR',
+                      style: TextStyle(
+                        fontWeight: FontWeight.bold,
+                        fontSize: 13,
+                        color: AppColors.textSecondary,
+                        letterSpacing: 0.5,
                       ),
-                      _statCard(
-                        icon: Icons.restaurant_outlined,
-                        label: 'Recettes plats aujourd\'hui',
-                        value: '${formatAmount(data.breakdown.platsRevenue)} F',
-                        color: AppColors.orange,
-                      ),
-                    ],
-                  ),
-                  const SizedBox(height: 20),
-                  const Text(
-                    'DÉTAIL PAR MODE DE PAIEMENT',
-                    style: TextStyle(
-                      fontWeight: FontWeight.bold,
-                      fontSize: 13,
-                      color: AppColors.textSecondary,
-                      letterSpacing: 0.5,
                     ),
-                  ),
-                  const SizedBox(height: 10),
-                  GridView(
-                    shrinkWrap: true,
-                    physics: const NeverScrollableScrollPhysics(),
-                    gridDelegate:
-                        const SliverGridDelegateWithFixedCrossAxisCount(
-                          crossAxisCount: 2,
-                          crossAxisSpacing: 10,
-                          mainAxisSpacing: 10,
-                          mainAxisExtent: 100,
+                    const SizedBox(height: 10),
+                    GridView(
+                      shrinkWrap: true,
+                      physics: const NeverScrollableScrollPhysics(),
+                      gridDelegate:
+                          const SliverGridDelegateWithFixedCrossAxisCount(
+                            crossAxisCount: 2,
+                            crossAxisSpacing: 10,
+                            mainAxisSpacing: 10,
+                            mainAxisExtent: 110,
+                          ),
+                      children: [
+                        _statCard(
+                          icon: Icons.sports_bar_outlined,
+                          label: 'Recettes boissons aujourd\'hui',
+                          value: '${formatAmount(breakdown.boissonsRevenue)} F',
+                          color: AppColors.green,
                         ),
-                    children: [
-                      _statCard(
-                        icon: Icons.payments_outlined,
-                        label: 'Boissons · Espèces',
-                        value: '${formatAmount(data.breakdown.boissonsCash)} F',
-                        color: AppColors.green,
+                        _statCard(
+                          icon: Icons.restaurant_outlined,
+                          label: 'Recettes plats aujourd\'hui',
+                          value: '${formatAmount(breakdown.platsRevenue)} F',
+                          color: AppColors.orange,
+                        ),
+                      ],
+                    ),
+                    const SizedBox(height: 20),
+                    const Text(
+                      'DÉTAIL PAR MODE DE PAIEMENT',
+                      style: TextStyle(
+                        fontWeight: FontWeight.bold,
+                        fontSize: 13,
+                        color: AppColors.textSecondary,
+                        letterSpacing: 0.5,
                       ),
-                      _statCard(
-                        icon: Icons.phone_iphone_outlined,
-                        label: 'Boissons · Mobile Money',
-                        value: '${formatAmount(data.breakdown.boissonsMobileMoney)} F',
-                        color: AppColors.green,
-                      ),
-                      _statCard(
-                        icon: Icons.payments_outlined,
-                        label: 'Plats · Espèces',
-                        value: '${formatAmount(data.breakdown.platsCash)} F',
-                        color: AppColors.orange,
-                      ),
-                      _statCard(
-                        icon: Icons.phone_iphone_outlined,
-                        label: 'Plats · Mobile Money',
-                        value: '${formatAmount(data.breakdown.platsMobileMoney)} F',
-                        color: AppColors.orange,
-                      ),
-                    ],
-                  ),
-                  const SizedBox(height: 20),
+                    ),
+                    const SizedBox(height: 10),
+                    GridView(
+                      shrinkWrap: true,
+                      physics: const NeverScrollableScrollPhysics(),
+                      gridDelegate:
+                          const SliverGridDelegateWithFixedCrossAxisCount(
+                            crossAxisCount: 2,
+                            crossAxisSpacing: 10,
+                            mainAxisSpacing: 10,
+                            mainAxisExtent: 100,
+                          ),
+                      children: [
+                        _statCard(
+                          icon: Icons.payments_outlined,
+                          label: 'Boissons · Espèces',
+                          value: '${formatAmount(breakdown.boissonsCash)} F',
+                          color: AppColors.green,
+                        ),
+                        _statCard(
+                          icon: Icons.phone_iphone_outlined,
+                          label: 'Boissons · Mobile Money',
+                          value:
+                              '${formatAmount(breakdown.boissonsMobileMoney)} F',
+                          color: AppColors.green,
+                        ),
+                        _statCard(
+                          icon: Icons.payments_outlined,
+                          label: 'Plats · Espèces',
+                          value: '${formatAmount(breakdown.platsCash)} F',
+                          color: AppColors.orange,
+                        ),
+                        _statCard(
+                          icon: Icons.phone_iphone_outlined,
+                          label: 'Plats · Mobile Money',
+                          value:
+                              '${formatAmount(breakdown.platsMobileMoney)} F',
+                          color: AppColors.orange,
+                        ),
+                      ],
+                    ),
+                    const SizedBox(height: 20),
+                  ],
                   const Text(
                     'ACTIONS RAPIDES',
                     style: TextStyle(
