@@ -2,6 +2,12 @@
 
 ## [Unreleased]
 
+### Ajouté (2026-09-11) — Accès en lecture seule du Serveur à l'Historique Achats et au Stock
+- Le Serveur peut désormais consulter l'onglet **Historique** d'Achats (commandes déjà enregistrées, fournisseur inclus) — sans « Créer une commande », « Liste de commandes », gestion des fournisseurs, ni modification/suppression d'une commande depuis son détail. Nouvelle permission `purchases.view` (lecture seule, séparée de `purchases.manage`).
+- Le Serveur peut désormais consulter tout le module **Stock** (liste des produits, statut, historique par produit) — sans pouvoir créer de mouvement de stock, et sans la carte « Valeur du stock » (masquée). Nouvelle permission `stock.view` (lecture seule, séparée de `stock.manage`).
+- `purchases.view`/`stock.view` accordées à Serveur et Magasinier ; seed rejoué sur la base de production (idempotent). Voir `docs/api/purchasing.md` et `docs/api/stock.md`.
+- 299/299 tests NestJS, `flutter analyze`/`test`/`build web` ✅ (47/47 tests Flutter).
+
 ### Ajouté (2026-09-11) — Vue « boissons » de l'accueil pour le Serveur
 - Le Serveur a reçu `reports.view` (nécessaire pour l'appel API sous-jacent) mais l'accueil (`HomeDashboard`) ne lui montre, à sa demande, que « Recettes boissons aujourd'hui », « Boissons · Espèces » et « Boissons · Mobile Money » — total « Ventes aujourd'hui », recettes/paiements Plats, Commandes aujourd'hui et Alertes stock restent masqués pour ce rôle (réservés aux rôles avec vue d'ensemble). Voir `docs/api/reports.md`.
 - `flutter analyze`/`test`/`build web` ✅ (47/47 tests Flutter).

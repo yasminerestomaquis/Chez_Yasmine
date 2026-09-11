@@ -53,9 +53,18 @@ class _ReportsData {
 }
 
 class ReportsPage extends StatefulWidget {
-  const ReportsPage({super.key, required this.establishmentId});
+  const ReportsPage({
+    super.key,
+    required this.establishmentId,
+    required this.roleName,
+  });
 
   final String establishmentId;
+  // Transmis uniquement pour StockPage (lien "Voir le stock" ci-dessous) —
+  // voir StockPage.roleName pour la raison (accès en lecture seule/masquage
+  // de la valeur du stock pour le rôle Serveur, demande utilisateur du
+  // 2026-09-11).
+  final String roleName;
 
   @override
   State<ReportsPage> createState() => _ReportsPageState();
@@ -746,8 +755,10 @@ class _ReportsPageState extends State<ReportsPage> {
           actionLabel: 'Voir le stock',
           onTap: () => Navigator.of(context).push(
             MaterialPageRoute(
-              builder: (_) =>
-                  StockPage(establishmentId: widget.establishmentId),
+              builder: (_) => StockPage(
+                establishmentId: widget.establishmentId,
+                roleName: widget.roleName,
+              ),
             ),
           ),
         ),

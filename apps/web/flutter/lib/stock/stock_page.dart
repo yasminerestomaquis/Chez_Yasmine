@@ -19,15 +19,28 @@ const _kFilterLow = 'low';
 const _kFilterOut = 'out';
 
 class StockPage extends StatefulWidget {
-  const StockPage({super.key, required this.establishmentId});
+  const StockPage({
+    super.key,
+    required this.establishmentId,
+    required this.roleName,
+  });
 
   final String establishmentId;
+  final String roleName;
 
   @override
   State<StockPage> createState() => _StockPageState();
 }
 
 class _StockPageState extends State<StockPage> {
+  // Comparaison par nom de rôle — même limitation/raison que
+  // HomeDashboard._isServeur (voir lib/home/home_dashboard.dart) : `GET
+  // /auth/me` n'expose pas de code de permission au client. Demande
+  // utilisateur du 2026-09-11 : le Serveur a `stock.view` (lecture) mais pas
+  // `stock.manage` — accès en lecture seule (pas de "Mouvement de stock"),
+  // sans la carte "Valeur du stock" (chiffre potentiellement sensible).
+  bool get _isServeur => widget.roleName == 'Serveur';
+
   late final CatalogRepository _catalog = CatalogRepository(
     ApiClient(),
     widget.establishmentId,
@@ -165,7 +178,7 @@ class _StockPageState extends State<StockPage> {
                           total: allProducts.length,
                           low: lowCount,
                           out: outCount,
-                          value: totalValue,
+                          value: _isServeur ? null : totalValue,
                         ),
                       ),
                       const SizedBox(height: 12),
@@ -207,6 +220,7 @@ class _StockPageState extends State<StockPage> {
                           product: product,
                           alert: alertsByProduct[product.id],
                           repository: _catalog,
+                          readOnly: _isServeur,
                           onHistory: () => Navigator.of(context).push(
                             MaterialPageRoute(
                               builder: (_) => ProductStockHistoryPage(
@@ -257,7 +271,9 @@ class _StockKpiRow extends StatelessWidget {
   final int total;
   final int low;
   final int out;
-  final double value;
+  // `null` : masque la carte "Valeur du stock" (rôle Serveur, demande
+  // utilisateur du 2026-09-11 — chiffre potentiellement sensible).
+  final double? value;
 
   @override
   Widget build(BuildContext context) {
@@ -289,12 +305,13 @@ class _StockKpiRow extends StatelessWidget {
           '$out',
           AppColors.alert,
         ),
-        _kpiCard(
-          Icons.payments_outlined,
-          'Valeur du stock',
-          '${formatAmount(value)} F',
-          AppColors.green,
-        ),
+        if (value != null)
+          _kpiCard(
+            Icons.payments_outlined,
+            'Valeur du stock',
+            '${formatAmount(value!)} F',
+            AppColors.green,
+          ),
       ],
     );
   }
@@ -350,12 +367,17 @@ class _StockProductRow extends StatelessWidget {
     required this.product,
     required this.alert,
     required this.repository,
+    required this.readOnly,
     required this.onHistory,
     required this.onMovement,
   });
 
   final Product product;
   final StockAlert? alert;
+  // Masque l'action "Mouvement de stock" (rôle Serveur : `stock.view` sans
+  // `stock.manage`, demande utilisateur du 2026-09-11) — "Voir l'historique"
+  // reste toujours disponible.
+  final bool readOnly;
   final CatalogRepository repository;
   final VoidCallback onHistory;
   final VoidCallback onMovement;
@@ -494,12 +516,13 @@ class _StockProductRow extends StatelessWidget {
                 if (value == 'history') onHistory();
                 if (value == 'movement') onMovement();
               },
-              itemBuilder: (context) => const [
-                PopupMenuItem(
-                  value: 'movement',
-                  child: Text('Mouvement de stock'),
-                ),
-                PopupMenuItem(
+              itemBuilder: (context) => [
+                if (!readOnly)
+                  const PopupMenuItem(
+                    value: 'movement',
+                    child: Text('Mouvement de stock'),
+                  ),
+                const PopupMenuItem(
                   value: 'history',
                   child: Text('Voir l\'historique'),
                 ),

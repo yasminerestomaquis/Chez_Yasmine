@@ -18,18 +18,40 @@ final _dateFormat = DateFormat('dd/MM/yyyy');
 /// commande en cours, "Créer la commande" l'enregistre) → Historique
 /// (commandes déjà enregistrées, avec modification/suppression).
 class PurchasesPage extends StatefulWidget {
-  const PurchasesPage({super.key, required this.establishmentId});
+  const PurchasesPage({
+    super.key,
+    required this.establishmentId,
+    required this.roleName,
+  });
 
   final String establishmentId;
+  final String roleName;
 
   @override
   State<PurchasesPage> createState() => _PurchasesPageState();
 }
 
-class _PurchasesPageState extends State<PurchasesPage> with SingleTickerProviderStateMixin {
-  late final PurchasingRepository _repository = PurchasingRepository(ApiClient(), widget.establishmentId);
-  late final CatalogRepository _catalog = CatalogRepository(ApiClient(), widget.establishmentId);
-  late final TabController _tabController = TabController(length: 3, vsync: this);
+class _PurchasesPageState extends State<PurchasesPage>
+    with SingleTickerProviderStateMixin {
+  // Comparaison par nom de rôle — même limitation/raison que
+  // HomeDashboard._isServeur. Demande utilisateur du 2026-09-11 : le Serveur
+  // a `purchases.view` (lecture) mais pas `purchases.manage` — accès en
+  // lecture seule à l'onglet Historique uniquement, ni "Créer une commande"
+  // ni "Liste de commandes" ni gestion des fournisseurs.
+  bool get _isServeur => widget.roleName == 'Serveur';
+
+  late final PurchasingRepository _repository = PurchasingRepository(
+    ApiClient(),
+    widget.establishmentId,
+  );
+  late final CatalogRepository _catalog = CatalogRepository(
+    ApiClient(),
+    widget.establishmentId,
+  );
+  late final TabController _tabController = TabController(
+    length: _isServeur ? 1 : 3,
+    vsync: this,
+  );
 
   late Future<void> _future = _load();
   List<Supplier> _suppliers = [];
@@ -49,14 +71,25 @@ class _PurchasesPageState extends State<PurchasesPage> with SingleTickerProvider
   @override
   void initState() {
     super.initState();
-    _refreshOrderNumberSuggestion();
+    // `nextOrderNumber` exige `purchases.manage` (suggestion pour "Créer une
+    // commande", onglet absent en lecture seule) — l'appeler pour un Serveur
+    // ne ferait que produire un 403 ignoré silencieusement.
+    if (!_isServeur) _refreshOrderNumberSuggestion();
   }
 
   Future<void> _load() async {
     final products = await _catalog.listProducts();
-    final suppliers = await _repository.listSuppliers();
+    // `listSuppliers` exige `purchases.manage` (choix fournisseur en
+    // création/édition, indisponibles en lecture seule) — inutile et
+    // provoquerait un 403 pour un Serveur, dont l'onglet Historique affiche
+    // le fournisseur déjà inclus dans chaque `Purchase` (`listPurchases`).
+    final suppliers = _isServeur
+        ? <Supplier>[]
+        : await _repository.listSuppliers();
     final purchases = await _repository.listPurchases();
-    _caseProducts = products.where((p) => p.status == 'active' && p.hasCasePricing).toList();
+    _caseProducts = products
+        .where((p) => p.status == 'active' && p.hasCasePricing)
+        .toList();
     _suppliers = suppliers;
     _purchases = purchases;
   }
@@ -65,7 +98,9 @@ class _PurchasesPageState extends State<PurchasesPage> with SingleTickerProvider
 
   Future<void> _refreshOrderNumberSuggestion() async {
     try {
-      final next = await _repository.nextOrderNumber(supplierId: _draftSupplierId);
+      final next = await _repository.nextOrderNumber(
+        supplierId: _draftSupplierId,
+      );
       if (!mounted) return;
       setState(() => _orderNumberController.text = '$next');
     } catch (_) {
@@ -88,7 +123,10 @@ class _PurchasesPageState extends State<PurchasesPage> with SingleTickerProvider
               ),
             ),
           for (final product in _caseProducts)
-            SimpleDialogOption(onPressed: () => Navigator.of(context).pop(product), child: Text(product.name)),
+            SimpleDialogOption(
+              onPressed: () => Navigator.of(context).pop(product),
+              child: Text(product.name),
+            ),
         ],
       ),
     );
@@ -114,7 +152,9 @@ class _PurchasesPageState extends State<PurchasesPage> with SingleTickerProvider
   void _addLineToOrder() {
     final product = _selectedProduct;
     if (product == null) return;
-    final cases = double.tryParse(_casesOrderedController.text.trim().replaceAll(',', '.'));
+    final cases = double.tryParse(
+      _casesOrderedController.text.trim().replaceAll(',', '.'),
+    );
     if (cases == null || cases <= 0) return;
     setState(() {
       _draftLines.add(_DraftLine(product: product, casesOrdered: cases));
@@ -124,13 +164,16 @@ class _PurchasesPageState extends State<PurchasesPage> with SingleTickerProvider
     _tabController.animateTo(1);
   }
 
-  void _removeDraftLine(_DraftLine line) => setState(() => _draftLines.remove(line));
+  void _removeDraftLine(_DraftLine line) =>
+      setState(() => _draftLines.remove(line));
 
   Future<void> _submitOrder() async {
     if (_draftLines.isEmpty) return;
     final orderNumber = int.tryParse(_orderNumberController.text.trim());
     if (orderNumber == null) {
-      ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('N° de commande invalide')));
+      ScaffoldMessenger.of(
+        context,
+      ).showSnackBar(const SnackBar(content: Text('N° de commande invalide')));
       return;
     }
     try {
@@ -138,7 +181,14 @@ class _PurchasesPageState extends State<PurchasesPage> with SingleTickerProvider
         supplierId: _draftSupplierId,
         orderNumber: orderNumber,
         orderDate: _draftOrderDate,
-        items: _draftLines.map((l) => {'productId': l.product.id, 'casesOrdered': l.casesOrdered}).toList(),
+        items: _draftLines
+            .map(
+              (l) => {
+                'productId': l.product.id,
+                'casesOrdered': l.casesOrdered,
+              },
+            )
+            .toList(),
       );
       setState(() {
         _draftLines.clear();
@@ -148,11 +198,13 @@ class _PurchasesPageState extends State<PurchasesPage> with SingleTickerProvider
       _refreshOrderNumberSuggestion();
       _reload();
       if (!mounted) return;
-      ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('Commande enregistrée.')));
+      ScaffoldMessenger.of(context)
+          .showSnackBar(const SnackBar(content: Text('Commande enregistrée.')));
       _tabController.animateTo(2);
     } on ApiException catch (e) {
       if (!mounted) return;
-      ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text(e.message)));
+      ScaffoldMessenger.of(context)
+          .showSnackBar(SnackBar(content: Text(e.message)));
     }
   }
 
@@ -170,23 +222,34 @@ class _PurchasesPageState extends State<PurchasesPage> with SingleTickerProvider
       appBar: AppBar(
         title: const Text('Achats'),
         actions: [
-          IconButton(
-            tooltip: 'Fournisseurs',
-            icon: const Icon(Icons.local_shipping_outlined),
-            onPressed: () async {
-              await Navigator.of(context).push(MaterialPageRoute(builder: (_) => SuppliersPage(repository: _repository)));
-              _reload();
-            },
-          ),
+          // Fournisseurs : gestion (création/édition), hors de portée d'un
+          // accès en lecture seule.
+          if (!_isServeur)
+            IconButton(
+              tooltip: 'Fournisseurs',
+              icon: const Icon(Icons.local_shipping_outlined),
+              onPressed: () async {
+                await Navigator.of(context).push(
+                  MaterialPageRoute(
+                    builder: (_) => SuppliersPage(repository: _repository),
+                  ),
+                );
+                _reload();
+              },
+            ),
         ],
-        bottom: TabBar(
-          controller: _tabController,
-          tabs: const [
-            Tab(text: 'Créer une commande'),
-            Tab(text: 'Liste de commandes'),
-            Tab(text: 'Historique'),
-          ],
-        ),
+        // Un seul onglet en lecture seule (Historique) : pas de TabBar à
+        // afficher, elle n'aurait rien à faire sélectionner.
+        bottom: _isServeur
+            ? null
+            : TabBar(
+                controller: _tabController,
+                tabs: const [
+                  Tab(text: 'Créer une commande'),
+                  Tab(text: 'Liste de commandes'),
+                  Tab(text: 'Historique'),
+                ],
+              ),
       ),
       body: FutureBuilder<void>(
         future: _future,
@@ -195,14 +258,24 @@ class _PurchasesPageState extends State<PurchasesPage> with SingleTickerProvider
             return const Center(child: CircularProgressIndicator());
           }
           if (snapshot.hasError) {
-            final message = snapshot.error is ApiException ? (snapshot.error as ApiException).message : '${snapshot.error}';
+            final message = snapshot.error is ApiException
+                ? (snapshot.error as ApiException).message
+                : '${snapshot.error}';
             return Center(
               child: Column(
                 mainAxisSize: MainAxisSize.min,
-                children: [Text(message), const SizedBox(height: 12), OutlinedButton(onPressed: _reload, child: const Text('Réessayer'))],
+                children: [
+                  Text(message),
+                  const SizedBox(height: 12),
+                  OutlinedButton(
+                    onPressed: _reload,
+                    child: const Text('Réessayer'),
+                  ),
+                ],
               ),
             );
           }
+          if (_isServeur) return _buildHistoryTab();
           return TabBarView(
             controller: _tabController,
             children: [_buildCreateTab(), _buildListTab(), _buildHistoryTab()],
@@ -234,7 +307,8 @@ class _PurchasesPageState extends State<PurchasesPage> with SingleTickerProvider
           decoration: const InputDecoration(labelText: 'Fournisseur'),
           items: [
             const DropdownMenuItem(value: null, child: Text('Aucun')),
-            for (final supplier in _suppliers) DropdownMenuItem(value: supplier.id, child: Text(supplier.name)),
+            for (final supplier in _suppliers)
+              DropdownMenuItem(value: supplier.id, child: Text(supplier.name)),
           ],
           onChanged: (value) {
             setState(() => _draftSupplierId = value);
@@ -250,7 +324,11 @@ class _PurchasesPageState extends State<PurchasesPage> with SingleTickerProvider
                 children: [
                   const Text('Aucun produit sélectionné.'),
                   const SizedBox(height: 12),
-                  OutlinedButton.icon(onPressed: _pickProduct, icon: const Icon(Icons.add), label: const Text('Choisir un produit')),
+                  OutlinedButton.icon(
+                    onPressed: _pickProduct,
+                    icon: const Icon(Icons.add),
+                    label: const Text('Choisir un produit'),
+                  ),
                 ],
               ),
             ),
@@ -265,18 +343,28 @@ class _PurchasesPageState extends State<PurchasesPage> with SingleTickerProvider
   /// si le produit n'a pas de photo. Partagée par la carte de sélection et
   /// les lignes de la commande en cours.
   Widget _thumbnail(Product product, {double size = 64}) {
-    final primaryImage = product.images.where((i) => i.isPrimary).firstOrNull ?? product.images.firstOrNull;
+    final primaryImage =
+        product.images.where((i) => i.isPrimary).firstOrNull ??
+        product.images.firstOrNull;
     return ClipRRect(
       borderRadius: BorderRadius.circular(8),
       child: SizedBox(
         width: size,
         height: size,
         child: primaryImage == null
-            ? ColoredBox(color: const Color(0x11000000), child: Icon(Icons.local_drink_outlined, size: size * 0.4))
+            ? ColoredBox(
+                color: const Color(0x11000000),
+                child: Icon(Icons.local_drink_outlined, size: size * 0.4),
+              )
             : FutureBuilder<String>(
-                future: _catalog.getImageUrl(product.id, primaryImage.id, variant: 'thumbnail'),
+                future: _catalog.getImageUrl(
+                  product.id,
+                  primaryImage.id,
+                  variant: 'thumbnail',
+                ),
                 builder: (context, snapshot) {
-                  if (!snapshot.hasData) return const ColoredBox(color: Color(0x11000000));
+                  if (!snapshot.hasData)
+                    return const ColoredBox(color: Color(0x11000000));
                   return ColoredBox(
                     color: const Color(0x11000000),
                     child: Image.network(snapshot.data!, fit: BoxFit.contain),
@@ -289,7 +377,11 @@ class _PurchasesPageState extends State<PurchasesPage> with SingleTickerProvider
 
   Widget _buildSelectedProductCard() {
     final product = _selectedProduct!;
-    final cases = double.tryParse(_casesOrderedController.text.trim().replaceAll(',', '.')) ?? 0;
+    final cases =
+        double.tryParse(
+          _casesOrderedController.text.trim().replaceAll(',', '.'),
+        ) ??
+        0;
     final totalBottles = cases * (product.bottlesPerCase ?? 0);
     return Card(
       child: Padding(
@@ -301,23 +393,45 @@ class _PurchasesPageState extends State<PurchasesPage> with SingleTickerProvider
               children: [
                 _thumbnail(product),
                 const SizedBox(width: 12),
-                Expanded(child: Text(product.name, style: const TextStyle(fontWeight: FontWeight.w600, fontSize: 16))),
-                TextButton(onPressed: _pickProduct, child: const Text('Changer')),
+                Expanded(
+                  child: Text(
+                    product.name,
+                    style: const TextStyle(
+                      fontWeight: FontWeight.w600,
+                      fontSize: 16,
+                    ),
+                  ),
+                ),
+                TextButton(
+                  onPressed: _pickProduct,
+                  child: const Text('Changer'),
+                ),
               ],
             ),
             const SizedBox(height: 12),
-            _readOnlyField('Nbre de bouteilles par casier', '${product.bottlesPerCase ?? '—'}'),
+            _readOnlyField(
+              'Nbre de bouteilles par casier',
+              '${product.bottlesPerCase ?? '—'}',
+            ),
             const SizedBox(height: 12),
             TextFormField(
               controller: _casesOrderedController,
               keyboardType: TextInputType.number,
-              decoration: const InputDecoration(labelText: 'Nbre de casiers commandés'),
+              decoration: const InputDecoration(
+                labelText: 'Nbre de casiers commandés',
+              ),
               onChanged: (_) => setState(() {}),
             ),
             const SizedBox(height: 12),
-            _readOnlyField('Nbre total de bouteilles', totalBottles.toStringAsFixed(0)),
+            _readOnlyField(
+              'Nbre total de bouteilles',
+              totalBottles.toStringAsFixed(0),
+            ),
             const SizedBox(height: 16),
-            FilledButton(onPressed: _addLineToOrder, child: const Text('Ajouter la commande')),
+            FilledButton(
+              onPressed: _addLineToOrder,
+              child: const Text('Ajouter la commande'),
+            ),
           ],
         ),
       ),
@@ -325,23 +439,43 @@ class _PurchasesPageState extends State<PurchasesPage> with SingleTickerProvider
   }
 
   Widget _buildListTab() {
-    final totalCases = _draftLines.fold<double>(0, (sum, l) => sum + l.casesOrdered);
-    final totalPrice = _draftLines.fold<double>(0, (sum, l) => sum + l.lineTotal);
+    final totalCases = _draftLines.fold<double>(
+      0,
+      (sum, l) => sum + l.casesOrdered,
+    );
+    final totalPrice = _draftLines.fold<double>(
+      0,
+      (sum, l) => sum + l.lineTotal,
+    );
     return Column(
       children: [
         Padding(
           padding: const EdgeInsets.all(16),
           child: Row(
             children: [
-              Expanded(child: _readOnlyField('Date', _dateFormat.format(_draftOrderDate))),
+              Expanded(
+                child: _readOnlyField(
+                  'Date',
+                  _dateFormat.format(_draftOrderDate),
+                ),
+              ),
               const SizedBox(width: 12),
-              Expanded(child: _readOnlyField('N° de la commande', _orderNumberController.text)),
+              Expanded(
+                child: _readOnlyField(
+                  'N° de la commande',
+                  _orderNumberController.text,
+                ),
+              ),
             ],
           ),
         ),
         Expanded(
           child: _draftLines.isEmpty
-              ? const Center(child: Text('Aucune ligne — ajoutez un produit depuis "Créer une commande".'))
+              ? const Center(
+                  child: Text(
+                    'Aucune ligne — ajoutez un produit depuis "Créer une commande".',
+                  ),
+                )
               : ListView(
                   children: [
                     for (final line in _draftLines)
@@ -352,7 +486,10 @@ class _PurchasesPageState extends State<PurchasesPage> with SingleTickerProvider
                           '${formatAmount(line.purchasePricePerCase)} FCFA/casier × '
                           '${line.casesOrdered.toStringAsFixed(0)} casier(s) = ${formatAmount(line.lineTotal)} FCFA',
                         ),
-                        trailing: IconButton(icon: const Icon(Icons.delete_outline), onPressed: () => _removeDraftLine(line)),
+                        trailing: IconButton(
+                          icon: const Icon(Icons.delete_outline),
+                          onPressed: () => _removeDraftLine(line),
+                        ),
                       ),
                   ],
                 ),
@@ -363,15 +500,27 @@ class _PurchasesPageState extends State<PurchasesPage> with SingleTickerProvider
             children: [
               Row(
                 children: [
-                  const Text('Total', style: TextStyle(fontWeight: FontWeight.bold)),
+                  const Text(
+                    'Total',
+                    style: TextStyle(fontWeight: FontWeight.bold),
+                  ),
                   const Spacer(),
-                  Text('${totalCases.toStringAsFixed(0)} casier(s)', style: const TextStyle(fontWeight: FontWeight.bold)),
+                  Text(
+                    '${totalCases.toStringAsFixed(0)} casier(s)',
+                    style: const TextStyle(fontWeight: FontWeight.bold),
+                  ),
                   const SizedBox(width: 16),
-                  Text('${formatAmount(totalPrice)} FCFA', style: const TextStyle(fontWeight: FontWeight.bold)),
+                  Text(
+                    '${formatAmount(totalPrice)} FCFA',
+                    style: const TextStyle(fontWeight: FontWeight.bold),
+                  ),
                 ],
               ),
               const SizedBox(height: 12),
-              FilledButton(onPressed: _draftLines.isEmpty ? null : _submitOrder, child: const Text('Créer la commande')),
+              FilledButton(
+                onPressed: _draftLines.isEmpty ? null : _submitOrder,
+                child: const Text('Créer la commande'),
+              ),
             ],
           ),
         ),
@@ -387,14 +536,23 @@ class _PurchasesPageState extends State<PurchasesPage> with SingleTickerProvider
       children: [
         for (final purchase in _purchases)
           ListTile(
-            title: Text('N° ${purchase.orderNumber} — ${purchase.supplier?.name ?? 'Sans fournisseur'}'),
+            title: Text(
+              'N° ${purchase.orderNumber} — ${purchase.supplier?.name ?? 'Sans fournisseur'}',
+            ),
             subtitle: Text(
               '${_dateFormat.format(purchase.orderDate)} — ${purchase.totalCases.toStringAsFixed(0)} casier(s) — '
               '${formatAmount(purchase.total)} FCFA',
             ),
             onTap: () async {
               await Navigator.of(context).push(
-                MaterialPageRoute(builder: (_) => PurchaseOrderDetailPage(repository: _repository, catalog: _catalog, purchase: purchase)),
+                MaterialPageRoute(
+                  builder: (_) => PurchaseOrderDetailPage(
+                    repository: _repository,
+                    catalog: _catalog,
+                    purchase: purchase,
+                    readOnly: _isServeur,
+                  ),
+                ),
               );
               _reload();
             },
@@ -405,9 +563,9 @@ class _PurchasesPageState extends State<PurchasesPage> with SingleTickerProvider
 }
 
 Widget _readOnlyField(String label, String value) => InputDecorator(
-      decoration: InputDecoration(labelText: label),
-      child: Text(value),
-    );
+  decoration: InputDecoration(labelText: label),
+  child: Text(value),
+);
 
 class _DraftLine {
   _DraftLine({required this.product, required this.casesOrdered});

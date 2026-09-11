@@ -6,7 +6,9 @@ insert into permissions (code, description) values
   ('products.manage',   'Créer/modifier/archiver produits, catégories, photos'),
   ('products.view',     'Consulter le catalogue (produits, catégories, photos) — sans le modifier'),
   ('stock.manage',      'Mouvements de stock : entrées, sorties, inventaires, pertes'),
+  ('stock.view',        'Consulter le stock, son historique et ses alertes — sans créer de mouvement'),
   ('purchases.manage',  'Achats et fournisseurs'),
+  ('purchases.view',    'Consulter l''historique des commandes d''achat — sans les créer/modifier/recevoir/annuler'),
   ('pos.sell',          'Encaisser une vente en caisse ou en salle'),
   ('pos.refund',        'Annuler une vente, rembourser'),
   ('tables.manage',     'Plan de salle, ouverture/transfert/fusion/clôture d''addition'),
@@ -67,23 +69,29 @@ on conflict do nothing;
 -- Money) — HomeDashboard masque volontairement pour ce rôle le reste des
 -- indicateurs (ventes plats, total, commandes, alertes stock), voir
 -- lib/home/home_dashboard.dart.
+-- `purchases.view`/`stock.view` (2026-09-11, demande utilisateur) : accès en
+-- lecture seule à l'onglet Historique d'Achats et à tout le module Stock
+-- (sans "Valeur du stock", masquée côté client — voir lib/stock/stock_page.dart)
+-- — jamais `purchases.manage`/`stock.manage`, qui resteraient réservés à
+-- Magasinier/Gérant/administration.
 insert into role_permissions (role_id, permission_id)
 select r.id, p.id
 from roles r
-join permissions p on p.code in ('pos.sell', 'tables.manage', 'products.view', 'reports.view')
+join permissions p on p.code in ('pos.sell', 'tables.manage', 'products.view', 'reports.view', 'purchases.view', 'stock.view')
 where r.is_system and r.name = 'Serveur'
 on conflict do nothing;
 
 -- Magasinier : produits, stock, achats/fournisseurs, pertes.
--- `products.view` en plus de `products.manage` : les routes de lecture du
--- catalogue exigent désormais `products.view` spécifiquement (voir
--- ProductsController/CategoriesController/ProductImagesController) —
--- `products.manage` seul ne suffit plus à lister/consulter, seulement à
--- créer/modifier/archiver.
+-- `products.view`/`stock.view`/`purchases.view` en plus de leurs pendants
+-- `.manage` : les routes de lecture (catalogue, historique stock/achats,
+-- alertes) exigent désormais le permis de lecture spécifiquement (voir
+-- ProductsController/CategoriesController/ProductImagesController/
+-- StockController/PurchasesController) — `.manage` seul ne suffit plus à
+-- lister/consulter, seulement à créer/modifier/archiver.
 insert into role_permissions (role_id, permission_id)
 select r.id, p.id
 from roles r
-join permissions p on p.code in ('products.manage', 'products.view', 'stock.manage', 'purchases.manage', 'losses.manage')
+join permissions p on p.code in ('products.manage', 'products.view', 'stock.manage', 'stock.view', 'purchases.manage', 'purchases.view', 'losses.manage')
 where r.is_system and r.name = 'Magasinier'
 on conflict do nothing;
 

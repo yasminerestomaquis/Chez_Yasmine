@@ -22,12 +22,18 @@ export class StockController {
     return this.stockMovements.create(establishmentId, productId, request.user!.sub, dto);
   }
 
+  // Lecture (`stock.view`) séparée de la gestion (`stock.manage`, niveau
+  // contrôleur ci-dessus) : consulter l'historique/les alertes ne doit pas
+  // exiger le droit de créer un mouvement — voir supabase/seed/001_roles_permissions.sql
+  // (2026-09-11, Serveur : lecture seule du Stock).
   @Get('products/:productId/stock-movements')
+  @RequirePermissions('stock.view')
   listForProduct(@Param('establishmentId') establishmentId: string, @Param('productId') productId: string) {
     return this.stockMovements.listForProduct(establishmentId, productId);
   }
 
   @Get('stock/alerts')
+  @RequirePermissions('stock.view')
   listLowStockAlerts(@Param('establishmentId') establishmentId: string) {
     return this.stockMovements.listLowStockAlerts(establishmentId);
   }

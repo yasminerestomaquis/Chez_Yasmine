@@ -136,12 +136,18 @@ class _HomeDashboardState extends State<HomeDashboard> {
     _ModuleEntry(
       Icons.inventory_2_outlined,
       'Stock',
-      (_) => StockPage(establishmentId: widget.establishmentId),
+      (_) => StockPage(
+        establishmentId: widget.establishmentId,
+        roleName: widget.roleName,
+      ),
     ),
     _ModuleEntry(
       Icons.shopping_cart_outlined,
       'Achats',
-      (_) => PurchasesPage(establishmentId: widget.establishmentId),
+      (_) => PurchasesPage(
+        establishmentId: widget.establishmentId,
+        roleName: widget.roleName,
+      ),
     ),
   ];
   late final List<_ModuleEntry> _gestion = [
@@ -170,7 +176,10 @@ class _HomeDashboardState extends State<HomeDashboard> {
     _ModuleEntry(
       Icons.bar_chart_outlined,
       'Rapports',
-      (_) => ReportsPage(establishmentId: widget.establishmentId),
+      (_) => ReportsPage(
+        establishmentId: widget.establishmentId,
+        roleName: widget.roleName,
+      ),
     ),
     // Anciennement une deuxième rubrique "Caisse" (icône tirelire) — renommée
     // pour lever l'ambiguïté avec le module Caisse/encaissement ci-dessus,
@@ -294,7 +303,10 @@ class _HomeDashboardState extends State<HomeDashboard> {
               onTap: () {
                 Navigator.of(sheetContext).pop();
                 _openPage(
-                  (_) => PurchasesPage(establishmentId: widget.establishmentId),
+                  (_) => PurchasesPage(
+                    establishmentId: widget.establishmentId,
+                    roleName: widget.roleName,
+                  ),
                 );
               },
             ),
@@ -937,6 +949,7 @@ class _HomeDashboardState extends State<HomeDashboard> {
                         onTap: () => _openPage(
                           (_) => StockPage(
                             establishmentId: widget.establishmentId,
+                            roleName: widget.roleName,
                           ),
                         ),
                       ),
@@ -967,7 +980,10 @@ class _HomeDashboardState extends State<HomeDashboard> {
               break;
             case 3:
               _openPage(
-                (_) => PurchasesPage(establishmentId: widget.establishmentId),
+                (_) => PurchasesPage(
+                  establishmentId: widget.establishmentId,
+                  roleName: widget.roleName,
+                ),
               );
               break;
             case 4:

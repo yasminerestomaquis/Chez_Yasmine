@@ -13,7 +13,13 @@ import { PurchasesService } from './purchases.service.js';
 export class PurchasesController {
   constructor(private readonly purchases: PurchasesService) {}
 
+  // Lecture (`purchases.view`) séparée de la gestion (`purchases.manage`,
+  // niveau contrôleur ci-dessus) : l'onglet Historique doit rester
+  // consultable sans le droit de créer/modifier/recevoir/annuler une
+  // commande — voir supabase/seed/001_roles_permissions.sql (2026-09-11,
+  // Serveur : lecture seule de l'Historique Achats).
   @Get()
+  @RequirePermissions('purchases.view')
   list(@Param('establishmentId') establishmentId: string) {
     return this.purchases.list(establishmentId);
   }

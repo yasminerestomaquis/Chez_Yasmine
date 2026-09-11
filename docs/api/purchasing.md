@@ -2,23 +2,35 @@
 
 ## Routes NestJS
 
-Protégées par `SupabaseJwtGuard` + `PermissionsGuard` + `@RequirePermissions('purchases.manage')` :
+Protégées par `SupabaseJwtGuard` + `PermissionsGuard` + `@RequirePermissions('purchases.manage')`, **sauf** `GET .../purchases` (lecture seule, `purchases.view` — voir « Correctif » ci-dessous) :
 
 ```
-GET    /establishments/:establishmentId/suppliers
-POST   /establishments/:establishmentId/suppliers
-PATCH  /establishments/:establishmentId/suppliers/:supplierId
-DELETE /establishments/:establishmentId/suppliers/:supplierId
+GET    /establishments/:establishmentId/suppliers                                                                purchases.manage
+POST   /establishments/:establishmentId/suppliers                                                                 purchases.manage
+PATCH  /establishments/:establishmentId/suppliers/:supplierId                                                     purchases.manage
+DELETE /establishments/:establishmentId/suppliers/:supplierId                                                     purchases.manage
 
-GET    /establishments/:establishmentId/purchases
-GET    /establishments/:establishmentId/purchases/next-order-number?supplierId=   { orderNumber }  — suggestion, jamais imposée
-GET    /establishments/:establishmentId/purchases/:purchaseId
-POST   /establishments/:establishmentId/purchases           { supplierId?, orderNumber, orderDate?, items: [{ productId, casesOrdered }] }
-PATCH  /establishments/:establishmentId/purchases/:purchaseId   (même corps que POST — remplace l'intégralité des lignes)
-DELETE /establishments/:establishmentId/purchases/:purchaseId
-POST   /establishments/:establishmentId/purchases/:id/receive   (déprécié, flux hérité)
-POST   /establishments/:establishmentId/purchases/:id/cancel    (déprécié, flux hérité)
+GET    /establishments/:establishmentId/purchases                                                                 purchases.view
+GET    /establishments/:establishmentId/purchases/next-order-number?supplierId=   { orderNumber }  — suggestion    purchases.manage
+GET    /establishments/:establishmentId/purchases/:purchaseId                                                     purchases.manage
+POST   /establishments/:establishmentId/purchases           { supplierId?, orderNumber, orderDate?, items: [{ productId, casesOrdered }] }   purchases.manage
+PATCH  /establishments/:establishmentId/purchases/:purchaseId   (même corps que POST — remplace l'intégralité des lignes)   purchases.manage
+DELETE /establishments/:establishmentId/purchases/:purchaseId                                                     purchases.manage
+POST   /establishments/:establishmentId/purchases/:id/receive   (déprécié, flux hérité)                            purchases.manage
+POST   /establishments/:establishmentId/purchases/:id/cancel    (déprécié, flux hérité)                            purchases.manage
 ```
+
+### Correctif (2026-09-11) — accès en lecture seule à l'Historique pour le Serveur
+
+Demande utilisateur explicite : le Serveur doit pouvoir consulter l'onglet **Historique** d'Achats (commandes déjà enregistrées), sans pouvoir en créer, modifier, supprimer, ni gérer les fournisseurs.
+
+Nouvelle permission `purchases.view`, affectée uniquement à `GET .../purchases` (utilisée par `PurchasingRepository.listPurchases`) à la place de `purchases.manage` ; toutes les autres routes (y compris `GET .../purchases/:purchaseId` et `GET .../suppliers`) restent réservées à `purchases.manage`. `purchases.view` accordée à Serveur et Magasinier (`supabase/seed/001_roles_permissions.sql`).
+
+Côté Flutter, `PurchasesPage`/`PurchaseOrderDetailPage` reçoivent `roleName` et, pour le Serveur (`roleName == 'Serveur'`) :
+- `PurchasesPage` : un seul onglet (Historique), pas de `TabBar`, pas de bouton « Fournisseurs », et `_load()` n'appelle plus `listSuppliers()` (réservé à `purchases.manage`, inutile ici — le fournisseur de chaque commande vient déjà de `listPurchases()`).
+- `PurchaseOrderDetailPage(readOnly: true)` : pas de boutons Modifier/Supprimer ni de bouton d'ajout de ligne, et `_loadPickerData()` n'appelle plus `listSuppliers()` non plus (uniquement nécessaire pour le sélecteur de fournisseur en édition).
+
+Vérifié : 299/299 tests NestJS, `flutter analyze`/`test`/`build web` ✅ (47/47 tests Flutter).
 
 ## Commande par casier (2026-09-09)
 
