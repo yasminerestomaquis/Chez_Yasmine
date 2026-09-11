@@ -239,26 +239,39 @@ class _PosPageState extends State<PosPage> {
     showModalBottomSheet(
       context: context,
       isScrollControlled: true,
-      builder: (sheetContext) => DraggableScrollableSheet(
-        initialChildSize: 0.75,
-        maxChildSize: 0.9,
-        expand: false,
-        builder: (context, scrollController) => CartPanel<CartLine>(
-          lines: _cart,
-          nameOf: (l) => l.product.name,
-          quantityOf: (l) => l.quantity.toDouble(),
-          unitPriceOf: (l) => l.unitPrice,
-          subtotal: _subtotal,
-          isCharging: _isCharging,
-          onChangeQuantity: (line, delta) => setState(() {
-            _changeQuantity(line, delta);
-            if (_cart.isEmpty) Navigator.of(sheetContext).maybePop();
-          }),
-          onCheckout: () async {
-            Navigator.of(sheetContext).pop();
-            await _checkout();
-          },
-          scrollController: scrollController,
+      // `StatefulBuilder` : le contenu de la feuille modale n'est pas un
+      // descendant de PosPage dans l'arbre de widgets (Navigator/Overlay à
+      // part) — un setState() sur _PosPageState seul ne le reconstruit donc
+      // jamais. `setSheetState` force le panier affiché à se rafraîchir
+      // immédiatement (+/- de quantité), le setState() externe garde le
+      // badge de quantité de la grille/la barre flottante à jour une fois la
+      // feuille refermée.
+      builder: (sheetContext) => StatefulBuilder(
+        builder: (context, setSheetState) => DraggableScrollableSheet(
+          initialChildSize: 0.75,
+          maxChildSize: 0.9,
+          expand: false,
+          builder: (context, scrollController) => CartPanel<CartLine>(
+            lines: _cart,
+            nameOf: (l) => l.product.name,
+            quantityOf: (l) => l.quantity.toDouble(),
+            unitPriceOf: (l) => l.unitPrice,
+            subtotal: _subtotal,
+            isCharging: _isCharging,
+            onChangeQuantity: (line, delta) {
+              setState(() => _changeQuantity(line, delta));
+              if (_cart.isEmpty) {
+                Navigator.of(sheetContext).maybePop();
+              } else {
+                setSheetState(() {});
+              }
+            },
+            onCheckout: () async {
+              Navigator.of(sheetContext).pop();
+              await _checkout();
+            },
+            scrollController: scrollController,
+          ),
         ),
       ),
     );
