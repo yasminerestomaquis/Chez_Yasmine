@@ -259,7 +259,9 @@ class _PosPageState extends State<PosPage> {
             subtotal: _subtotal,
             isCharging: _isCharging,
             onChangeQuantity: (line, delta) {
-              setState(() => _changeQuantity(line, delta));
+              // _changeQuantity() appelle déjà setState() — pas besoin d'en
+              // englober un second ici.
+              _changeQuantity(line, delta);
               if (_cart.isEmpty) {
                 Navigator.of(sheetContext).maybePop();
               } else {

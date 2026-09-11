@@ -24,7 +24,7 @@ Deux permissions distinctes (déjà dans le seed de la Phase 3) : la fiche clien
 
 ## Le paiement à crédit, enfin activé en caisse
 
-Les Phases 7 et 8 avaient délibérément laissé le paiement à crédit hors de l'UI, faute de sélecteur de client. `PaymentDialog` ([lib/pos/payment_dialog.dart](../../apps/web/flutter/lib/pos/payment_dialog.dart)) charge maintenant la liste des clients dès que la méthode « Crédit » est choisie, et exige d'en sélectionner un avant d'accepter la ligne de paiement. Le résultat (`PaymentOutcome`) porte désormais `customerId` en plus des lignes de paiement, propagé jusqu'à `PosPage`/`OrderDetailPage` puis à `SalesService.create`.
+Les Phases 7 et 8 avaient délibérément laissé le paiement à crédit hors de l'UI, faute de sélecteur de client. `PaymentDialog` ([lib/pos/payment_dialog.dart](../../apps/web/flutter/lib/pos/payment_dialog.dart)) charge maintenant la liste des clients dès que la méthode « Crédit » est choisie, et exige d'en sélectionner un avant d'accepter la ligne de paiement. Le résultat (`PaymentOutcome`) porte désormais `customerId` en plus des lignes de paiement, propagé jusqu'à `PosPage`/`TableOrderPage` (anciennement `OrderDetailPage`, remplacé le 2026-09-10) puis à `SalesService.create`.
 
 Limite connue : si une vente comportait plusieurs lignes crédit avec des clients différents (cas d'usage marginal, non empêché par l'UI), seul le dernier client sélectionné est retenu — acceptable pour le cas réel (un seul client à crédit par vente).
 

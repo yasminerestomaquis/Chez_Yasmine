@@ -79,7 +79,15 @@ class CartPanel<T> extends StatelessWidget {
                                 Icons.remove_circle_outline,
                                 color: AppColors.alert,
                               ),
-                              onPressed: () => onChangeQuantity(line, -1),
+                              // Désactivé pendant une mutation en cours : sans
+                              // ça, un double-tap pendant l'aller-retour
+                              // réseau calcule deux fois le delta depuis la
+                              // même quantité affichée (encore l'ancienne) et
+                              // perd un incrément — particulièrement néfaste
+                              // sur l'écran de table (persistance immédiate).
+                              onPressed: isCharging
+                                  ? null
+                                  : () => onChangeQuantity(line, -1),
                             ),
                             Text(quantityOf(line).toStringAsFixed(0)),
                             IconButton(
@@ -87,7 +95,9 @@ class CartPanel<T> extends StatelessWidget {
                                 Icons.add_circle_outline,
                                 color: AppColors.green,
                               ),
-                              onPressed: () => onChangeQuantity(line, 1),
+                              onPressed: isCharging
+                                  ? null
+                                  : () => onChangeQuantity(line, 1),
                             ),
                           ],
                         ),

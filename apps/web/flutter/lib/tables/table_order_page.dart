@@ -147,6 +147,10 @@ class _TableOrderPageState extends State<TableOrderPage> {
   }
 
   Future<void> _addProduct(OrderDetail order, Product product) async {
+    // Ignore les taps pendant qu'une mutation est déjà en cours : sans ça,
+    // un double-tap sur une tuile pendant l'aller-retour réseau envoie deux
+    // requêtes d'ajout avant que la première n'ait rechargé l'addition.
+    if (_isBusy) return;
     // Catégorie à prix variable (Poulets/Poissons/Plats africains) : aucun
     // prix catalogue à proposer, le serveur exige `unitPrice` — même règle
     // qu'en Caisse (`pos_page.dart`).
@@ -183,6 +187,9 @@ class _TableOrderPageState extends State<TableOrderPage> {
     OrderItemDetail item,
     int delta,
   ) async {
+    // Même garde que _addProduct : CartPanel désactive déjà ses boutons
+    // +/- pendant isCharging, ce return est la deuxième ligne de défense.
+    if (_isBusy) return;
     final nextQuantity = item.quantity + delta;
     setState(() => _isBusy = true);
     try {

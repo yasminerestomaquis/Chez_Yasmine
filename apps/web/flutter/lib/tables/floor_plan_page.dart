@@ -424,15 +424,28 @@ class _FloorPlanPageState extends State<FloorPlanPage> {
           if (!mounted) return;
           ScaffoldMessenger.of(context)
               .showSnackBar(SnackBar(content: Text(e.message)));
+        } catch (_) {
+          if (!mounted) return;
+          ScaffoldMessenger.of(context).showSnackBar(
+            const SnackBar(
+              content: Text('Erreur réseau — nouvelle addition non créée'),
+            ),
+          );
         }
       case 'release':
         try {
           await _repository.releaseTable(table.id);
+          if (!mounted) return;
           _reload();
         } on ApiException catch (e) {
           if (!mounted) return;
           ScaffoldMessenger.of(context)
               .showSnackBar(SnackBar(content: Text(e.message)));
+        } catch (_) {
+          if (!mounted) return;
+          ScaffoldMessenger.of(context).showSnackBar(
+            const SnackBar(content: Text('Erreur réseau — table non libérée')),
+          );
         }
       case 'edit':
         await _showEditTableDialog(table);
