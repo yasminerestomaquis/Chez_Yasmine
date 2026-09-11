@@ -1,4 +1,5 @@
 import { Injectable } from '@nestjs/common';
+import ExcelJS from 'exceljs';
 import { PrismaService } from '../prisma/prisma.service.js';
 import { effectiveUnitCost } from '../catalog/product-cost.util.js';
 import { StockMovementsService } from '../stock/stock-movements.service.js';
@@ -277,5 +278,55 @@ export class ReportsService {
       ),
     ];
     return ['"Indicateur","Valeur"', ...rows.map(([label, value]) => `"${label}",${value}`)].join('\n');
+  }
+
+  /**
+   * Listing Excel des produits vendus des catégories à prix par casier
+   * (Bières/Vins/Sucreries — `hasCasePricing`, voir docs/api/catalog.md)
+   * pour un jour choisi par l'utilisateur, une ligne par `SaleItem` (pas
+   * agrégé par produit : "Numéro de la commande" varie ligne à ligne, un même
+   * produit pouvant appartenir à plusieurs ventes/commandes le même jour).
+   */
+  async beveragesSoldExcel(establishmentId: string, dateStr: string): Promise<{ buffer: Buffer; filename: string }> {
+    const [year, month, day] = dateStr.split('-').map(Number);
+    const from = new Date(year, month - 1, day, 0, 0, 0, 0);
+    const to = new Date(year, month - 1, day, 23, 59, 59, 999);
+
+    const items = await this.prisma.saleItem.findMany({
+      where: {
+        sale: { establishmentId, voidedAt: null, createdAt: { gte: from, lte: to } },
+        product: { category: { hasCasePricing: true } },
+      },
+      include: { sale: { select: { orderNumber: true, createdAt: true } } },
+      orderBy: { sale: { createdAt: 'asc' } },
+    });
+
+    const rows = items.map((item) => {
+      const quantity = item.quantity.toNumber();
+      const total = quantity * item.unitPrice.toNumber();
+      return { name: item.name, orderNumber: item.sale.orderNumber, quantity, total };
+    });
+    const totalQuantity = rows.reduce((sum, r) => sum + r.quantity, 0);
+    const totalAmount = rows.reduce((sum, r) => sum + r.total, 0);
+
+    const workbook = new ExcelJS.Workbook();
+    const sheet = workbook.addWorksheet('Boissons vendues');
+    sheet.columns = [
+      { header: 'Nom du produit', key: 'name', width: 30 },
+      { header: 'Numéro de la commande', key: 'orderNumber', width: 22 },
+      { header: 'Nombre de produits vendus', key: 'quantity', width: 24 },
+      { header: 'Montant total produit vendu (FCFA)', key: 'total', width: 28 },
+    ];
+    sheet.getRow(1).font = { bold: true };
+    for (const r of rows) {
+      sheet.addRow({ name: r.name, orderNumber: r.orderNumber ?? '', quantity: r.quantity, total: r.total });
+    }
+    const totalRow = sheet.addRow({ name: 'TOTAL', orderNumber: '', quantity: totalQuantity, total: totalAmount });
+    totalRow.font = { bold: true };
+
+    const buffer = (await workbook.xlsx.writeBuffer()) as ExcelJS.Buffer;
+    const pad = (n: number) => String(n).padStart(2, '0');
+    const filename = `Boissons vendues ${pad(day)}-${pad(month)}-${year}.xlsx`;
+    return { buffer: Buffer.from(buffer), filename };
   }
 }

@@ -1,4 +1,5 @@
 import { Decimal } from '@prisma/client';
+import ExcelJS from 'exceljs';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import type { PrismaService } from '../prisma/prisma.service.js';
 import type { StockMovementsService } from '../stock/stock-movements.service.js';
@@ -12,6 +13,7 @@ function makePrismaMock() {
     customer: { aggregate: vi.fn() },
     product: { findMany: vi.fn() },
     userProfile: { findMany: vi.fn() },
+    saleItem: { findMany: vi.fn() },
   };
   return prisma;
 }
@@ -298,5 +300,70 @@ describe('ReportsService.paymentCategoryBreakdown', () => {
     expect(result.boissonsRevenue).toBe(1000);
     expect(result.boissonsCash).toBe(0);
     expect(result.boissonsMobileMoney).toBe(0);
+  });
+});
+
+describe('ReportsService.beveragesSoldExcel', () => {
+  let prisma: ReturnType<typeof makePrismaMock>;
+  let service: ReportsService;
+
+  beforeEach(() => {
+    prisma = makePrismaMock();
+    service = new ReportsService(prisma as unknown as PrismaService, makeStockMovementsMock() as unknown as StockMovementsService);
+  });
+
+  it('scopes the query to the chosen day, establishment, and case-pricing categories', async () => {
+    (prisma.saleItem as any).findMany.mockResolvedValue([]);
+
+    await service.beveragesSoldExcel('est-1', '2026-09-11');
+
+    expect(prisma.saleItem.findMany).toHaveBeenCalledWith(
+      expect.objectContaining({
+        where: expect.objectContaining({
+          sale: expect.objectContaining({ establishmentId: 'est-1', voidedAt: null }),
+          product: { category: { hasCasePricing: true } },
+        }),
+      }),
+    );
+  });
+
+  it('builds a workbook with a header row, one row per sale item, and a bold total row', async () => {
+    (prisma.saleItem as any).findMany.mockResolvedValue([
+      { name: 'Heineken', quantity: new Decimal(3), unitPrice: new Decimal(1000), sale: { orderNumber: 12, createdAt: new Date() } },
+      { name: 'Castel', quantity: new Decimal(2), unitPrice: new Decimal(800), sale: { orderNumber: 13, createdAt: new Date() } },
+    ]);
+
+    const { buffer, filename } = await service.beveragesSoldExcel('est-1', '2026-09-11');
+
+    expect(filename).toBe('Boissons vendues 11-09-2026.xlsx');
+
+    const workbook = new ExcelJS.Workbook();
+    await workbook.xlsx.load(buffer);
+    const sheet = workbook.getWorksheet('Boissons vendues')!;
+    expect(sheet.getRow(1).getCell(1).value).toBe('Nom du produit');
+    expect(sheet.getRow(2).getCell(1).value).toBe('Heineken');
+    expect(sheet.getRow(2).getCell(2).value).toBe(12);
+    expect(sheet.getRow(2).getCell(3).value).toBe(3);
+    expect(sheet.getRow(2).getCell(4).value).toBe(3000);
+    expect(sheet.getRow(3).getCell(1).value).toBe('Castel');
+
+    const totalRow = sheet.getRow(4);
+    expect(totalRow.getCell(1).value).toBe('TOTAL');
+    expect(totalRow.getCell(3).value).toBe(5);
+    expect(totalRow.getCell(4).value).toBe(4600);
+    expect(totalRow.font?.bold).toBe(true);
+  });
+
+  it('leaves the order number blank when a sale has none', async () => {
+    (prisma.saleItem as any).findMany.mockResolvedValue([
+      { name: 'Sucrerie', quantity: new Decimal(1), unitPrice: new Decimal(500), sale: { orderNumber: null, createdAt: new Date() } },
+    ]);
+
+    const { buffer } = await service.beveragesSoldExcel('est-1', '2026-09-11');
+
+    const workbook = new ExcelJS.Workbook();
+    await workbook.xlsx.load(buffer);
+    const sheet = workbook.getWorksheet('Boissons vendues')!;
+    expect(sheet.getRow(2).getCell(2).value).toBe('');
   });
 });

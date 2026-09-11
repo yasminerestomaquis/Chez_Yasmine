@@ -6,6 +6,7 @@
 GET /establishments/:establishmentId/reports/summary                       (reports.view, ?from=&to=&period=day|week|month|year)
 GET /establishments/:establishmentId/reports/summary.csv                   (reports.view, mêmes paramètres)
 GET /establishments/:establishmentId/reports/payment-category-breakdown    (reports.view, mêmes paramètres — voir ci-dessous)
+GET /establishments/:establishmentId/reports/beverages-sold.xlsx           (reports.view, ?date=YYYY-MM-DD — voir « Exports » ci-dessous)
 ```
 
 `from`/`to` (ISO 8601) prennent le pas sur `period` s'ils sont fournis ; sinon `period` (par défaut `day`) est résolu par rapport à maintenant — c'est ce qui couvre les quatre périodicités demandées par le prompt maître (§34 : journalier/hebdomadaire/mensuel/annuel) sans quatre endpoints séparés.
@@ -34,7 +35,13 @@ Alimente les cartes de l'écran Accueil (`lib/home/home_dashboard.dart`), toujou
 
 ## Exports
 
-Le prompt maître (§34) demande PDF/Excel/CSV. Seul le **CSV** est livré (`GET .../summary.csv`, un indicateur par ligne, plus une ligne « Bénéfice — <produit> » par produit vendu sur la période) — sans dépendance supplémentaire, entièrement testable en pur TypeScript. PDF et Excel sont délibérément **reportés** : les deux demandent une vraie bibliothèque de rendu, non encore choisie ni testée — les ajouter maintenant aurait été une fonctionnalité non vérifiable plutôt qu'un vrai livrable.
+Le prompt maître (§34) demande PDF/Excel/CSV. Le **CSV** est livré (`GET .../summary.csv`, un indicateur par ligne, plus une ligne « Bénéfice — <produit> » par produit vendu sur la période) — sans dépendance supplémentaire, entièrement testable en pur TypeScript. Le **PDF** reste délibérément **reporté** : aucune bibliothèque de rendu choisie ni testée, et aucune demande explicite ne l'a justifié à ce jour.
+
+### Excel « Boissons vendues » (demande utilisateur du 2026-09-11)
+
+`GET .../reports/beverages-sold.xlsx?date=YYYY-MM-DD` (`ReportsService.beveragesSoldExcel`) — listing des `SaleItem` des catégories à prix par casier (`hasCasePricing` — Bières, Vins, Sucreries) vendus le jour choisi, **une ligne par `SaleItem`** (pas agrégé par produit : un même produit peut appartenir à plusieurs ventes/commandes le même jour, chacune avec son propre `Sale.orderNumber`). Colonnes : Nom du produit, Numéro de la commande (`Sale.orderNumber`, vide si absent — une vente peut être créée sans numéro de commande saisi), Nombre de produits vendus, Montant total produit vendu. Dernière ligne, en gras : totaux quantité/montant. Généré côté serveur avec `exceljs` (nouvelle dépendance — le blocage documenté ci-dessus pour PDF ne s'appliquait plus une fois la bibliothèque choisie et testée) ; renvoyé en `application/vnd.openxmlformats-officedocument.spreadsheetml.sheet` avec `Content-Disposition: attachment; filename="Boissons vendues jj-mm-aaaa.xlsx"`.
+
+Côté Flutter (`ReportsPage._exportBeveragesSoldExcel`), un bouton dédié (icône 🍺, à côté du menu Export existant) ouvre un `showDatePicker`, télécharge les octets via `ApiClient.getBytes` (nouvelle méthode — jusqu'ici seul `getText` existait, pour le CSV affiché en dialogue plutôt que téléchargé) puis déclenche un vrai téléchargement navigateur (`downloadBytes`, `lib/common/browser_download*.dart`) : contrairement au CSV, un binaire `.xlsx` ne peut pas se coller dans un `SelectableText`. `downloadBytes` utilise `package:web` (pas `dart:html`, déprécié) derrière un **import conditionnel** (`dart.library.js_interop`) — sans lui, `flutter test` (VM Dart, pas un navigateur) échoue à charger tout fichier en dépendant, même transitivement ; la variante VM (`browser_download_stub.dart`) lève `UnsupportedError`, jamais atteinte en pratique puisque l'app n'a aucune cible non-Web.
 
 ## UI Flutter — tableau de bord (refonte 2026-09-10, « Interface Rapport.docx »)
 
@@ -65,3 +72,4 @@ Corrigé dans `ReportsPage._changePeriod` avec `future.ignore()` (l'API Dart pr�
 - `ReportsService.paymentCategoryBreakdown` : 3 tests — somme Espèces/Mobile Money et Boissons/Plats, répartition proportionnelle d'une vente à paiement mixte, exclusion Carte/Crédit des deux totaux demandés.
 - UI Flutter (`lib/reports/`) : sélecteur de période toujours visible (y compris en cas d'échec de chargement), export CSV affiché dans un dialogue (copiable), et — comme détaillé ci-dessus — un test qui exerce spécifiquement le changement de période jusqu'à son rechargement complet. `flutter analyze`/`test`/`build web` ✅ (42/42 tests Flutter, y compris les 2 tests dédiés à `ReportsPage` inchangés par la refonte visuelle).
 - **Vérifié en conditions réelles** (2026-09-06, avant l'ajout du bénéfice par produit) : round-trip complet navigateur → API de production → base réelle, avec de vraies ventes/dépenses/pertes, voir `PROJECT_PLAN.md` — le bénéfice par produit lui-même repose sur la même requête déjà vérifiée, non rejoué en conditions réelles séparément après son ajout.
+- `ReportsService.beveragesSoldExcel` (2026-09-11) : 3 tests — portée de la requête (établissement, jour, `hasCasePricing`), contenu du classeur généré (en-tête, une ligne par article, ligne de total en gras, nom de fichier), numéro de commande vide quand absent. `flutter analyze`/`test`/`build web` ✅ (47/47) côté client, `npm test`/`lint`/`build` ✅ (299/299) côté serveur. **Pas encore vérifié en conditions réelles** (round-trip navigateur → production avec de vraies ventes Bières/Vins/Sucreries) — à faire à la prochaine ouverture de session avec accès au déploiement live.

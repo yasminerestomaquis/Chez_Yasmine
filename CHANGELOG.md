@@ -2,6 +2,12 @@
 
 ## [Unreleased]
 
+### Ajouté (2026-09-11) — Export Excel « Boissons vendues » (Rapports)
+- Nouveau bouton dans Rapports (icône 🍺, à côté du menu Export existant) : génère un fichier Excel du listing des produits vendus des catégories Bières/Vins/Sucreries (`hasCasePricing`) pour une date choisie par l'utilisateur — colonnes Nom du produit / N° de commande / Quantité vendue / Montant total, ligne de total en gras. Nommé `Boissons vendues jj-mm-aaaa.xlsx`.
+- Nouvelle route `GET /establishments/:id/reports/beverages-sold.xlsx?date=YYYY-MM-DD` (`ReportsService.beveragesSoldExcel`, dépendance `exceljs`) — voir `docs/api/reports.md`. Le PDF/Excel avait été explicitement reporté lors de la refonte du 2026-09-10 faute de demande concrète ; celle-ci en fournit une.
+- Côté Flutter : `ApiClient.getBytes` (nouveau, pour les corps binaires) et un vrai téléchargement navigateur (`lib/common/browser_download*.dart`, `package:web` derrière un import conditionnel pour ne pas casser `flutter test`) — le CSV existant se contentait d'un dialogue texte copiable, un binaire `.xlsx` ne le permet pas.
+- 299/299 tests NestJS, `flutter analyze`/`test`/`build web` propres (47/47 tests Flutter). Pas encore vérifié en conditions réelles (round-trip production).
+
 ### Ajouté (post-plan, 2026-09-10) — Multi-additions par table, libération sans condition, écran Caisse-table
 - **Libération d'une table sans condition** (`POST /tables/:tableId/release`) : toutes ses additions ouvertes sont annulées (aucun impact vente/stock), la table redevient libre — sans confirmation, accessible depuis le nouveau menu d'une table occupée.
 - **Plusieurs additions simultanées sur une même table** : nouveau bouton « Nouvelle addition » (`POST /tables/:tableId/additions`) en plus de la scission déjà existante ; `GET /tables/:tableId/orders` liste désormais toutes les additions ouvertes. Correction de deux bugs latents trouvés en chemin : le paiement d'une addition libérait systématiquement sa table même si une autre addition y restait ouverte, et `TablesService.list` n'agrégeait qu'une seule addition par table pour le total/nombre de convives affichés.

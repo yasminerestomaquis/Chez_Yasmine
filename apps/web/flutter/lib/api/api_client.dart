@@ -44,6 +44,32 @@ class ApiClient {
     throw ApiException(response.statusCode, 'Erreur ${response.statusCode}');
   }
 
+  /// Comme [get], mais pour un corps binaire (ex. l'export Excel des
+  /// rapports, `GET .../reports/beverages-sold.xlsx`) — le nom de fichier
+  /// suggéré par le serveur (`Content-Disposition`) est renvoyé avec les
+  /// octets pour que l'appelant n'ait pas à le reconstruire lui-même.
+  Future<({List<int> bytes, String? filename})> getBytes(
+    String path, {
+    Map<String, String>? query,
+  }) async {
+    final response = await http.get(_uri(path, query), headers: _authHeaders);
+    if (response.statusCode >= 200 && response.statusCode < 300) {
+      return (
+        bytes: response.bodyBytes,
+        filename: _filenameFromContentDisposition(
+          response.headers['content-disposition'],
+        ),
+      );
+    }
+    throw ApiException(response.statusCode, 'Erreur ${response.statusCode}');
+  }
+
+  String? _filenameFromContentDisposition(String? header) {
+    if (header == null) return null;
+    final match = RegExp('filename="([^"]+)"').firstMatch(header);
+    return match?.group(1);
+  }
+
   Future<dynamic> post(String path, {Object? body}) async {
     final response = await http.post(
       _uri(path),
@@ -69,11 +95,21 @@ class ApiClient {
 
   /// Upload multipart d'une image (champ `file`), utilisé par le pipeline
   /// photo produit (voir apps/api/nestjs/src/catalog/product-images.controller.ts).
-  Future<dynamic> uploadFile(String path, {required List<int> bytes, required String filename, required String contentType}) async {
+  Future<dynamic> uploadFile(
+    String path, {
+    required List<int> bytes,
+    required String filename,
+    required String contentType,
+  }) async {
     final request = http.MultipartRequest('POST', _uri(path))
       ..headers.addAll(_authHeaders)
       ..files.add(
-        http.MultipartFile.fromBytes('file', bytes, filename: _safeFilename(filename), contentType: MediaType.parse(contentType)),
+        http.MultipartFile.fromBytes(
+          'file',
+          bytes,
+          filename: _safeFilename(filename),
+          contentType: MediaType.parse(contentType),
+        ),
       );
     final streamed = await request.send();
     final response = await http.Response.fromStream(streamed);
@@ -90,8 +126,12 @@ class ApiClient {
   /// contenu exact n'a aucune importance : ne garder que l'extension.
   String _safeFilename(String original) {
     final dotIndex = original.lastIndexOf('.');
-    final extension = dotIndex != -1 && dotIndex < original.length - 1 ? original.substring(dotIndex + 1) : 'jpg';
-    final safeExtension = RegExp(r'^[A-Za-z0-9]{1,5}$').hasMatch(extension) ? extension : 'jpg';
+    final extension = dotIndex != -1 && dotIndex < original.length - 1
+        ? original.substring(dotIndex + 1)
+        : 'jpg';
+    final safeExtension = RegExp(r'^[A-Za-z0-9]{1,5}$').hasMatch(extension)
+        ? extension
+        : 'jpg';
     return 'photo.$safeExtension';
   }
 

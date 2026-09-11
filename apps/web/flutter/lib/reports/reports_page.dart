@@ -5,6 +5,7 @@ import '../api/api_client.dart';
 import '../charts/chart_models.dart';
 import '../charts/charts_repository.dart';
 import '../charts/weekly_bar_chart.dart';
+import '../common/browser_download.dart';
 import '../common/formatting.dart';
 import '../customers/customers_page.dart';
 import '../losses/losses_page.dart';
@@ -16,6 +17,7 @@ import 'report_models.dart';
 import 'reports_repository.dart';
 
 final _orderDateFormat = DateFormat('dd/MM/yyyy');
+final _isoDateFormat = DateFormat('yyyy-MM-dd');
 
 const _periodLabels = {
   'day': 'Jour',
@@ -295,6 +297,36 @@ class _ReportsPageState extends State<ReportsPage> {
         ],
       ),
     );
+  }
+
+  /// Listing Excel des produits vendus des catégories Bières/Vins/Sucreries
+  /// (`hasCasePricing`) pour un jour choisi par l'utilisateur — bouton
+  /// distinct du menu Export (§ demande utilisateur), déclenche un vrai
+  /// téléchargement de fichier (contrairement au CSV/dialogue texte
+  /// existant, un binaire .xlsx ne se copie-colle pas).
+  Future<void> _exportBeveragesSoldExcel() async {
+    final picked = await showDatePicker(
+      context: context,
+      initialDate: DateTime.now(),
+      firstDate: DateTime(2020),
+      lastDate: DateTime(2100),
+      helpText: 'Date des ventes à exporter',
+    );
+    if (picked == null) return;
+    try {
+      final result = await _repository.exportBeveragesSoldExcel(
+        _isoDateFormat.format(picked),
+      );
+      downloadBytes(
+        result.bytes,
+        result.filename ??
+            'Boissons vendues ${DateFormat('dd-MM-yyyy').format(picked)}.xlsx',
+      );
+    } on ApiException catch (e) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(context)
+          .showSnackBar(SnackBar(content: Text(e.message)));
+    }
   }
 
   ({String text, bool positive})? _pctChange(double current, double? previous) {
@@ -638,6 +670,11 @@ class _ReportsPageState extends State<ReportsPage> {
       appBar: AppBar(
         title: const Text('Rapports'),
         actions: [
+          IconButton(
+            tooltip: 'Boissons vendues (Excel)',
+            icon: const Icon(Icons.local_bar_outlined),
+            onPressed: _exportBeveragesSoldExcel,
+          ),
           PopupMenuButton<String>(
             tooltip: 'Exporter',
             icon: const Icon(Icons.download_outlined),
