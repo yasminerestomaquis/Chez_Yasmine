@@ -68,7 +68,12 @@ export class ProductImagesController {
     return this.images.setPrimary(establishmentId, productId, imageId);
   }
 
+  // Lecture (`products.view`) séparée de la gestion (`products.manage`,
+  // niveau contrôleur ci-dessus) : la grille produits de la Caisse affiche
+  // les photos pour tout rôle qui vend (`pos.sell`), pas seulement ceux qui
+  // gèrent le catalogue — même raison que ProductsController.list.
   @Get(':imageId/url')
+  @RequirePermissions('products.view')
   getVariantUrl(
     @Req() request: Request,
     @Param('establishmentId') establishmentId: string,

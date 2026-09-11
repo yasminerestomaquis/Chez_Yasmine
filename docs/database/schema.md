@@ -16,7 +16,7 @@ Appliqué sur le projet Supabase `tsebsulvhgttdwtgqfoj` (eu-west-1, Postgres 17)
 | 20260905195839 | product_images_storage | Bucket privé `product-images` + policy RLS sur `storage.objects` (isolation par `{organization_id}/{establishment_id}/...` dans le chemin). Voir `docs/api/catalog.md`. |
 | 20260905195906 | restrict_handle_new_user_function | Retire l'exécution RPC directe de `handle_new_user()` (fonction trigger, jamais destinée à être appelée par un client) pour `anon`/`authenticated`. |
 
-Seed (hors migrations, rejouable) : `supabase/seed/001_roles_permissions.sql` — 15 permissions, 8 rôles système (Super Administrateur, Administrateur, Propriétaire, Gérant, Caissier, Serveur, Magasinier, Comptable), 74 associations rôle/permission. Déjà exécuté sur le projet.
+Seed (hors migrations, rejouable) : `supabase/seed/001_roles_permissions.sql` — 16 permissions, 8 rôles système (Super Administrateur, Administrateur, Propriétaire, Gérant, Caissier, Serveur, Magasinier, Comptable), 81 associations rôle/permission. Déjà exécuté sur le projet. Inclut `products.view` (2026-09-11) : lecture du catalogue séparée de sa gestion (`products.manage`), pour que Caissier/Serveur/Magasinier puissent lister produits/catégories sans avoir le droit de les modifier — voir `docs/api/catalog.md`.
 
 ## Isolation multi-tenant (RLS)
 

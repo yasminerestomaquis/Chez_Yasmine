@@ -11,14 +11,18 @@ import { ProductsService } from './products.service.js';
 export class ProductsController {
   constructor(private readonly products: ProductsService) {}
 
+  // Lecture (`products.view`) séparée de la gestion (`products.manage`) :
+  // quiconque vend (Caissier/Serveur, `pos.sell`) doit pouvoir lister le
+  // catalogue pour construire une vente, sans pour autant avoir le droit de
+  // créer/modifier/archiver des produits — voir supabase/seed/001_roles_permissions.sql.
   @Get()
-  @RequirePermissions('products.manage')
+  @RequirePermissions('products.view')
   list(@Param('establishmentId') establishmentId: string) {
     return this.products.list(establishmentId);
   }
 
   @Get(':productId')
-  @RequirePermissions('products.manage')
+  @RequirePermissions('products.view')
   get(@Param('establishmentId') establishmentId: string, @Param('productId') productId: string) {
     return this.products.get(establishmentId, productId);
   }

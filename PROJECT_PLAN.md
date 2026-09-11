@@ -54,7 +54,7 @@ Restant avant `DONE` : vérifier le pipeline CI une fois le premier push possibl
 - [x] Modèle complet (30 tables, §16 du prompt maître) appliqué sur le projet Supabase via 6 migrations versionnées (`supabase/migrations/`) — détail dans `docs/database/schema.md`.
 - [x] RLS activé et testé sur toutes les tables (isolation par organisation/établissement) ; advisor de sécurité Supabase vérifié, un seul finding résiduel accepté et documenté (fonctions RLS appelables en RPC par `authenticated`, nécessaire au fonctionnement des policies, sans fuite de données).
 - [x] Index sur toutes les clés étrangères (advisor de performance Supabase vérifié).
-- [x] Seed des rôles/permissions système (`supabase/seed/001_roles_permissions.sql`) exécuté : 15 permissions, 8 rôles, 74 associations.
+- [x] Seed des rôles/permissions système (`supabase/seed/001_roles_permissions.sql`) exécuté : 16 permissions, 8 rôles, 81 associations (`products.view` ajouté le 2026-09-11, voir `docs/api/catalog.md`).
 - [x] Schéma Prisma (`apps/api/nestjs/prisma/schema.prisma`) écrit à la main en miroir des migrations (pas d'accès à `DATABASE_URL` réel pour introspecter) ; `prisma validate`/`prisma generate` ✅. Intégration NestJS via adaptateur pilote `@prisma/adapter-pg` (Prisma 7 a retiré `datasource.url` du schéma) : `PrismaModule`/`PrismaService`, build NestJS ✅.
 
 ### Phase 4 — Authentification et RBAC — `TESTING`

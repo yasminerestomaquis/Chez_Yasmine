@@ -2,6 +2,12 @@
 
 ## [Unreleased]
 
+### Corrigé (2026-09-11) — Caisse/Tables inutilisables par Caissier et Serveur (`products.view`)
+- Même après le correctif de l'accueil ci-dessous, un compte Serveur (ou Caissier) ne pouvait toujours pas ouvrir la Caisse ni ajouter un produit à une addition : `PosPage`/`TableOrderPage`/`FloorPlanPage` listent le catalogue via `GET .../products` et `GET .../categories`, routes qui exigeaient `products.manage` — une permission que **ni Caissier ni Serveur** n'ont (seuls Magasinier, Gérant et l'administration l'ont).
+- Corrigé en séparant lecture et gestion : nouvelle permission `products.view` (lecture seule), affectée aux routes `GET` du catalogue (produits, catégories, URL d'image) à la place de `products.manage` (qui reste réservé à la création/édition/suppression). `products.view` accordée à Caissier, Serveur et Magasinier — voir `docs/api/catalog.md`.
+- Seed rejoué sur la base de production (idempotent, `on conflict do nothing`) : 16 permissions (+1), 81 associations rôle/permission (+7).
+- 299/299 tests NestJS, `flutter analyze`/`build web` inchangés (aucun changement côté Flutter, seulement des permissions serveur).
+
 ### Corrigé (2026-09-11) — Accueil bloqué pour les rôles sans `reports.view` (Serveur, Magasinier)
 - Un compte invité avec le rôle Serveur voyait, à sa première connexion, l'écran d'accueil entier remplacé par « Impossible de joindre l'API : Permission(s) manquante(s) : reports.view » — alors qu'il a parfaitement le droit d'utiliser Tables/Caisse (`pos.sell`, `tables.manage`). Cause : `HomeDashboard._load()` groupait 3 appels réseau dans un seul `Future.wait`, dont 2 (`summary`/`paymentCategoryBreakdown`) exigent `reports.view` — une permission que Serveur et Magasinier n'ont pas (`supabase/seed/001_roles_permissions.sql`) — faisant échouer tout le chargement de la page au lieu de simplement ces 2 appels.
 - Corrigé : ces 2 appels sont désormais tolérants à un 403 (autre erreur toujours fatale, comportement inchangé) ; l'accueil masque juste les cartes de statistiques concernées et garde la navigation (modules, actions rapides) intacte pour les rôles sans `reports.view`.

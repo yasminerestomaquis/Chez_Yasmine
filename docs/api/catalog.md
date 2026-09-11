@@ -2,25 +2,31 @@
 
 ## Routes NestJS
 
-Toutes scopées par établissement (convention `:establishmentId`), protégées par `SupabaseJwtGuard` + `PermissionsGuard` + `@RequirePermissions('products.manage')` :
+Toutes scopées par établissement (convention `:establishmentId`), protégées par `SupabaseJwtGuard` + `PermissionsGuard`. **Depuis le 2026-09-11**, la lecture (`GET`) exige `products.view` et la gestion (création/édition/suppression) exige `products.manage` — deux permissions distinctes (voir « Correctif » ci-dessous) :
 
 ```
-GET    /establishments/:establishmentId/categories
-POST   /establishments/:establishmentId/categories
-PATCH  /establishments/:establishmentId/categories/:categoryId
-DELETE /establishments/:establishmentId/categories/:categoryId
+GET    /establishments/:establishmentId/categories                                                 products.view
+POST   /establishments/:establishmentId/categories                                                  products.manage
+PATCH  /establishments/:establishmentId/categories/:categoryId                                       products.manage
+DELETE /establishments/:establishmentId/categories/:categoryId                                       products.manage
 
-GET    /establishments/:establishmentId/products
-GET    /establishments/:establishmentId/products/:productId
-POST   /establishments/:establishmentId/products
-PATCH  /establishments/:establishmentId/products/:productId
-DELETE /establishments/:establishmentId/products/:productId
+GET    /establishments/:establishmentId/products                                                    products.view
+GET    /establishments/:establishmentId/products/:productId                                          products.view
+POST   /establishments/:establishmentId/products                                                     products.manage
+PATCH  /establishments/:establishmentId/products/:productId                                          products.manage
+DELETE /establishments/:establishmentId/products/:productId                                          products.manage
 
-POST   /establishments/:establishmentId/products/:productId/images        (multipart, champ "file")
-DELETE /establishments/:establishmentId/products/:productId/images/:imageId
-PATCH  /establishments/:establishmentId/products/:productId/images/:imageId  (body: { isPrimary: true })
-GET    /establishments/:establishmentId/products/:productId/images/:imageId/url?variant=thumbnail|small|medium|large
+POST   /establishments/:establishmentId/products/:productId/images        (multipart, champ "file")  products.manage
+DELETE /establishments/:establishmentId/products/:productId/images/:imageId                          products.manage
+PATCH  /establishments/:establishmentId/products/:productId/images/:imageId  (body: { isPrimary: true }) products.manage
+GET    /establishments/:establishmentId/products/:productId/images/:imageId/url?variant=...          products.view
 ```
+
+### Correctif (2026-09-11) — `products.view` séparé de `products.manage`
+
+Avant ce correctif, **toutes** les routes ci-dessus (y compris les `GET` de simple consultation) exigeaient `products.manage`. Or `supabase/seed/001_roles_permissions.sql` n'accorde `products.manage` qu'à Magasinier, Gérant et les rôles d'administration — ni Caissier ni Serveur ne l'ont. Conséquence en conditions réelles : un compte Caissier ou Serveur ne pouvait **pas ouvrir la Caisse** (`PosPage`) ni ajouter un produit à une addition (`TableOrderPage`/`FloorPlanPage`) — les deux listent le catalogue via `CatalogRepository.listProducts`/`listCategories`, qui recevait un 403 dès le premier appel.
+
+Corrigé en introduisant `products.view` (nouvelle permission), affectée sur les routes `GET` ci-dessus à la place de `products.manage`, et accordée à Caissier, Serveur et Magasinier (en plus de `products.manage` pour ce dernier — les deux permissions sont désormais indépendantes, `products.manage` seul ne donne plus le droit de lister). Les rôles à accès complet (Super Administrateur, Administrateur, Propriétaire, Gérant) l'ont automatiquement via leur `cross join permissions`.
 
 `UpdateProductDto` exclut volontairement `stockQuantity` — les changements de stock passeront par les mouvements de stock (Phase 6), jamais par une édition directe du produit.
 

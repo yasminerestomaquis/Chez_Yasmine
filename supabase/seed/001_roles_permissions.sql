@@ -4,6 +4,7 @@
 
 insert into permissions (code, description) values
   ('products.manage',   'Créer/modifier/archiver produits, catégories, photos'),
+  ('products.view',     'Consulter le catalogue (produits, catégories, photos) — sans le modifier'),
   ('stock.manage',      'Mouvements de stock : entrées, sorties, inventaires, pertes'),
   ('purchases.manage',  'Achats et fournisseurs'),
   ('pos.sell',          'Encaisser une vente en caisse ou en salle'),
@@ -48,26 +49,36 @@ where r.is_system and r.name = 'Gérant' and p.code <> 'roles.manage'
 on conflict do nothing;
 
 -- Caissier : caisse, remboursement, clients (encours crédit), rapports.
+-- `products.view` : la grille produits de la Caisse liste le catalogue
+-- (voir apps/api/nestjs/src/catalog/products.controller.ts) — sans elle,
+-- un Caissier ne peut même pas ouvrir la Caisse (404/403 au chargement).
 insert into role_permissions (role_id, permission_id)
 select r.id, p.id
 from roles r
-join permissions p on p.code in ('pos.sell', 'pos.refund', 'customers.manage', 'cash.manage', 'reports.view')
+join permissions p on p.code in ('pos.sell', 'pos.refund', 'customers.manage', 'cash.manage', 'reports.view', 'products.view')
 where r.is_system and r.name = 'Caissier'
 on conflict do nothing;
 
 -- Serveur : vente en salle et gestion des tables.
+-- `products.view` : même raison que pour Caissier ci-dessus — la prise de
+-- commande en salle (FloorPlanPage/TableOrderPage) liste aussi le catalogue.
 insert into role_permissions (role_id, permission_id)
 select r.id, p.id
 from roles r
-join permissions p on p.code in ('pos.sell', 'tables.manage')
+join permissions p on p.code in ('pos.sell', 'tables.manage', 'products.view')
 where r.is_system and r.name = 'Serveur'
 on conflict do nothing;
 
 -- Magasinier : produits, stock, achats/fournisseurs, pertes.
+-- `products.view` en plus de `products.manage` : les routes de lecture du
+-- catalogue exigent désormais `products.view` spécifiquement (voir
+-- ProductsController/CategoriesController/ProductImagesController) —
+-- `products.manage` seul ne suffit plus à lister/consulter, seulement à
+-- créer/modifier/archiver.
 insert into role_permissions (role_id, permission_id)
 select r.id, p.id
 from roles r
-join permissions p on p.code in ('products.manage', 'stock.manage', 'purchases.manage', 'losses.manage')
+join permissions p on p.code in ('products.manage', 'products.view', 'stock.manage', 'purchases.manage', 'losses.manage')
 where r.is_system and r.name = 'Magasinier'
 on conflict do nothing;
 

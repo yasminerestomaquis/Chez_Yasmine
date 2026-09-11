@@ -11,8 +11,10 @@ import { UpdateCategoryDto } from './dto/update-category.dto.js';
 export class CategoriesController {
   constructor(private readonly categories: CategoriesService) {}
 
+  // Lecture (`products.view`) séparée de la gestion (`products.manage`) —
+  // même raison que ProductsController.list ci-contre.
   @Get()
-  @RequirePermissions('products.manage')
+  @RequirePermissions('products.view')
   list(@Param('establishmentId') establishmentId: string) {
     return this.categories.list(establishmentId);
   }
