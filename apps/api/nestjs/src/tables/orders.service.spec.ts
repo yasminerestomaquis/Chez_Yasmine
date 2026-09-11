@@ -107,6 +107,7 @@ describe('OrdersService.openAdditionalOrder', () => {
 
     expect(prisma.order.create).toHaveBeenCalledWith({
       data: { establishmentId: 'est-1', tableId: 't1', serverId: 'user-1', status: 'open', guestCount: 2 },
+      include: { items: true },
     });
     expect(prisma.restaurantTable.update).not.toHaveBeenCalled();
   });

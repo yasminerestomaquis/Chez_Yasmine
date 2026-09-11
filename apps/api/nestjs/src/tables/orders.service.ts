@@ -66,7 +66,15 @@ export class OrdersService {
     if (table.status !== 'occupied') {
       throw new ConflictException("Cette table n'est pas occupée — utilisez l'ouverture normale");
     }
-    return this.prisma.order.create({ data: { establishmentId, tableId, serverId, status: 'open', guestCount } });
+    // `include: { items: true }` : une addition neuve n'a jamais d'article,
+    // mais la réponse doit tout de même porter la clé `items` (même forme
+    // que `listOpenOrdersForTable`) — sans elle, `OrderDetail.fromJson` côté
+    // Flutter plante (`items` absent du JSON), aussi bien depuis
+    // `floor_plan_page.dart` que `table_order_page.dart`.
+    return this.prisma.order.create({
+      data: { establishmentId, tableId, serverId, status: 'open', guestCount },
+      include: { items: true },
+    });
   }
 
   /**
