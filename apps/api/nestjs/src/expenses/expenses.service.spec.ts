@@ -229,3 +229,78 @@ describe('ExpensesService.summary', () => {
     expect(result.to.toISOString().slice(0, 10)).toBe('2026-09-06');
   });
 });
+
+describe('ExpensesService.history', () => {
+  let prisma: ReturnType<typeof makePrismaMock>;
+  let service: ExpensesService;
+
+  beforeEach(() => {
+    prisma = makePrismaMock();
+    (prisma.expense as any).count = vi.fn();
+    service = new ExpensesService(prisma as unknown as PrismaService, activityNotifierMock);
+  });
+
+  it('paginates and filters by category/status/paymentMethod', async () => {
+    (prisma.expense as any).findMany.mockResolvedValue([]);
+    (prisma.expense as any).count.mockResolvedValue(28);
+    const result = await service.history('est-1', {
+      period: 'week',
+      weekOf: '2026-09-10',
+      category: 'Marché',
+      status: 'paid',
+      paymentMethod: 'cash',
+      page: 1,
+      pageSize: 8,
+    });
+    expect(prisma.expense.findMany).toHaveBeenCalledWith(
+      expect.objectContaining({
+        where: expect.objectContaining({ establishmentId: 'est-1', category: 'Marché', status: 'paid', paymentMethod: 'cash' }),
+        skip: 0,
+        take: 8,
+      }),
+    );
+    expect(result.total).toBe(28);
+    expect(result.page).toBe(1);
+    expect(result.pageSize).toBe(8);
+  });
+
+  it('actually applies the date range filter for a "week" period even without an explicit year (weekOf already encodes it)', async () => {
+    (prisma.expense as any).findMany.mockResolvedValue([]);
+    (prisma.expense as any).count.mockResolvedValue(0);
+    await service.history('est-1', { period: 'week', weekOf: '2026-08-31' });
+    const call = (prisma.expense.findMany as any).mock.calls[0][0];
+    expect(call.where.expenseDate).toBeDefined();
+    expect(call.where.expenseDate.gte.toISOString().slice(0, 10)).toBe('2026-08-31');
+    expect(call.where.expenseDate.lte.toISOString().slice(0, 10)).toBe('2026-09-06');
+  });
+});
+
+describe('ExpensesService.exportHistoryExcel', () => {
+  let prisma: ReturnType<typeof makePrismaMock>;
+  let service: ExpensesService;
+
+  beforeEach(() => {
+    prisma = makePrismaMock();
+    service = new ExpensesService(prisma as unknown as PrismaService, activityNotifierMock);
+  });
+
+  it('generates a workbook containing every filtered row, unpaginated', async () => {
+    (prisma.expense as any).findMany.mockResolvedValue([
+      {
+        label: 'Achat de vivres',
+        category: 'Marché',
+        amount: { toNumber: () => 125000 },
+        expenseDate: new Date('2026-09-12'),
+        periodicity: 'one_off',
+        paymentMethod: 'cash',
+        status: 'paid',
+      },
+    ]);
+    const { buffer, filename } = await service.exportHistoryExcel('est-1', { period: 'week', weekOf: '2026-09-10' });
+    expect(buffer.length).toBeGreaterThan(0);
+    expect(filename).toContain('.xlsx');
+    expect(prisma.expense.findMany).toHaveBeenCalledWith(
+      expect.not.objectContaining({ skip: expect.anything(), take: expect.anything() }),
+    );
+  });
+});

@@ -1,4 +1,5 @@
 import { IsDateString, IsIn, IsInt, IsNumber, IsOptional, IsString, IsUUID, Min, MinLength } from 'class-validator';
+import { Type } from 'class-transformer';
 
 export type ExpensePeriodicity = 'one_off' | 'recurring';
 
@@ -38,6 +39,14 @@ export class CreateExpenseDto {
   @IsInt()
   @Min(1)
   marketNumber?: number;
+
+  @IsOptional()
+  @IsIn(['cash', 'mobile_money', 'bank_transfer'])
+  paymentMethod?: string;
+
+  @IsOptional()
+  @IsIn(['paid', 'pending', 'cancelled'])
+  status?: string;
 }
 
 export class UpdateExpenseDto {
@@ -71,4 +80,49 @@ export class UpdateExpenseDto {
   @IsInt()
   @Min(1)
   marketNumber?: number;
+
+  @IsOptional()
+  @IsIn(['cash', 'mobile_money', 'bank_transfer'])
+  paymentMethod?: string;
+
+  @IsOptional()
+  @IsIn(['paid', 'pending', 'cancelled'])
+  status?: string;
+}
+
+export class ExpenseHistoryQueryDto {
+  @IsOptional()
+  @IsIn(['year', 'month', 'week'])
+  period?: 'year' | 'month' | 'week';
+
+  @IsOptional()
+  @Type(() => Number)
+  year?: number;
+
+  @IsOptional()
+  @Type(() => Number)
+  month?: number;
+
+  @IsOptional()
+  weekOf?: string;
+
+  @IsOptional()
+  @IsString()
+  category?: string;
+
+  @IsOptional()
+  @IsIn(['paid', 'pending', 'cancelled'])
+  status?: string;
+
+  @IsOptional()
+  @IsIn(['cash', 'mobile_money', 'bank_transfer'])
+  paymentMethod?: string;
+
+  @IsOptional()
+  @Type(() => Number)
+  page?: number;
+
+  @IsOptional()
+  @Type(() => Number)
+  pageSize?: number;
 }

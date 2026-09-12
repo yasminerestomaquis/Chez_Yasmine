@@ -1,7 +1,8 @@
 import { Injectable, NotFoundException } from '@nestjs/common';
+import ExcelJS from 'exceljs';
 import { PrismaService } from '../prisma/prisma.service.js';
 import { ActivityNotifierService } from '../notifications/activity-notifier.service.js';
-import type { CreateExpenseDto, UpdateExpenseDto } from './dto/expense.dto.js';
+import type { CreateExpenseDto, UpdateExpenseDto, ExpenseHistoryQueryDto } from './dto/expense.dto.js';
 
 export interface ExpensePeriodQuery {
   period: 'year' | 'month' | 'week';
@@ -206,5 +207,75 @@ export class ExpensesService {
         .sort((a, b) => b.expenseDate.getTime() - a.expenseDate.getTime())
         .slice(0, 8),
     };
+  }
+
+  private historyWhere(establishmentId: string, query: ExpenseHistoryQueryDto) {
+    // `week` encode déjà l'année dans `weekOf` (une date ISO complète) — exiger
+    // `year` en plus pour cette branche ferait échouer silencieusement le
+    // filtrage de période dès que le client envoie period='week' sans année
+    // (exactement le cas du test ci-dessus, qui ne passe pas `year`).
+    const hasPeriod = query.period === 'week' ? true : Boolean(query.period && query.year);
+    const range = hasPeriod
+      ? resolveExpensePeriodRange({ period: query.period!, year: query.year!, month: query.month, weekOf: query.weekOf })
+      : undefined;
+    return {
+      establishmentId,
+      ...(range ? { expenseDate: { gte: range.from, lte: range.to } } : {}),
+      ...(query.category ? { category: query.category } : {}),
+      ...(query.status ? { status: query.status } : {}),
+      ...(query.paymentMethod ? { paymentMethod: query.paymentMethod } : {}),
+    };
+  }
+
+  async history(establishmentId: string, query: ExpenseHistoryQueryDto) {
+    const where = this.historyWhere(establishmentId, query);
+    const page = query.page && query.page > 0 ? query.page : 1;
+    const pageSize = query.pageSize && query.pageSize > 0 ? query.pageSize : 8;
+    const [items, total] = await Promise.all([
+      this.prisma.expense.findMany({ where, orderBy: { expenseDate: 'desc' }, skip: (page - 1) * pageSize, take: pageSize }),
+      this.prisma.expense.count({ where }),
+    ]);
+    return { items, total, page, pageSize };
+  }
+
+  /** Même pattern que ReportsService.beveragesSoldExcel — respecte les filtres actifs, jamais paginé (l'export contient tout ce qui correspond au filtre). */
+  async exportHistoryExcel(establishmentId: string, query: ExpenseHistoryQueryDto): Promise<{ buffer: Buffer; filename: string }> {
+    const where = this.historyWhere(establishmentId, query);
+    const expenses = await this.prisma.expense.findMany({ where, orderBy: { expenseDate: 'desc' } });
+
+    const workbook = new ExcelJS.Workbook();
+    const sheet = workbook.addWorksheet('Historique des dépenses');
+    sheet.columns = [
+      { header: 'Date', key: 'date', width: 14 },
+      { header: 'Libellé', key: 'label', width: 30 },
+      { header: 'Nature', key: 'category', width: 18 },
+      { header: 'Montant (FCFA)', key: 'amount', width: 18 },
+      { header: 'Type', key: 'periodicity', width: 14 },
+      { header: 'Mode de paiement', key: 'paymentMethod', width: 18 },
+      { header: 'Statut', key: 'status', width: 14 },
+    ];
+    sheet.getRow(1).font = { bold: true };
+    let total = 0;
+    for (const e of expenses) {
+      const amount = e.amount.toNumber();
+      total += amount;
+      sheet.addRow({
+        date: e.expenseDate.toISOString().slice(0, 10),
+        label: e.label,
+        category: e.category ?? 'Autre',
+        amount,
+        periodicity: e.periodicity === 'recurring' ? 'Récurrente' : 'Ponctuelle',
+        paymentMethod: e.paymentMethod,
+        status: e.status,
+      });
+    }
+    const totalRow = sheet.addRow({ label: 'TOTAL', amount: total });
+    totalRow.font = { bold: true };
+
+    const buffer = (await workbook.xlsx.writeBuffer()) as ExcelJS.Buffer;
+    const pad = (n: number) => String(n).padStart(2, '0');
+    const now = new Date();
+    const filename = `Historique depenses ${pad(now.getDate())}-${pad(now.getMonth() + 1)}-${now.getFullYear()}.xlsx`;
+    return { buffer: Buffer.from(buffer), filename };
   }
 }
