@@ -852,7 +852,12 @@ export class PayrollService {
           }),
         },
       },
-      include: { lines: true },
+      // CORRECTIF (repéré avant la Task 9) : `include: { lines: true }` ne
+      // suffit pas — la réponse est désérialisée côté Flutter en
+      // `PayrollRun`/`PayrollLine.fromJson`, qui lit `json['employee']`
+      // sans garde. Inclure la relation employé sur chaque ligne, même forme
+      // que `list()` ci-dessus.
+      include: { lines: { include: { employee: { select: { id: true, lastName: true, firstName: true } } } } },
     });
     return run;
   }
@@ -1556,7 +1561,11 @@ Ajouter dans la classe :
 
 ```typescript
   private historyWhere(establishmentId: string, query: ExpenseHistoryQueryDto) {
-    const hasPeriod = query.period && query.year;
+    // `week` encode déjà l'année dans `weekOf` (une date ISO complète) — exiger
+    // `year` en plus pour cette branche ferait échouer silencieusement le
+    // filtrage de période dès que le client envoie period='week' sans année
+    // (exactement le cas du test ci-dessous, qui ne passe pas `year`).
+    const hasPeriod = query.period === 'week' ? true : Boolean(query.period && query.year);
     const range = hasPeriod
       ? resolveExpensePeriodRange({ period: query.period!, year: query.year!, month: query.month, weekOf: query.weekOf })
       : undefined;

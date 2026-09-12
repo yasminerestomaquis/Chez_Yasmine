@@ -38,7 +38,14 @@ export class PayrollService {
           }),
         },
       },
-      include: { lines: true },
+      // `include: { lines: { include: { employee } } }`, pas juste `lines:
+      // true` : la réponse est désérialisée côté Flutter en `PayrollRun`
+      // (lib/payroll/payroll_models.dart), dont `PayrollLine.fromJson` lit
+      // `json['employee'].lastName/firstName` sans garde — un `employee`
+      // absent ferait planter l'écran juste après "Préparer la paie". Même
+      // forme que `list()` ci-dessus, pour que les deux réponses aient
+      // exactement la même shape côté client.
+      include: { lines: { include: { employee: { select: { id: true, lastName: true, firstName: true } } } } },
     });
     return run;
   }
