@@ -103,8 +103,9 @@ class _PurchaseOrderDetailPageState extends State<PurchaseOrderDetailPage> {
                   variant: 'thumbnail',
                 ),
                 builder: (context, snapshot) {
-                  if (!snapshot.hasData)
+                  if (!snapshot.hasData) {
                     return const ColoredBox(color: Color(0x11000000));
+                  }
                   return ColoredBox(
                     color: const Color(0x11000000),
                     child: Image.network(snapshot.data!, fit: BoxFit.contain),
