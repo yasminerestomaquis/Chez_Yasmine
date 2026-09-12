@@ -26,12 +26,12 @@ model Organization {
   name      String
   createdAt DateTime @default(now()) @map("created_at")
 
-  establishments  Establishment[]
-  userProfiles    UserProfile[]
-  roles           Role[]
-  notifications   Notification[]
-  subscriptions   Subscription[]
-  auditLogs       AuditLog[]
+  establishments Establishment[]
+  userProfiles   UserProfile[]
+  roles          Role[]
+  notifications  Notification[]
+  subscriptions  Subscription[]
+  auditLogs      AuditLog[]
 
   @@map("organizations")
 }
@@ -46,21 +46,21 @@ model Establishment {
 
   organization Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
 
-  pointsOfSale       PointOfSale[]
-  categories         Category[]
-  suppliers          Supplier[]
-  products           Product[]
-  purchases          Purchase[]
-  restaurantTables   RestaurantTable[]
-  orders             Order[]
-  customers          Customer[]
-  sales              Sale[]
-  expenses           Expense[]
-  losses             Loss[]
-  accountingEntries  AccountingEntry[]
+  pointsOfSale           PointOfSale[]
+  categories             Category[]
+  suppliers              Supplier[]
+  products               Product[]
+  purchases              Purchase[]
+  restaurantTables       RestaurantTable[]
+  orders                 Order[]
+  customers              Customer[]
+  sales                  Sale[]
+  expenses               Expense[]
+  losses                 Loss[]
+  accountingEntries      AccountingEntry[]
   userEstablishmentRoles UserEstablishmentRole[]
-  employees          Employee[]
-  payrollRuns        PayrollRun[]
+  employees              Employee[]
+  payrollRuns            PayrollRun[]
 
   @@map("establishments")
 }
@@ -71,7 +71,7 @@ model PointOfSale {
   name            String
   createdAt       DateTime @default(now()) @map("created_at")
 
-  establishment Establishment @relation(fields: [establishmentId], references: [id], onDelete: Cascade)
+  establishment Establishment  @relation(fields: [establishmentId], references: [id], onDelete: Cascade)
   cashRegisters CashRegister[]
   sales         Sale[]
 
@@ -90,16 +90,19 @@ model UserProfile {
 
   organization Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
 
-  establishmentRoles UserEstablishmentRole[]
-  stockMovements     StockMovement[]
-  losses             Loss[]
-  ordersServed       Order[]                @relation("OrderServer")
-  salesCreated       Sale[]                 @relation("SaleCreatedBy")
-  serverCommissions  ServerCommission[]
-  cashClosings       CashClosing[]
-  notifications      Notification[]
-  syncOperations     SyncOperation[]
-  auditLogs          AuditLog[]
+  establishmentRoles   UserEstablishmentRole[]
+  stockMovements       StockMovement[]
+  losses               Loss[]
+  ordersServed         Order[]                 @relation("OrderServer")
+  salesCreated         Sale[]                  @relation("SaleCreatedBy")
+  serverCommissions    ServerCommission[]
+  cashClosings         CashClosing[]
+  notifications        Notification[]
+  syncOperations       SyncOperation[]
+  auditLogs            AuditLog[]
+  payrollRunsPrepared  PayrollRun[]            @relation("PayrollRunPreparedBy")
+  payrollRunsValidated PayrollRun[]            @relation("PayrollRunValidatedBy")
+  payrollRunsPaid      PayrollRun[]            @relation("PayrollRunPaidBy")
 
   @@map("user_profiles")
 }
@@ -158,21 +161,21 @@ model UserEstablishmentRole {
 // ── Catalog ──────────────────────────────────────────────────────────────
 
 model Category {
-  id              String   @id @default(uuid())
-  establishmentId String   @map("establishment_id")
-  name            String
+  id                 String   @id @default(uuid())
+  establishmentId    String   @map("establishment_id")
+  name               String
   /// Vrai pour les catégories sans prix fixe (ex. Poulets, Poissons, Plats
   /// africains) : prix d'achat/de vente non saisis dans le catalogue — le
   /// prix de vente se saisit en caisse à la vente, l'achat est suivi via la
   /// dépense "Marché" (module Dépenses).
-  hasVariablePricing Boolean @default(false) @map("has_variable_pricing")
+  hasVariablePricing Boolean  @default(false) @map("has_variable_pricing")
   /// Vrai pour une catégorie vendue par casier (ex. Bières, Vins, Sucreries) :
   /// le Catalogue affiche Nbre de bouteilles par casier/Prix d'achat par
   /// casier à la place de Référence/Code-barres, et le module Achats
   /// n'accepte que ces produits dans son flux de commande par casier (voir
   /// docs/api/catalog.md, docs/api/purchasing.md).
-  hasCasePricing  Boolean  @default(false) @map("has_case_pricing")
-  createdAt       DateTime @default(now()) @map("created_at")
+  hasCasePricing     Boolean  @default(false) @map("has_case_pricing")
+  createdAt          DateTime @default(now()) @map("created_at")
 
   establishment Establishment @relation(fields: [establishmentId], references: [id], onDelete: Cascade)
   products      Product[]
@@ -197,23 +200,23 @@ model Supplier {
 
 /// status: 'active' | 'archived'
 model Product {
-  id              String   @id @default(uuid())
-  establishmentId String   @map("establishment_id")
-  categoryId      String?  @map("category_id")
-  supplierId      String?  @map("supplier_id")
-  name            String
-  reference       String?
-  description     String?
-  barcode         String?
-  qrCode          String?  @map("qr_code")
-  unit            String?
+  id                   String   @id @default(uuid())
+  establishmentId      String   @map("establishment_id")
+  categoryId           String?  @map("category_id")
+  supplierId           String?  @map("supplier_id")
+  name                 String
+  reference            String?
+  description          String?
+  barcode              String?
+  qrCode               String?  @map("qr_code")
+  unit                 String?
   /// Libellé UI "Prix d'achat par bouteille". Pour une catégorie à prix par
   /// casier (hasCasePricing), le calcul du bénéfice utilise
   /// purchasePricePerCase/bottlesPerCase à la place — voir docs/api/reports.md.
-  purchasePrice   Decimal? @map("purchase_price") @db.Decimal(12, 2)
+  purchasePrice        Decimal? @map("purchase_price") @db.Decimal(12, 2)
   /// Nul quand la catégorie a hasVariablePricing = true — le prix se saisit
   /// alors en caisse à chaque vente (voir SaleItemDto.unitPrice).
-  salePrice       Decimal? @map("sale_price") @db.Decimal(12, 2)
+  salePrice            Decimal? @map("sale_price") @db.Decimal(12, 2)
   /// Catalogue, catégories à prix par casier uniquement (hasCasePricing) —
   /// remplace le champ Référence dans le formulaire. Repris tel quel (figé)
   /// dans PurchaseItem à chaque commande passée via le module Achats.
@@ -221,11 +224,11 @@ model Product {
   /// Catalogue, catégories à prix par casier uniquement — remplace le champ
   /// Code-barres dans le formulaire.
   purchasePricePerCase Decimal? @map("purchase_price_per_case") @db.Decimal(12, 2)
-  vatRate         Decimal  @default(0) @map("vat_rate") @db.Decimal(5, 2)
-  minStock        Decimal  @default(0) @map("min_stock") @db.Decimal(12, 2)
-  stockQuantity   Decimal  @default(0) @map("stock_quantity") @db.Decimal(12, 2)
-  status          String   @default("active")
-  createdAt       DateTime @default(now()) @map("created_at")
+  vatRate              Decimal  @default(0) @map("vat_rate") @db.Decimal(5, 2)
+  minStock             Decimal  @default(0) @map("min_stock") @db.Decimal(12, 2)
+  stockQuantity        Decimal  @default(0) @map("stock_quantity") @db.Decimal(12, 2)
+  status               String   @default("active")
+  createdAt            DateTime @default(now()) @map("created_at")
 
   establishment Establishment @relation(fields: [establishmentId], references: [id], onDelete: Cascade)
   category      Category?     @relation(fields: [categoryId], references: [id], onDelete: SetNull)
@@ -242,12 +245,12 @@ model Product {
 }
 
 model ProductImage {
-  id         String   @id @default(uuid())
-  productId  String   @map("product_id")
-  storagePath String  @map("storage_path")
-  isPrimary  Boolean  @default(false) @map("is_primary")
-  position   Int      @default(0)
-  createdAt  DateTime @default(now()) @map("created_at")
+  id          String   @id @default(uuid())
+  productId   String   @map("product_id")
+  storagePath String   @map("storage_path")
+  isPrimary   Boolean  @default(false) @map("is_primary")
+  position    Int      @default(0)
+  createdAt   DateTime @default(now()) @map("created_at")
 
   product Product @relation(fields: [productId], references: [id], onDelete: Cascade)
 
@@ -266,7 +269,7 @@ model StockMovement {
   createdBy String?  @map("created_by")
   createdAt DateTime @default(now()) @map("created_at")
 
-  product   Product      @relation(fields: [productId], references: [id], onDelete: Cascade)
+  product       Product      @relation(fields: [productId], references: [id], onDelete: Cascade)
   createdByUser UserProfile? @relation(fields: [createdBy], references: [id])
 
   @@map("stock_movements")
@@ -298,11 +301,11 @@ model Purchase {
 }
 
 model PurchaseItem {
-  id         String  @id @default(uuid())
-  purchaseId String  @map("purchase_id")
-  productId  String  @map("product_id")
-  quantity   Decimal @db.Decimal(12, 2)
-  unitPrice  Decimal @map("unit_price") @db.Decimal(12, 2)
+  id                   String   @id @default(uuid())
+  purchaseId           String   @map("purchase_id")
+  productId            String   @map("product_id")
+  quantity             Decimal  @db.Decimal(12, 2)
+  unitPrice            Decimal  @map("unit_price") @db.Decimal(12, 2)
   /// Nbre de casiers commandés (saisi par l'utilisateur) et copie figée
   /// (au moment de la commande) de Product.bottlesPerCase/purchasePricePerCase
   /// — jamais recalculées rétroactivement si la fiche produit change ensuite,
@@ -402,9 +405,9 @@ model Customer {
   creditLimit     Decimal  @default(0) @map("credit_limit") @db.Decimal(12, 2)
   createdAt       DateTime @default(now()) @map("created_at")
 
-  establishment Establishment @relation(fields: [establishmentId], references: [id], onDelete: Cascade)
-  sales         Sale[]
-  credits       Credit[]
+  establishment  Establishment   @relation(fields: [establishmentId], references: [id], onDelete: Cascade)
+  sales          Sale[]
+  credits        Credit[]
   creditPayments CreditPayment[]
 
   @@map("customers")
@@ -414,22 +417,26 @@ model Customer {
 
 /// source: 'pos' | 'table'
 model Sale {
-  id              String   @id @default(uuid())
-  establishmentId String   @map("establishment_id")
-  pointOfSaleId   String?  @map("point_of_sale_id")
-  source          String   @default("pos")
-  tableId         String?  @map("table_id")
-  orderId         String?  @map("order_id")
-  customerId      String?  @map("customer_id")
-  subtotal        Decimal  @db.Decimal(12, 2)
-  discount        Decimal  @default(0) @db.Decimal(12, 2)
-  total           Decimal  @db.Decimal(12, 2)
+  id              String    @id @default(uuid())
+  establishmentId String    @map("establishment_id")
+  pointOfSaleId   String?   @map("point_of_sale_id")
+  source          String    @default("pos")
+  tableId         String?   @map("table_id")
+  orderId         String?   @map("order_id")
+  customerId      String?   @map("customer_id")
+  subtotal        Decimal   @db.Decimal(12, 2)
+  discount        Decimal   @default(0) @db.Decimal(12, 2)
+  total           Decimal   @db.Decimal(12, 2)
   createdBy       String?   @map("created_by")
   createdAt       DateTime  @default(now()) @map("created_at")
   voidedAt        DateTime? @map("voided_at")
-  /** Rattache les lignes Bières/Vins/Sucreries de cette vente à Purchase.orderNumber — saisi en caisse, jamais imposé ni vérifié contre une commande existante. */
+  /**
+   * Rattache les lignes Bières/Vins/Sucreries de cette vente à Purchase.orderNumber — saisi en caisse, jamais imposé ni vérifié contre une commande existante.
+   */
   orderNumber     Int?      @map("order_number")
-  /** Rattache les lignes Poulets/Poissons/Plats africains de cette vente à Expense.marketNumber — même principe. */
+  /**
+   * Rattache les lignes Poulets/Poissons/Plats africains de cette vente à Expense.marketNumber — même principe.
+   */
   marketNumber    Int?      @map("market_number")
 
   establishment Establishment    @relation(fields: [establishmentId], references: [id], onDelete: Cascade)
@@ -439,10 +446,10 @@ model Sale {
   customer      Customer?        @relation(fields: [customerId], references: [id], onDelete: SetNull)
   createdByUser UserProfile?     @relation("SaleCreatedBy", fields: [createdBy], references: [id])
 
-  items              SaleItem[]
-  payments           Payment[]
-  credits            Credit[]
-  serverCommissions  ServerCommission[]
+  items             SaleItem[]
+  payments          Payment[]
+  credits           Credit[]
+  serverCommissions ServerCommission[]
 
   @@map("sales")
 }
@@ -513,14 +520,22 @@ model Expense {
   expenseDate     DateTime @default(now()) @map("expense_date") @db.Date
   periodicity     String   @default("one_off")
   note            String?
-  /** Suggestion éditable, pertinente uniquement pour category === 'Marché' (même principe que Purchase.orderNumber) — jamais contrainte en unicité côté serveur. */
+  /**
+   * Suggestion éditable, pertinente uniquement pour category === 'Marché' (même principe que Purchase.orderNumber) — jamais contrainte en unicité côté serveur.
+   */
   marketNumber    Int?     @map("market_number")
   createdAt       DateTime @default(now()) @map("created_at")
-  /** 'cash' | 'mobile_money' | 'bank_transfer' — défaut 'cash', cohérent avec l'hypothèse déjà documentée dans ARCHITECTURE.md (CashService.close). */
+  /**
+   * 'cash' | 'mobile_money' | 'bank_transfer' — défaut 'cash', cohérent avec l'hypothèse déjà documentée dans ARCHITECTURE.md (CashService.close).
+   */
   paymentMethod   String   @default("cash") @map("payment_method")
-  /** 'paid' | 'pending' | 'cancelled' — défaut 'paid' pour préserver le sens des dépenses déjà enregistrées (aucune ne portait de notion d'annulation). */
+  /**
+   * 'paid' | 'pending' | 'cancelled' — défaut 'paid' pour préserver le sens des dépenses déjà enregistrées (aucune ne portait de notion d'annulation).
+   */
   status          String   @default("paid")
-  /** Non-null uniquement pour une dépense générée automatiquement par PayrollService.pay() — la contrainte @unique est la seconde ligne de défense (avec le contrôle de statut du run) garantissant qu'un paiement de paie ne crée jamais deux fois la même dépense. */
+  /**
+   * Non-null uniquement pour une dépense générée automatiquement par PayrollService.pay() — la contrainte @unique est la seconde ligne de défense (avec le contrôle de statut du run) garantissant qu'un paiement de paie ne crée jamais deux fois la même dépense.
+   */
   payrollRunId    String?  @unique @map("payroll_run_id")
 
   establishment Establishment @relation(fields: [establishmentId], references: [id], onDelete: Cascade)
@@ -538,7 +553,9 @@ model Employee {
   birthDate          DateTime? @map("birth_date") @db.Date
   phone              String
   address            String?
-  /** Voir docs/api/expenses.md — pipeline d'upload volontairement différé, ce champ reste vide en attendant. */
+  /**
+   * Voir docs/api/expenses.md — pipeline d'upload volontairement différé, ce champ reste vide en attendant.
+   */
   photoUrl           String?   @map("photo_url")
   position           String
   hireDate           DateTime  @map("hire_date") @db.Date
@@ -547,7 +564,9 @@ model Employee {
   team               String?
   registrationNumber String?   @map("registration_number")
   notes              String?
-  /** 'active' | 'inactive' */
+  /**
+   * 'active' | 'inactive'
+   */
   status             String    @default("active")
   createdAt          DateTime  @default(now()) @map("created_at")
   updatedAt          DateTime  @updatedAt @map("updated_at")
@@ -575,9 +594,12 @@ model PayrollRun {
   cancelledAt     DateTime? @map("cancelled_at")
   createdAt       DateTime  @default(now()) @map("created_at")
 
-  establishment Establishment @relation(fields: [establishmentId], references: [id], onDelete: Cascade)
-  lines         PayrollLine[]
-  expense       Expense?
+  establishment   Establishment @relation(fields: [establishmentId], references: [id], onDelete: Cascade)
+  lines           PayrollLine[]
+  expense         Expense?
+  preparedByUser  UserProfile   @relation("PayrollRunPreparedBy", fields: [preparedBy], references: [id])
+  validatedByUser UserProfile?  @relation("PayrollRunValidatedBy", fields: [validatedBy], references: [id])
+  paidByUser      UserProfile?  @relation("PayrollRunPaidBy", fields: [paidBy], references: [id])
 
   @@map("payroll_runs")
 }
@@ -586,10 +608,14 @@ model PayrollLine {
   id           String  @id @default(uuid())
   payrollRunId String  @map("payroll_run_id")
   employeeId   String  @map("employee_id")
-  /** Copie de Employee.weeklySalary au moment de la préparation — un changement de salaire plus tard ne doit jamais réécrire un bulletin déjà préparé. */
+  /**
+   * Copie de Employee.weeklySalary au moment de la préparation — un changement de salaire plus tard ne doit jamais réécrire un bulletin déjà préparé.
+   */
   baseSalary   Decimal @map("base_salary") @db.Decimal(12, 2)
   advance      Decimal @default(0) @db.Decimal(12, 2)
-  /** Prime (positif) ou retenue (négatif). */
+  /**
+   * Prime (positif) ou retenue (négatif).
+   */
   adjustment   Decimal @default(0) @db.Decimal(12, 2)
   netAmount    Decimal @map("net_amount") @db.Decimal(12, 2)
 
@@ -628,16 +654,16 @@ model CashRegister {
 }
 
 model CashClosing {
-  id              String   @id @default(uuid())
-  cashRegisterId  String   @map("cash_register_id")
-  openedAt        DateTime @map("opened_at")
-  closedAt        DateTime @default(now()) @map("closed_at")
-  expectedAmount  Decimal  @map("expected_amount") @db.Decimal(12, 2)
-  countedAmount   Decimal  @map("counted_amount") @db.Decimal(12, 2)
-  closedBy        String?  @map("closed_by")
+  id             String   @id @default(uuid())
+  cashRegisterId String   @map("cash_register_id")
+  openedAt       DateTime @map("opened_at")
+  closedAt       DateTime @default(now()) @map("closed_at")
+  expectedAmount Decimal  @map("expected_amount") @db.Decimal(12, 2)
+  countedAmount  Decimal  @map("counted_amount") @db.Decimal(12, 2)
+  closedBy       String?  @map("closed_by")
 
-  cashRegister  CashRegister @relation(fields: [cashRegisterId], references: [id], onDelete: Cascade)
-  closedByUser  UserProfile? @relation(fields: [closedBy], references: [id])
+  cashRegister CashRegister @relation(fields: [cashRegisterId], references: [id], onDelete: Cascade)
+  closedByUser UserProfile? @relation(fields: [closedBy], references: [id])
 
   @@map("cash_closings")
 }
@@ -687,12 +713,12 @@ model Notification {
 
 /// status: 'active' | 'past_due' | 'cancelled'
 model Subscription {
-  id                String    @id @default(uuid())
-  organizationId    String    @map("organization_id")
-  plan              String    @default("free")
-  status            String    @default("active")
-  currentPeriodEnd  DateTime? @map("current_period_end")
-  createdAt         DateTime  @default(now()) @map("created_at")
+  id               String    @id @default(uuid())
+  organizationId   String    @map("organization_id")
+  plan             String    @default("free")
+  status           String    @default("active")
+  currentPeriodEnd DateTime? @map("current_period_end")
+  createdAt        DateTime  @default(now()) @map("created_at")
 
   organization Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
 
