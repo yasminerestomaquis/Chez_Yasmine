@@ -124,6 +124,13 @@ describe('PayrollService.validate / pay / cancel', () => {
         payrollRunId: 'run-1',
       }),
     });
+    // Atomicité : la mise à jour du statut et la création de la dépense
+    // doivent transiter par le MÊME appel $transaction([...]) — deux appels
+    // séparés casseraient la garantie « jamais payé sans dépense, jamais
+    // de dépense sans passage à 'paid' » en cas d'échec partiel.
+    expect(prisma.$transaction).toHaveBeenCalledTimes(1);
+    const [transactionOps] = (prisma.$transaction as any).mock.calls[0];
+    expect(transactionOps).toHaveLength(2);
   });
 
   it('pay() rejects a run that is not "validated" (never pays twice)', async () => {
@@ -142,5 +149,11 @@ describe('PayrollService.validate / pay / cancel', () => {
 
     (prisma.payrollRun as any).findFirst.mockResolvedValue({ id: 'run-2', establishmentId: 'est-1', status: 'paid' });
     await expect(service.cancel('est-1', 'run-2')).rejects.toBeInstanceOf(BadRequestException);
+  });
+
+  it('cancel() rejects a run that is already cancelled', async () => {
+    (prisma.payrollRun as any).findFirst.mockResolvedValue({ id: 'run-3', establishmentId: 'est-1', status: 'cancelled' });
+    await expect(service.cancel('est-1', 'run-3')).rejects.toBeInstanceOf(BadRequestException);
+    expect(prisma.payrollRun.update).not.toHaveBeenCalled();
   });
 });
