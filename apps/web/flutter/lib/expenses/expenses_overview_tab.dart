@@ -8,8 +8,7 @@ import 'expense_category_donut_chart.dart';
 import 'expense_summary_models.dart';
 import 'expenses_repository.dart';
 
-// ignore: unused_element
-const _weekdayLabels = ['Lun', 'Mar', 'Mer', 'Jeu', 'Ven', 'Sam', 'Dim'];
+final _isoDateFormat = DateFormat('yyyy-MM-dd');
 
 DateTime _mondayOf(DateTime date) {
   final weekdayIndex = (date.weekday - 1) % 7; // lundi = 0
@@ -50,7 +49,7 @@ class _ExpensesOverviewTabState extends State<ExpensesOverviewTab> {
       period: _period,
       year: _year,
       month: _period == 'month' ? _month : null,
-      weekOf: _period == 'week' ? _weekOf.toIso8601String().slice0to10() : null,
+      weekOf: _period == 'week' ? _isoDateFormat.format(_weekOf) : null,
     );
   }
 
@@ -109,11 +108,16 @@ class _ExpensesOverviewTabState extends State<ExpensesOverviewTab> {
     }
   }
 
+  // `increaseIsGood` : une dépense qui augmente n'est pas une bonne nouvelle
+  // (contrairement à un chiffre d'affaires) — inverse le sens des couleurs
+  // vert/rouge du delta en conséquence plutôt que de toujours lire "hausse
+  // = vert" comme le fait ReportsPage pour ses métriques de revenu.
   Widget _kpiCard(
     String label,
     double value, {
     double? changePercent,
     Color color = AppColors.green,
+    bool increaseIsGood = false,
   }) {
     return Card(
       child: Padding(
@@ -140,7 +144,9 @@ class _ExpensesOverviewTabState extends State<ExpensesOverviewTab> {
                 style: TextStyle(
                   fontSize: 11,
                   fontWeight: FontWeight.w600,
-                  color: changePercent >= 0 ? AppColors.green : AppColors.alert,
+                  color: (changePercent >= 0) == increaseIsGood
+                      ? AppColors.green
+                      : AppColors.alert,
                 ),
               ),
             ],
@@ -311,8 +317,4 @@ class _ExpensesOverviewTabState extends State<ExpensesOverviewTab> {
       ],
     );
   }
-}
-
-extension on String {
-  String slice0to10() => length > 10 ? substring(0, 10) : this;
 }
