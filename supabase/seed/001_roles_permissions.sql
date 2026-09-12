@@ -20,7 +20,9 @@ insert into permissions (code, description) values
   ('reports.view',      'Consultation des rapports et statistiques'),
   ('users.manage',      'Gestion des utilisateurs et de leurs affectations'),
   ('roles.manage',      'Gestion des rôles et permissions'),
-  ('settings.manage',   'Paramètres de l''établissement')
+  ('settings.manage',   'Paramètres de l''établissement'),
+  ('payroll.manage',    'Gérer les employés et le workflow de paie (préparer/valider/payer/annuler)'),
+  ('payroll.view',      'Consulter les employés, la paie et son historique — sans les modifier')
 on conflict (code) do nothing;
 
 insert into roles (organization_id, name, is_system) values
@@ -100,5 +102,16 @@ insert into role_permissions (role_id, permission_id)
 select r.id, p.id
 from roles r
 join permissions p on p.code in ('expenses.manage', 'credits.manage', 'cash.manage', 'reports.view')
+where r.is_system and r.name = 'Comptable'
+on conflict do nothing;
+
+-- Comptable : rôle le plus pertinent pour la Paie (voir docs/api/expenses.md).
+-- `payroll.manage` inclut `payroll.view` par convention (comme
+-- products/stock/purchases) : accordé explicitement pour ne pas dépendre
+-- d'un futur découplage.
+insert into role_permissions (role_id, permission_id)
+select r.id, p.id
+from roles r
+join permissions p on p.code in ('payroll.manage', 'payroll.view')
 where r.is_system and r.name = 'Comptable'
 on conflict do nothing;
