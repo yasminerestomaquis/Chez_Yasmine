@@ -81,3 +81,66 @@ describe('PayrollService.updateLine', () => {
     );
   });
 });
+
+describe('PayrollService.validate / pay / cancel', () => {
+  let prisma: ReturnType<typeof makePrismaMock>;
+  let service: PayrollService;
+
+  beforeEach(() => {
+    prisma = makePrismaMock();
+    service = new PayrollService(prisma as unknown as PrismaService, activityNotifierMock);
+  });
+
+  it('validate() moves a prepared run to validated', async () => {
+    (prisma.payrollRun as any).findFirst.mockResolvedValue({ id: 'run-1', establishmentId: 'est-1', status: 'prepared' });
+    await service.validate('est-1', 'run-1', 'user-2');
+    expect(prisma.payrollRun.update).toHaveBeenCalledWith({
+      where: { id: 'run-1' },
+      data: { status: 'validated', validatedBy: 'user-2', validatedAt: expect.any(Date) },
+    });
+  });
+
+  it('validate() rejects a run that is not "prepared"', async () => {
+    (prisma.payrollRun as any).findFirst.mockResolvedValue({ id: 'run-1', establishmentId: 'est-1', status: 'paid' });
+    await expect(service.validate('est-1', 'run-1', 'user-2')).rejects.toBeInstanceOf(BadRequestException);
+  });
+
+  it('pay() creates one Expense summing all line netAmounts, linked via payrollRunId', async () => {
+    (prisma.payrollRun as any).findFirst.mockResolvedValue({
+      id: 'run-1',
+      establishmentId: 'est-1',
+      status: 'validated',
+      periodEnd: new Date('2026-09-13'),
+      lines: [{ netAmount: { toNumber: () => 30000 } }, { netAmount: { toNumber: () => 25000 } }],
+    });
+    (prisma.$transaction as any).mockImplementation((ops: any[]) => Promise.all(ops));
+    await service.pay('est-1', 'run-1', 'user-3');
+    expect(prisma.expense.create).toHaveBeenCalledWith({
+      data: expect.objectContaining({
+        establishmentId: 'est-1',
+        label: 'Paiement des salaires',
+        category: 'Salaires',
+        amount: 55000,
+        payrollRunId: 'run-1',
+      }),
+    });
+  });
+
+  it('pay() rejects a run that is not "validated" (never pays twice)', async () => {
+    (prisma.payrollRun as any).findFirst.mockResolvedValue({ id: 'run-1', establishmentId: 'est-1', status: 'paid', lines: [] });
+    await expect(service.pay('est-1', 'run-1', 'user-3')).rejects.toBeInstanceOf(BadRequestException);
+    expect(prisma.expense.create).not.toHaveBeenCalled();
+  });
+
+  it('cancel() is allowed from "prepared" but not from "paid"', async () => {
+    (prisma.payrollRun as any).findFirst.mockResolvedValue({ id: 'run-1', establishmentId: 'est-1', status: 'prepared' });
+    await service.cancel('est-1', 'run-1');
+    expect(prisma.payrollRun.update).toHaveBeenCalledWith({
+      where: { id: 'run-1' },
+      data: { status: 'cancelled', cancelledAt: expect.any(Date) },
+    });
+
+    (prisma.payrollRun as any).findFirst.mockResolvedValue({ id: 'run-2', establishmentId: 'est-1', status: 'paid' });
+    await expect(service.cancel('est-1', 'run-2')).rejects.toBeInstanceOf(BadRequestException);
+  });
+});

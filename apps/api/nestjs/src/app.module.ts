@@ -9,6 +9,7 @@ import { CustomersModule } from './customers/customers.module.js';
 import { ExpensesModule } from './expenses/expenses.module.js';
 import { LossesModule } from './losses/losses.module.js';
 import { NotificationsModule } from './notifications/notifications.module.js';
+import { PayrollModule } from './payroll/payroll.module.js';
 import { PosModule } from './pos/pos.module.js';
 import { PrismaModule } from './prisma/prisma.module.js';
 import { PurchasingModule } from './purchasing/purchasing.module.js';
@@ -30,6 +31,7 @@ import { UsersModule } from './users/users.module.js';
     PurchasingModule,
     CustomersModule,
     ExpensesModule,
+    PayrollModule,
     LossesModule,
     CashModule,
     ReportsModule,
