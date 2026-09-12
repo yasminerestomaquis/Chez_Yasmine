@@ -1342,7 +1342,23 @@ Dans la classe `ExpensesService`, ajouter :
     const [expenses, previousExpenses] = await Promise.all([
       this.prisma.expense.findMany({
         where: { establishmentId, expenseDate: { gte: range.from, lte: range.to } },
-        select: { category: true, amount: true, expenseDate: true },
+        // Tous les champs de `Expense.fromJson` côté Flutter (Task 9) sont
+        // nécessaires ici : `recent` (ci-dessous) est directement désérialisé
+        // en `List<Expense>`, pas juste { category, amount, expenseDate } —
+        // un select trop étroit ferait planter `Expense.fromJson` (id/label
+        // manquants) au premier rendu de "Dernières dépenses" (Task 12).
+        select: {
+          id: true,
+          label: true,
+          category: true,
+          amount: true,
+          expenseDate: true,
+          periodicity: true,
+          note: true,
+          marketNumber: true,
+          paymentMethod: true,
+          status: true,
+        },
       }),
       this.prisma.expense.findMany({
         where: { establishmentId, expenseDate: { gte: previous.from, lte: previous.to } },
