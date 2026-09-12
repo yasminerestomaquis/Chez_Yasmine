@@ -28,7 +28,39 @@ enum ExpensePeriodicity {
   final String label;
 
   static ExpensePeriodicity fromValue(String? value) =>
-      ExpensePeriodicity.values.firstWhere((p) => p.value == value, orElse: () => ExpensePeriodicity.oneOff);
+      ExpensePeriodicity.values.firstWhere(
+        (p) => p.value == value,
+        orElse: () => ExpensePeriodicity.oneOff,
+      );
+}
+
+enum ExpensePaymentMethod {
+  cash('cash', 'Espèces'),
+  mobileMoney('mobile_money', 'Mobile Money'),
+  bankTransfer('bank_transfer', 'Virement');
+
+  const ExpensePaymentMethod(this.value, this.label);
+  final String value;
+  final String label;
+
+  static ExpensePaymentMethod fromValue(String? value) =>
+      ExpensePaymentMethod.values.firstWhere(
+        (p) => p.value == value,
+        orElse: () => ExpensePaymentMethod.cash,
+      );
+}
+
+enum ExpenseStatus {
+  paid('paid', 'Payée'),
+  pending('pending', 'En attente'),
+  cancelled('cancelled', 'Annulée');
+
+  const ExpenseStatus(this.value, this.label);
+  final String value;
+  final String label;
+
+  static ExpenseStatus fromValue(String? value) => ExpenseStatus.values
+      .firstWhere((p) => p.value == value, orElse: () => ExpenseStatus.paid);
 }
 
 class Expense {
@@ -41,6 +73,8 @@ class Expense {
     this.periodicity = ExpensePeriodicity.oneOff,
     this.note,
     this.marketNumber,
+    this.paymentMethod = ExpensePaymentMethod.cash,
+    this.status = ExpenseStatus.paid,
   });
 
   final String id;
@@ -50,17 +84,24 @@ class Expense {
   final DateTime expenseDate;
   final ExpensePeriodicity periodicity;
   final String? note;
+
   /// Pertinent uniquement pour `category == 'Marché'` — voir `docs/api/expenses.md`.
   final int? marketNumber;
+  final ExpensePaymentMethod paymentMethod;
+  final ExpenseStatus status;
 
   factory Expense.fromJson(Map<String, dynamic> json) => Expense(
-        id: json['id'] as String,
-        label: json['label'] as String,
-        category: json['category'] as String?,
-        amount: (json['amount'] as num).toDouble(),
-        expenseDate: DateTime.parse(json['expenseDate'] as String),
-        periodicity: ExpensePeriodicity.fromValue(json['periodicity'] as String?),
-        note: json['note'] as String?,
-        marketNumber: (json['marketNumber'] as num?)?.toInt(),
-      );
+    id: json['id'] as String,
+    label: json['label'] as String,
+    category: json['category'] as String?,
+    amount: (json['amount'] as num).toDouble(),
+    expenseDate: DateTime.parse(json['expenseDate'] as String),
+    periodicity: ExpensePeriodicity.fromValue(json['periodicity'] as String?),
+    note: json['note'] as String?,
+    marketNumber: (json['marketNumber'] as num?)?.toInt(),
+    paymentMethod: ExpensePaymentMethod.fromValue(
+      json['paymentMethod'] as String?,
+    ),
+    status: ExpenseStatus.fromValue(json['status'] as String?),
+  );
 }

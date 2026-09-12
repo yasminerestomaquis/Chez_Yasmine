@@ -1,5 +1,6 @@
 import '../api/api_client.dart';
 import 'expense_models.dart';
+import 'expense_summary_models.dart';
 
 /// Correspond à apps/api/nestjs/src/expenses/expenses.controller.ts.
 class ExpensesRepository {
@@ -12,7 +13,9 @@ class ExpensesRepository {
 
   Future<List<Expense>> listExpenses() async {
     final json = await _api.get(_base) as List<dynamic>;
-    return json.map((e) => Expense.fromJson(e as Map<String, dynamic>)).toList();
+    return json
+        .map((e) => Expense.fromJson(e as Map<String, dynamic>))
+        .toList();
   }
 
   Future<Expense> createExpense({
@@ -24,23 +27,31 @@ class ExpensesRepository {
     String? note,
     DateTime? expenseDate,
     int? marketNumber,
+    ExpensePaymentMethod paymentMethod = ExpensePaymentMethod.cash,
+    ExpenseStatus status = ExpenseStatus.paid,
   }) async {
-    final json = await _api.post(_base, body: {
-      'id': ?id,
-      'label': label,
-      'category': ?category,
-      'amount': amount,
-      'periodicity': periodicity.value,
-      'note': ?note,
-      'expenseDate': ?(expenseDate != null ? _dateOnly(expenseDate) : null),
-      'marketNumber': ?marketNumber,
-    }) as Map<String, dynamic>;
+    final json = await _api.post(
+      _base,
+      body: {
+        'id': ?id,
+        'label': label,
+        'category': ?category,
+        'amount': amount,
+        'periodicity': periodicity.value,
+        'note': ?note,
+        'expenseDate': ?(expenseDate != null ? _dateOnly(expenseDate) : null),
+        'marketNumber': ?marketNumber,
+        'paymentMethod': paymentMethod.value,
+        'status': status.value,
+      },
+    ) as Map<String, dynamic>;
     return Expense.fromJson(json);
   }
 
   /// Suggestion éditable pour le prochain N° de marché — jamais imposée côté serveur.
   Future<int> nextMarketNumber() async {
-    final json = await _api.get('$_base/next-market-number') as Map<String, dynamic>;
+    final json =
+        await _api.get('$_base/next-market-number') as Map<String, dynamic>;
     return json['marketNumber'] as int;
   }
 
@@ -49,5 +60,74 @@ class ExpensesRepository {
 
   Future<void> deleteExpense(String expenseId) {
     return _api.delete('$_base/$expenseId');
+  }
+
+  Future<ExpenseSummary> getSummary({
+    required String period,
+    required int year,
+    int? month,
+    String? weekOf,
+  }) async {
+    final json = await _api.get(
+      '$_base/summary',
+      query: {
+        'period': period,
+        'year': '$year',
+        'month': ?month?.toString(),
+        'weekOf': ?weekOf,
+      },
+    ) as Map<String, dynamic>;
+    return ExpenseSummary.fromJson(json);
+  }
+
+  Future<ExpenseHistoryPage> listHistory({
+    String? period,
+    int? year,
+    int? month,
+    String? weekOf,
+    String? category,
+    String? status,
+    String? paymentMethod,
+    int page = 1,
+    int pageSize = 8,
+  }) async {
+    final json = await _api.get(
+      '$_base/history',
+      query: {
+        'period': ?period,
+        'year': ?year?.toString(),
+        'month': ?month?.toString(),
+        'weekOf': ?weekOf,
+        'category': ?category,
+        'status': ?status,
+        'paymentMethod': ?paymentMethod,
+        'page': '$page',
+        'pageSize': '$pageSize',
+      },
+    ) as Map<String, dynamic>;
+    return ExpenseHistoryPage.fromJson(json);
+  }
+
+  Future<({List<int> bytes, String? filename})> exportHistoryExcel({
+    String? period,
+    int? year,
+    int? month,
+    String? weekOf,
+    String? category,
+    String? status,
+    String? paymentMethod,
+  }) {
+    return _api.getBytes(
+      '$_base/history.xlsx',
+      query: {
+        'period': ?period,
+        'year': ?year?.toString(),
+        'month': ?month?.toString(),
+        'weekOf': ?weekOf,
+        'category': ?category,
+        'status': ?status,
+        'paymentMethod': ?paymentMethod,
+      },
+    );
   }
 }
