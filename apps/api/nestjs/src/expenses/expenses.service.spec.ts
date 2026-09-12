@@ -213,4 +213,19 @@ describe('ExpensesService.summary', () => {
       ]),
     );
   });
+
+  it('resolves a "year" period to that calendar year\'s bounds', async () => {
+    (prisma.expense as any).findMany.mockResolvedValue([]);
+    const result = await service.summary('est-1', { period: 'year', year: 2026 });
+    expect(result.from.toISOString().slice(0, 10)).toBe('2026-01-01');
+    expect(result.to.toISOString().slice(0, 10)).toBe('2026-12-31');
+  });
+
+  it('resolves a "week" period to Monday..Sunday, even when the week straddles two months', async () => {
+    (prisma.expense as any).findMany.mockResolvedValue([]);
+    // 2026-08-31 est un lundi — la semaine s'étend donc sur août ET septembre.
+    const result = await service.summary('est-1', { period: 'week', year: 2026, weekOf: '2026-08-31' });
+    expect(result.from.toISOString().slice(0, 10)).toBe('2026-08-31');
+    expect(result.to.toISOString().slice(0, 10)).toBe('2026-09-06');
+  });
 });
