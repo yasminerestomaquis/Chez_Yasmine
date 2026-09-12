@@ -158,3 +158,59 @@ describe('ExpensesService.nextMarketNumber', () => {
     await expect(service.nextMarketNumber('est-1')).resolves.toBe(5);
   });
 });
+
+describe('ExpensesService.summary', () => {
+  let prisma: ReturnType<typeof makePrismaMock>;
+  let service: ExpensesService;
+
+  beforeEach(() => {
+    prisma = makePrismaMock();
+    service = new ExpensesService(prisma as unknown as PrismaService, activityNotifierMock);
+  });
+
+  it('resolves a "month" period to that calendar month\'s bounds', async () => {
+    (prisma.expense as any).findMany.mockResolvedValue([]);
+    const result = await service.summary('est-1', { period: 'month', year: 2026, month: 9 });
+    expect(result.from.toISOString().slice(0, 10)).toBe('2026-09-01');
+    expect(result.to.toISOString().slice(0, 10)).toBe('2026-09-30');
+  });
+
+  it('splits totals: total, Salaires, Marché, and "charges fixes" (everything else)', async () => {
+    (prisma.expense as any).findMany.mockResolvedValue([
+      { category: 'Salaires', amount: { toNumber: () => 620000 }, expenseDate: new Date('2026-09-08') },
+      { category: 'Marché', amount: { toNumber: () => 280000 }, expenseDate: new Date('2026-09-12') },
+      { category: 'Loyer', amount: { toNumber: () => 150000 }, expenseDate: new Date('2026-09-01') },
+      { category: 'Eau', amount: { toNumber: () => 18500 }, expenseDate: new Date('2026-09-10') },
+    ]);
+    const result = await service.summary('est-1', { period: 'month', year: 2026, month: 9 });
+    expect(result.totalAmount).toBe(1068500);
+    expect(result.totalSalaries).toBe(620000);
+    expect(result.totalMarket).toBe(280000);
+    expect(result.totalFixedCharges).toBe(168500);
+  });
+
+  it('computes a percentage-change comparison against the equivalent previous period', async () => {
+    (prisma.expense as any).findMany
+      .mockResolvedValueOnce([{ category: 'Loyer', amount: { toNumber: () => 200000 }, expenseDate: new Date('2026-09-01') }])
+      .mockResolvedValueOnce([{ category: 'Loyer', amount: { toNumber: () => 100000 }, expenseDate: new Date('2026-08-01') }]);
+    const result = await service.summary('est-1', { period: 'month', year: 2026, month: 9 });
+    expect(result.totalAmount).toBe(200000);
+    expect(result.previousTotalAmount).toBe(100000);
+    expect(result.changePercent).toBe(100);
+  });
+
+  it('groups a category breakdown for the donut chart', async () => {
+    (prisma.expense as any).findMany.mockResolvedValue([
+      { category: 'Loyer', amount: { toNumber: () => 150000 }, expenseDate: new Date('2026-09-01') },
+      { category: 'Loyer', amount: { toNumber: () => 50000 }, expenseDate: new Date('2026-09-05') },
+      { category: null, amount: { toNumber: () => 10000 }, expenseDate: new Date('2026-09-06') },
+    ]);
+    const result = await service.summary('est-1', { period: 'month', year: 2026, month: 9 });
+    expect(result.byCategory).toEqual(
+      expect.arrayContaining([
+        { category: 'Loyer', amount: 200000 },
+        { category: 'Autre', amount: 10000 },
+      ]),
+    );
+  });
+});
