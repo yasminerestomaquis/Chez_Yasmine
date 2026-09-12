@@ -80,8 +80,9 @@ class _ExpensesFormTabState extends State<ExpensesFormTab> {
                             lastDate: DateTime(2100),
                             helpText: 'Date de la dépense',
                           );
-                          if (picked != null)
+                          if (picked != null) {
                             setDialogState(() => expenseDate = picked);
+                          }
                         },
                         icon: const Icon(Icons.calendar_today_outlined),
                         label: Text(
@@ -145,8 +146,9 @@ class _ExpensesFormTabState extends State<ExpensesFormTab> {
                         final value = double.tryParse(
                           (v ?? '').trim().replaceAll(',', '.'),
                         );
-                        if (value == null || value <= 0)
+                        if (value == null || value <= 0) {
                           return 'Montant invalide';
+                        }
                         return null;
                       },
                     ),
@@ -186,8 +188,9 @@ class _ExpensesFormTabState extends State<ExpensesFormTab> {
               ),
               FilledButton(
                 onPressed: () {
-                  if (formKey.currentState!.validate())
+                  if (formKey.currentState!.validate()) {
                     Navigator.of(context).pop(true);
+                  }
                 },
                 child: const Text('Enregistrer'),
               ),
