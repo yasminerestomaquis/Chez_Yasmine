@@ -1,4 +1,5 @@
 import { NotFoundException } from '@nestjs/common';
+import ExcelJS from 'exceljs';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import type { PrismaService } from '../prisma/prisma.service.js';
 import type { ActivityNotifierService } from '../notifications/activity-notifier.service.js';
@@ -297,10 +298,50 @@ describe('ExpensesService.exportHistoryExcel', () => {
       },
     ]);
     const { buffer, filename } = await service.exportHistoryExcel('est-1', { period: 'week', weekOf: '2026-09-10' });
-    expect(buffer.length).toBeGreaterThan(0);
     expect(filename).toContain('.xlsx');
     expect(prisma.expense.findMany).toHaveBeenCalledWith(
       expect.not.objectContaining({ skip: expect.anything(), take: expect.anything() }),
     );
+  });
+
+  it('builds a workbook with a header row, one row per expense, and a bold total row', async () => {
+    (prisma.expense as any).findMany.mockResolvedValue([
+      {
+        label: 'Achat de vivres',
+        category: 'Marché',
+        amount: { toNumber: () => 125000 },
+        expenseDate: new Date('2026-09-12'),
+        periodicity: 'one_off',
+        paymentMethod: 'cash',
+        status: 'paid',
+      },
+      {
+        label: 'Facture eau',
+        category: 'Eau',
+        amount: { toNumber: () => 18500 },
+        expenseDate: new Date('2026-09-10'),
+        periodicity: 'recurring',
+        paymentMethod: 'mobile_money',
+        status: 'paid',
+      },
+    ]);
+
+    const { buffer } = await service.exportHistoryExcel('est-1', { period: 'week', weekOf: '2026-09-10' });
+
+    const workbook = new ExcelJS.Workbook();
+    await workbook.xlsx.load(buffer);
+    const sheet = workbook.getWorksheet('Historique des dépenses')!;
+    expect(sheet.getRow(1).getCell(1).value).toBe('Date');
+    expect(sheet.getRow(2).getCell(2).value).toBe('Achat de vivres');
+    expect(sheet.getRow(2).getCell(3).value).toBe('Marché');
+    expect(sheet.getRow(2).getCell(4).value).toBe(125000);
+    expect(sheet.getRow(2).getCell(5).value).toBe('Ponctuelle');
+    expect(sheet.getRow(3).getCell(2).value).toBe('Facture eau');
+    expect(sheet.getRow(3).getCell(5).value).toBe('Récurrente');
+
+    const totalRow = sheet.getRow(4);
+    expect(totalRow.getCell(2).value).toBe('TOTAL');
+    expect(totalRow.getCell(4).value).toBe(143500);
+    expect(totalRow.font?.bold).toBe(true);
   });
 });
