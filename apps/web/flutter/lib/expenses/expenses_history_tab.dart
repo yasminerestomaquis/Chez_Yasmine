@@ -215,7 +215,14 @@ class _ExpensesHistoryTabState extends State<ExpensesHistoryTab> {
               child: const Text('Annuler'),
             ),
             FilledButton(
-              onPressed: () => Navigator.of(context).pop(true),
+              // Bloque l'application tant que "Semaine" est choisi sans
+              // qu'une semaine ait été réellement sélectionnée — sans cette
+              // garde, `_periodWeekOf` resterait `null` malgré
+              // `period == 'week'`, envoyant un filtre de période
+              // incohérent au serveur.
+              onPressed: (period == 'week' && periodWeekOf == null)
+                  ? null
+                  : () => Navigator.of(context).pop(true),
               child: const Text('Appliquer'),
             ),
           ],
