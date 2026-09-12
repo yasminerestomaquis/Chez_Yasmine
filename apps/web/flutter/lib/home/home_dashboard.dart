@@ -371,6 +371,9 @@ class _HomeDashboardState extends State<HomeDashboard> {
     required String label,
     required String value,
     required Color color,
+    // Petite icône décorative à côté du libellé (une image dédiée par carte
+    // — demande utilisateur du 2026-09-12) ; `null` : aucune icône.
+    String? iconAsset,
   }) {
     return Card(
       child: Padding(
@@ -396,12 +399,31 @@ class _HomeDashboardState extends State<HomeDashboard> {
               style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 18),
             ),
             const SizedBox(height: 2),
-            Text(
-              label,
-              style: const TextStyle(
-                color: AppColors.textSecondary,
-                fontSize: 12,
-              ),
+            Row(
+              children: [
+                Flexible(
+                  child: Text(
+                    label,
+                    style: const TextStyle(
+                      color: AppColors.textSecondary,
+                      fontSize: 12,
+                    ),
+                    overflow: TextOverflow.ellipsis,
+                  ),
+                ),
+                if (iconAsset != null) ...[
+                  const SizedBox(width: 4),
+                  ClipRRect(
+                    borderRadius: BorderRadius.circular(3),
+                    child: Image.asset(
+                      iconAsset,
+                      width: 14,
+                      height: 14,
+                      fit: BoxFit.cover,
+                    ),
+                  ),
+                ],
+              ],
             ),
           ],
         ),
@@ -441,6 +463,16 @@ class _HomeDashboardState extends State<HomeDashboard> {
                     fontSize: 12,
                   ),
                 ),
+                const SizedBox(width: 4),
+                ClipRRect(
+                  borderRadius: BorderRadius.circular(3),
+                  child: Image.asset(
+                    'assets/home_icon_1.jpg',
+                    width: 14,
+                    height: 14,
+                    fit: BoxFit.cover,
+                  ),
+                ),
               ],
             ),
             const SizedBox(height: 8),
@@ -451,12 +483,19 @@ class _HomeDashboardState extends State<HomeDashboard> {
             const SizedBox(height: 12),
             Row(
               children: [
-                Expanded(child: _miniStat('Espèces', breakdown.cashRevenue)),
+                Expanded(
+                  child: _miniStat(
+                    'Espèces',
+                    breakdown.cashRevenue,
+                    iconAsset: 'assets/home_icon_2.jpg',
+                  ),
+                ),
                 const SizedBox(width: 12),
                 Expanded(
                   child: _miniStat(
                     'Mobile Money',
                     breakdown.mobileMoneyRevenue,
+                    iconAsset: 'assets/home_icon_3.jpg',
                   ),
                 ),
               ],
@@ -467,7 +506,7 @@ class _HomeDashboardState extends State<HomeDashboard> {
     );
   }
 
-  Widget _miniStat(String label, double value) {
+  Widget _miniStat(String label, double value, {String? iconAsset}) {
     return Container(
       padding: const EdgeInsets.symmetric(vertical: 8, horizontal: 10),
       decoration: BoxDecoration(
@@ -477,12 +516,31 @@ class _HomeDashboardState extends State<HomeDashboard> {
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          Text(
-            label,
-            style: const TextStyle(
-              fontSize: 11,
-              color: AppColors.textSecondary,
-            ),
+          Row(
+            children: [
+              Flexible(
+                child: Text(
+                  label,
+                  style: const TextStyle(
+                    fontSize: 11,
+                    color: AppColors.textSecondary,
+                  ),
+                  overflow: TextOverflow.ellipsis,
+                ),
+              ),
+              if (iconAsset != null) ...[
+                const SizedBox(width: 4),
+                ClipRRect(
+                  borderRadius: BorderRadius.circular(3),
+                  child: Image.asset(
+                    iconAsset,
+                    width: 13,
+                    height: 13,
+                    fit: BoxFit.cover,
+                  ),
+                ),
+              ],
+            ],
           ),
           const SizedBox(height: 2),
           Text(
@@ -832,6 +890,7 @@ class _HomeDashboardState extends State<HomeDashboard> {
                           label: 'Recettes boissons aujourd\'hui',
                           value: '${formatAmount(breakdown.boissonsRevenue)} F',
                           color: AppColors.green,
+                          iconAsset: 'assets/home_icon_4.jpg',
                         ),
                         if (!_isServeur)
                           _statCard(
@@ -839,6 +898,7 @@ class _HomeDashboardState extends State<HomeDashboard> {
                             label: 'Recettes plats aujourd\'hui',
                             value: '${formatAmount(breakdown.platsRevenue)} F',
                             color: AppColors.orange,
+                            iconAsset: 'assets/home_icon_5.jpg',
                           ),
                       ],
                     ),
@@ -869,6 +929,7 @@ class _HomeDashboardState extends State<HomeDashboard> {
                           label: 'Boissons · Espèces',
                           value: '${formatAmount(breakdown.boissonsCash)} F',
                           color: AppColors.green,
+                          iconAsset: 'assets/home_icon_6.jpg',
                         ),
                         _statCard(
                           icon: Icons.phone_iphone_outlined,
@@ -876,6 +937,7 @@ class _HomeDashboardState extends State<HomeDashboard> {
                           value:
                               '${formatAmount(breakdown.boissonsMobileMoney)} F',
                           color: AppColors.green,
+                          iconAsset: 'assets/home_icon_7.jpg',
                         ),
                         if (!_isServeur) ...[
                           _statCard(
@@ -883,6 +945,7 @@ class _HomeDashboardState extends State<HomeDashboard> {
                             label: 'Plats · Espèces',
                             value: '${formatAmount(breakdown.platsCash)} F',
                             color: AppColors.orange,
+                            iconAsset: 'assets/home_icon_8.jpg',
                           ),
                           _statCard(
                             icon: Icons.phone_iphone_outlined,
@@ -890,6 +953,7 @@ class _HomeDashboardState extends State<HomeDashboard> {
                             value:
                                 '${formatAmount(breakdown.platsMobileMoney)} F',
                             color: AppColors.orange,
+                            iconAsset: 'assets/home_icon_9.jpg',
                           ),
                         ],
                       ],
