@@ -50,4 +50,31 @@ void main() {
       expect(notificationsIndex, greaterThan(syncIndex));
     },
   );
+
+  testWidgets(
+    'still shows the module grid (Tables, Caisse...) when the summary/breakdown/unread calls all fail — '
+    'no backend reachable in test is exactly the offline case this must not block (regression 2026-09-13)',
+    (tester) async {
+      await tester.pumpWidget(
+        const MaterialApp(
+          home: HomeDashboard(
+            establishmentId: 'est-1',
+            establishmentName: 'Chez Yasmine',
+            roleName: 'Propriétaire',
+          ),
+        ),
+      );
+      await tester.pumpAndSettle();
+
+      // Avant correctif, une des 3 requêtes échouées (résumé, ventilation,
+      // non-lues) faisait basculer tout l'écran sur "Impossible de joindre
+      // l'API", masquant la grille de modules — plus aucun module accessible
+      // hors ligne. `pumpAndSettle` attend la résolution de `_load()` : si la
+      // régression réapparaît, ces tuiles ne seraient plus trouvées.
+      expect(find.text('Tables'), findsWidgets);
+      expect(find.text('Caisse'), findsWidgets);
+      expect(find.text('Stock'), findsWidgets);
+      expect(find.textContaining('Impossible de joindre l\'API'), findsNothing);
+    },
+  );
 }

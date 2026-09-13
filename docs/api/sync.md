@@ -38,6 +38,15 @@ Chaque opération est journalisée dans `sync_operations` (créée en Phase 3) a
 
 Une opération qui échoue métier (ex. stock devenu insuffisant entre-temps, paiement invalide) est marquée **`CONFLICT`**, jamais silencieusement ignorée ni acceptée par un « dernier écrit gagne » (interdit par le prompt maître §28). Le message d'erreur est conservé dans le `payload` JSON (`_lastError`) faute de colonne dédiée sur `sync_operations`. Le lot continue de traiter les opérations suivantes même si l'une d'elles échoue.
 
+## Ouverture de l'application hors ligne (correctif 2026-09-13)
+
+Constaté par l'utilisateur en conditions réelles : ouvrir (ou recharger) l'application sans réseau affichait un écran bloquant *« Impossible de joindre l'API »*, sans aucun moyen d'atteindre un module — alors même que la session Supabase, elle, était correctement restaurée hors ligne (`AuthGate` lit `Supabase.instance.client.auth.currentSession`, purement local). Deux appels réseau, tous deux en amont de tout module, empêchaient d'aller plus loin :
+
+1. **`HomePage._load()`** (`main.dart`) : `GET /auth/me`, seul moyen de savoir quel(s) établissement(s) afficher. Corrigé comme `CatalogCache` — nouveau `ProfileCache` ([lib/auth/profile_cache.dart](../../apps/web/flutter/lib/auth/profile_cache.dart)), qui met en cache localement le dernier profil chargé avec succès et le ressert si `fetchMe()` échoue.
+2. **`HomeDashboard._load()`** (`home_dashboard.dart`) : résumé du jour, ventilation des recettes et compteur de notifications non lues étaient rendus dans la **même** `FutureBuilder` que la grille de modules (Tables, Caisse, Stock...) — un échec sur l'un de ces trois appels de confort faisait disparaître la grille elle-même, pas seulement les indicateurs. Corrigé : chacun des trois est maintenant capturé indépendamment (pas seulement un 403 de permission comme avant) et dégradé en « pas de donnée à afficher » plutôt que de bloquer tout l'écran.
+
+Avec ces deux correctifs, une ouverture hors ligne atteint désormais les modules eux-mêmes (Caisse/Stock via `CatalogCache`, comme déjà documenté ci-dessus) — seule la toute première ouverture d'un navigateur/appareil (aucun profil/catalogue jamais mis en cache) reste bloquée, ce qui est inévitable : il n'existe alors rien à reservir.
+
 ## Côté Flutter
 
 - `SyncQueueService` ([lib/sync/sync_queue_service.dart](../../apps/web/flutter/lib/sync/sync_queue_service.dart)) : file locale persistée via `shared_preferences`, une par établissement. `enqueue()` ajoute une opération ; `syncAll()` envoie tout le lot en attente. **Testé en conditions réelles** (persistance locale, isolation entre établissements, ordre conservé — 4 tests, sans mock réseau).

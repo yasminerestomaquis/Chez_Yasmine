@@ -234,37 +234,46 @@ class _HomeDashboardState extends State<HomeDashboard> {
 
   /// Les 3 appels partent en parallèle (démarrés avant tout `await`), comme
   /// avant. `summary`/`breakdown` exigent `reports.view` côté serveur — un
-  /// rôle qui ne l'a pas (Serveur, Magasinier, ...) reçoit un 403 dessus,
-  /// traité ici comme "pas d'indicateurs à afficher" plutôt que de faire
-  /// échouer tout le chargement de l'accueil (`unreadCount` n'exige aucune
-  /// permission particulière, voir NotificationsController).
+  /// rôle qui ne l'a pas (Serveur, Magasinier, ...) reçoit un 403 dessus.
+  ///
+  /// Toute erreur (403, ou n'importe quelle autre — en particulier une
+  /// coupure réseau) est traitée comme "pas d'indicateur à afficher",
+  /// jamais comme une erreur bloquante pour tout l'accueil : avant ce
+  /// correctif, une coupure réseau ici bloquait la grille de modules
+  /// elle-même (Tables, Caisse, Stock...) puisqu'elle est rendue dans la
+  /// même `FutureBuilder` — empêchant d'ouvrir l'application hors ligne
+  /// malgré le reste de la mécanique déjà en place (constaté par
+  /// l'utilisateur le 2026-09-13, voir docs/api/sync.md). Ces 3 appels ne
+  /// portent que des indicateurs de confort en lecture seule ; les masquer
+  /// hors ligne est un compromis largement préférable à bloquer la
+  /// navigation.
   Future<_DashboardData> _load() async {
     final summaryFuture = _reports.getSummary();
     final breakdownFuture = _reports.getPaymentCategoryBreakdown();
     final unreadFuture = _notifications.unreadCount();
 
-    // Les 3 futures sont attendues ici quoi qu'il arrive (jamais de `rethrow`
-    // avant d'avoir attendu les 3) : un `rethrow` immédiat sur `summary`
-    // laisserait `breakdownFuture`/`unreadFuture`, déjà lancées, sans jamais
+    // Les 3 futures sont attendues ici quoi qu'il arrive : un retour anticipé
+    // sur l'échec de l'une laisserait les autres, déjà lancées, sans jamais
     // être observées si elles échouent aussi — une "unhandled exception"
     // silencieuse en prime d'une régression bien plus difficile à repérer.
-    Object? unexpectedError;
-
     ReportSummary? summary;
     try {
       summary = await summaryFuture;
-    } on ApiException catch (e) {
-      if (e.statusCode != 403) unexpectedError = e;
+    } catch (_) {
+      // ignore — voir le commentaire de _load() ci-dessus.
     }
     PaymentCategoryBreakdown? breakdown;
     try {
       breakdown = await breakdownFuture;
-    } on ApiException catch (e) {
-      if (e.statusCode != 403) unexpectedError ??= e;
+    } catch (_) {
+      // ignore
     }
-    final unreadCount = await unreadFuture;
-
-    if (unexpectedError != null) throw unexpectedError;
+    var unreadCount = 0;
+    try {
+      unreadCount = await unreadFuture;
+    } catch (_) {
+      // ignore
+    }
 
     return _DashboardData(
       summary: summary,

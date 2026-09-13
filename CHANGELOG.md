@@ -2,6 +2,11 @@
 
 ## [Unreleased]
 
+### Corrigé (2026-09-13) — L'ouverture de l'application hors ligne était bloquée dès l'écran d'accueil
+- Constaté en conditions réelles : ouvrir/recharger l'application sans réseau affichait *« Impossible de joindre l'API »* en boucle, sans jamais atteindre un module — malgré toute la mécanique hors ligne déjà en place. Deux appels en amont de tout module en étaient responsables : `GET /auth/me` (aucun repli) et le résumé/la ventilation/le compteur de notifications de l'accueil, rendus dans la même zone que la grille de modules (un échec sur l'un des trois faisait disparaître toute la grille).
+- Corrigé : nouveau `ProfileCache` (même principe que `CatalogCache`, dernier profil chargé avec succès reservi hors ligne) ; les 3 indicateurs de l'accueil se dégradent désormais individuellement sans jamais bloquer la navigation vers les modules.
+- 4 nouveaux tests Flutter (71/71 au total, `flutter analyze`/`build web` ✅).
+
 ### Ajouté (2026-09-13) — Mode hors ligne étendu à Tables/Achats/Pertes/Clôture, barre de synchronisation globale
 - **Encaissement d'une addition de Table** hors ligne : jusqu'ici seule explicitement exclue (« hors périmètre »), la même mécanique que la Caisse s'applique désormais — coupure réseau au moment de payer, la vente est mise en file (id client réutilisé comme clé d'idempotence) et synchronisée automatiquement au retour du réseau. L'ouverture de table et la prise de commande elles-mêmes restent hors périmètre (nécessiteraient un état de commande entièrement côté client avant tout aller-retour serveur) — voir `docs/api/sync.md`.
 - **Achats** (commande par casier), **Pertes** et **Clôture de caisse** : même couverture — chacun idempotent de bout en bout (`dto.id` client réutilisé côté serveur, vérifié en premier avant toute création), rejoué via `SyncService` (`entityType: 'purchase' | 'loss' | 'cash_closing'`).

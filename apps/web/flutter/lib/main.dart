@@ -5,6 +5,7 @@ import 'api/api_client.dart';
 import 'auth/auth_gate.dart';
 import 'auth/link_confirmation_gate.dart';
 import 'auth/me_repository.dart';
+import 'auth/profile_cache.dart';
 import 'config/supabase_config.dart';
 import 'home/home_dashboard.dart';
 import 'sync/global_sync_context.dart';
@@ -65,12 +66,26 @@ class HomePage extends StatefulWidget {
 }
 
 class _HomePageState extends State<HomePage> {
-  late Future<MyProfile> _future;
+  final ProfileCache _cache = ProfileCache();
+  late Future<MyProfile> _future = _load();
 
-  @override
-  void initState() {
-    super.initState();
-    _future = MeRepository(ApiClient()).fetchMe();
+  /// Sans repli, une coupure réseau à l'ouverture (ou au rechargement) de
+  /// l'application bloquait cet écran — le tout premier, avant même de
+  /// savoir quel établissement afficher — empêchant d'ouvrir l'application
+  /// hors ligne malgré tout le reste de la mécanique déjà en place
+  /// (constaté par l'utilisateur le 2026-09-13, voir docs/api/sync.md).
+  /// Même principe que `CatalogCache` : le dernier profil chargé avec succès
+  /// est mis en cache localement et resservi si un chargement échoue.
+  Future<MyProfile> _load() async {
+    try {
+      final profile = await MeRepository(ApiClient()).fetchMe();
+      await _cache.save(profile);
+      return profile;
+    } catch (error) {
+      final cached = await _cache.load();
+      if (cached != null) return cached;
+      rethrow;
+    }
   }
 
   @override
@@ -106,9 +121,7 @@ class _HomePageState extends State<HomePage> {
                       Text('Connecté en tant que ${user!.email}'),
                     const SizedBox(height: 12),
                     OutlinedButton(
-                      onPressed: () => setState(
-                        () => _future = MeRepository(ApiClient()).fetchMe(),
-                      ),
+                      onPressed: () => setState(() => _future = _load()),
                       child: const Text('Réessayer'),
                     ),
                   ],
