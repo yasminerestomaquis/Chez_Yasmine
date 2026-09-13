@@ -87,7 +87,34 @@ class CatalogRepository {
   Future<void> setPrimaryImage(String productId, String imageId) =>
       _api.patch('$_base/products/$productId/images/$imageId', body: {'isPrimary': true});
 
-  Future<String> getImageUrl(String productId, String imageId, {String variant = 'medium'}) async {
+  final Map<String, Future<String>> _imageUrlCache = {};
+
+  /// Les URL signées sont valables 1h côté serveur (`SIGNED_URL_TTL_SECONDS`).
+  /// Sans ce cache, un écran comme la Caisse (`PosProductTile`, dans une
+  /// `FutureBuilder` reconstruite à chaque `setState` du panier) redemandait
+  /// une URL signée pour CHAQUE vignette visible à CHAQUE ajout au panier —
+  /// un aller-retour réseau par image à chaque interaction, principale cause
+  /// d'un affichage qui semble ralenti par le réseau (constaté par
+  /// l'utilisateur, 2026-09-13). Mémorisé par `(productId, imageId, variant)`
+  /// — une clé stable tant que l'image elle-même n'est pas remplacée, jamais
+  /// invalidée par un changement d'image principale (`setPrimaryImage`), qui
+  /// ne touche pas l'URL d'une image déjà en cache. Une requête en échec
+  /// (coupure réseau) n'est jamais mise en cache, pour que le prochain appel
+  /// réessaie normalement.
+  Future<String> getImageUrl(String productId, String imageId, {String variant = 'medium'}) {
+    final key = '$productId:$imageId:$variant';
+    final cached = _imageUrlCache[key];
+    if (cached != null) return cached;
+
+    final future = _fetchImageUrl(productId, imageId, variant).catchError((Object error) {
+      _imageUrlCache.remove(key);
+      throw error;
+    });
+    _imageUrlCache[key] = future;
+    return future;
+  }
+
+  Future<String> _fetchImageUrl(String productId, String imageId, String variant) async {
     final json = await _api.get(
       '$_base/products/$productId/images/$imageId/url',
       query: {'variant': variant},

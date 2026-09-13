@@ -2,6 +2,11 @@
 
 ## [Unreleased]
 
+### Corrigé (2026-09-13) — Caisse : les photos produits redemandaient une URL signée au serveur à chaque interaction
+- L'écran Caisse semblait ralenti par le réseau à l'affichage : `CatalogRepository.getImageUrl` redemandait une URL signée pour chaque vignette produit à **chaque** ajout au panier (la `FutureBuilder` de la vignette est reconstruite à chaque `setState` du panier), au lieu de la charger une seule fois.
+- Corrigé : les URL signées sont désormais mises en cache côté client (mémorisées par produit/image/variante), sans jamais mettre en cache un échec (coupure réseau) — le prochain appel réessaie normalement.
+- `flutter analyze`/`test`/`build web` ✅ (73/73 tests Flutter, sans régression).
+
 ### Ajouté (2026-09-13) — Traçabilité : chaque notification porte le nom de son auteur
 - Nouvelle colonne `Notification.createdBy`, distincte du destinataire (`userId`) — auteur de l'opération à l'origine de la notification (qui a vendu, saisi la dépense, enregistré la perte, reçu l'achat, effectué le mouvement de stock, clôturé la caisse, payé les salaires, ou diffusé le message).
 - `ActivityNotifierService.notify` prend désormais l'id de l'auteur, transmis par les 7 services métier concernés ; `NotificationsService.broadcast` crédite l'utilisateur qui diffuse. `Dépenses` n'avait jusqu'ici aucun id d'utilisateur disponible côté service — désormais transmis depuis le contrôleur.
