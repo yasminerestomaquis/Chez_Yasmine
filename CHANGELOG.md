@@ -2,6 +2,11 @@
 
 ## [Unreleased]
 
+### Corrigé (2026-09-13) — Le bouton de synchronisation pouvait rester bloqué au-delà de 100 opérations en attente
+- Le serveur plafonne un lot de synchronisation à 100 opérations ; `syncAll()` envoyait toute la file en une seule requête, quelle que soit sa taille — au-delà de 100 opérations en attente (période hors ligne prolongée sur plusieurs modules), le serveur aurait rejeté le lot en bloc et plus aucune synchronisation n'aurait pu progresser, ni automatique ni via le bouton manuel.
+- Corrigé : `SyncQueueService.syncAll()` envoie désormais la file par lots d'au plus 100, chaque lot n'étant retiré de la file locale qu'une fois sa propre réponse reçue — un lot en échec ne fait jamais perdre les lots précédents déjà synchronisés.
+- `flutter analyze`/`test` ✅ (71/71 tests Flutter, sans régression).
+
 ### Corrigé (2026-09-13) — L'ouverture de l'application hors ligne était bloquée dès l'écran d'accueil
 - Constaté en conditions réelles : ouvrir/recharger l'application sans réseau affichait *« Impossible de joindre l'API »* en boucle, sans jamais atteindre un module — malgré toute la mécanique hors ligne déjà en place. Deux appels en amont de tout module en étaient responsables : `GET /auth/me` (aucun repli) et le résumé/la ventilation/le compteur de notifications de l'accueil, rendus dans la même zone que la grille de modules (un échec sur l'un des trois faisait disparaître toute la grille).
 - Corrigé : nouveau `ProfileCache` (même principe que `CatalogCache`, dernier profil chargé avec succès reservi hors ligne) ; les 3 indicateurs de l'accueil se dégradent désormais individuellement sans jamais bloquer la navigation vers les modules.

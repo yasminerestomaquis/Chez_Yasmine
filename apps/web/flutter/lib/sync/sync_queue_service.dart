@@ -43,36 +43,56 @@ class SyncQueueService {
     await _save(pending);
   }
 
-  /// Sends every queued operation in one batch. On a network failure the
-  /// whole queue is left untouched (nothing was necessarily lost server-side
-  /// either, since operation ids make replay safe) so a later retry can pick
-  /// up where this attempt left off.
+  /// The backend caps a single batch at 100 operations (`SyncBatchDto`,
+  /// `@ArrayMaxSize(100)`) — a long enough offline period spanning several
+  /// modules (Caisse, Tables, Stock, Dépenses, Achats, Pertes, Clôture)
+  /// could plausibly queue more than that. Sending the whole queue past this
+  /// size in one request would make the server reject it outright (400),
+  /// leaving `syncAll()` permanently unable to make progress — exactly the
+  /// data-loss-by-being-stuck scenario the manual "Synchroniser" button must
+  /// never produce (décision actée 2026-09-13).
+  static const _maxBatchSize = 100;
+
+  /// Sends every queued operation, chunked to respect the server's batch
+  /// size limit. Each chunk is removed from the persisted queue only once
+  /// its own response is received — a later chunk failing (or the
+  /// connection dropping partway through) never discards an earlier chunk
+  /// that already synced, and leaves the rest queued for the next attempt.
+  /// Resending an already-processed chunk on a later retry is always safe:
+  /// every entity this dispatches to is idempotent on the operation's id
+  /// (see docs/api/sync.md).
   Future<SyncResult> syncAll() async {
-    final pending = await listPending();
+    var pending = await listPending();
     if (pending.isEmpty) return SyncResult(synced: 0, failed: []);
 
-    final response = await _api.post('/establishments/$establishmentId/sync', body: {
-      'operations': pending
-          .map((o) => {'id': o.id, 'entityType': o.entityType, 'deviceId': o.deviceId, 'payload': o.payload})
-          .toList(),
-    }) as List<dynamic>;
-
-    final remaining = <PendingOperation>[];
     var synced = 0;
     final failed = <String>[];
-    for (final entry in response) {
-      final result = entry as Map<String, dynamic>;
-      final operation = pending.firstWhere((o) => o.id == result['id']);
-      if (result['status'] == 'SYNCED') {
-        synced++;
-      } else {
-        failed.add('${operation.entityType} : ${result['error'] ?? result['status']}');
+    while (pending.isNotEmpty) {
+      final chunk = pending.take(_maxBatchSize).toList();
+      final response = await _api.post('/establishments/$establishmentId/sync', body: {
+        'operations': chunk
+            .map((o) => {'id': o.id, 'entityType': o.entityType, 'deviceId': o.deviceId, 'payload': o.payload})
+            .toList(),
+      }) as List<dynamic>;
+
+      for (final entry in response) {
+        final result = entry as Map<String, dynamic>;
+        final operation = chunk.firstWhere((o) => o.id == result['id']);
+        if (result['status'] == 'SYNCED') {
+          synced++;
+        } else {
+          failed.add('${operation.entityType} : ${result['error'] ?? result['status']}');
+        }
       }
+      // Ce morceau a reçu une réponse pour chacune de ses opérations
+      // (SYNCED, FAILED ou CONFLICT) : aucune n'a plus besoin de rester en
+      // file, qu'elle ait réussi ou non — un rejet métier ne deviendrait
+      // jamais un succès en le rejouant tel quel (même principe que le
+      // reste de l'application). Une exception avant ce point laisse ce
+      // morceau ET tous les suivants intacts en file pour le prochain essai.
+      pending = pending.skip(chunk.length).toList();
+      await _save(pending);
     }
-    // Network failure vs. server response are distinguished by the fact that
-    // `_api.post` throws before we get here — reaching this point means the
-    // server processed the whole batch, so nothing needs to stay queued.
-    await _save(remaining);
     return SyncResult(synced: synced, failed: failed);
   }
 }
