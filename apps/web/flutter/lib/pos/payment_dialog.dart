@@ -119,18 +119,35 @@ class _PaymentDialogState extends State<_PaymentDialog> {
     super.dispose();
   }
 
-  void _addLine() {
-    final amount = double.tryParse(
-      _amountController.text.trim().replaceAll(',', '.'),
+  /// Un seul bouton pour tout le flux (décision utilisateur du 2026-09-13,
+  /// remplace « Ajouter la ligne de paiement » + « Valider le paiement ») :
+  /// dans l'écrasante majorité des cas (un seul mode de paiement, montant
+  /// déjà pré-rempli au total), un clic suffit — enregistre la ligne courante
+  /// et, comme elle couvre alors tout le restant, ferme aussitôt le
+  /// dialogue. Un paiement fractionné reste possible : tant qu'il reste un
+  /// solde après avoir ajouté la ligne, le dialogue reste ouvert (montant
+  /// suivant pré-rempli avec ce solde) pour la ligne suivante — mêmes clics
+  /// qu'avant, simplement plus un bouton distinct à identifier avant de
+  /// pouvoir agir.
+  void _confirm() {
+    if (_remaining > 0.009) {
+      final amount = double.tryParse(
+        _amountController.text.trim().replaceAll(',', '.'),
+      );
+      if (amount == null || amount <= 0) return;
+      setState(() => _lines.add(PaymentLine(_method, amount)));
+      if (_remaining > 0.009) {
+        setState(() => _amountController.text = _remaining.toStringAsFixed(0));
+        return;
+      }
+    }
+    Navigator.of(context).pop(
+      PaymentOutcome(
+        _lines,
+        orderNumber: int.tryParse(_orderNumberController.text.trim()),
+        marketNumber: int.tryParse(_marketNumberController.text.trim()),
+      ),
     );
-    if (amount == null || amount <= 0) return;
-    setState(() {
-      _lines.add(PaymentLine(_method, amount));
-      final remaining = _remaining;
-      _amountController.text = remaining > 0
-          ? remaining.toStringAsFixed(0)
-          : '';
-    });
   }
 
   @override
@@ -208,11 +225,6 @@ class _PaymentDialogState extends State<_PaymentDialog> {
                   ),
                 ],
               ),
-              const SizedBox(height: 8),
-              OutlinedButton(
-                onPressed: _addLine,
-                child: const Text('Ajouter la ligne de paiement'),
-              ),
             ] else
               Text(
                 'Restant : ${formatAmount(_remaining)} FCFA',
@@ -227,19 +239,7 @@ class _PaymentDialogState extends State<_PaymentDialog> {
           child: const Text('Annuler'),
         ),
         FilledButton(
-          onPressed: _remaining.abs() < 0.01
-              ? () => Navigator.of(context).pop(
-                  PaymentOutcome(
-                    _lines,
-                    orderNumber: int.tryParse(
-                      _orderNumberController.text.trim(),
-                    ),
-                    marketNumber: int.tryParse(
-                      _marketNumberController.text.trim(),
-                    ),
-                  ),
-                )
-              : null,
+          onPressed: _confirm,
           child: const Text('Valider le paiement'),
         ),
       ],
