@@ -2,6 +2,12 @@
 
 ## [Unreleased]
 
+### Ajouté (2026-09-13) — Notifications : diffusion pour tous, badge qui se vide à la consultation, effacement réservé au Super Administrateur
+- **Diffuser un message** n'exige plus `settings.manage` — opérationnel pour tous les rôles membres de l'établissement, comme demandé.
+- Le badge rouge « 9+ » de l'accueil disparaît désormais dès que l'utilisateur **consulte** l'écran Notifications, plus seulement après avoir ouvert chaque notification une par une — corrige en particulier le cas des diffusions (annonces, alertes de stock bas...), qui ne pouvaient jamais être marquées lues individuellement et laissaient donc le badge bloqué indéfiniment.
+- Nouveau bouton **« Effacer toutes les notifications »**, visible et utilisable uniquement par le rôle **Super Administrateur** (nouvelle permission `notifications.manage`, délibérément exclue des autres rôles à accès complet). Confirmation obligatoire avant suppression, définitive et irréversible.
+- 342/342 tests NestJS (4 nouveaux), `flutter analyze`/`test`/`build web` ✅ (67/67 tests Flutter, 3 nouveaux).
+
 ### Ajouté (2026-09-13) — Bénéfice net dans Graphiques, e-mail/statut de connexion dans Utilisateurs, bouton de synchronisation
 - **Graphiques → Bénéfices (vue « Total »)** : tient désormais compte de toutes les natures de dépenses (Loyer, Salaires, Cie, Eau, Patentes, Entretien, Bouteilles de gaz, Charbon — pas seulement « Marché ») et des pertes enregistrées. Les dépenses à cycle long (Loyer/Cie/Eau : 30 jours, Patentes : 365 jours) sont réparties au prorata du recouvrement avec la période demandée plutôt que comptées en entier le jour du paiement (un loyer mensuel ne pèse plus que sa juste part sur une semaine) ; les autres natures et les pertes sont comptées à leur date réelle. Les vues par catégorie/produit restent en marge brute — aucune dépense générale n'est logiquement attribuable à un produit précis. Voir `docs/api/charts.md`.
 - **Module Utilisateurs** : affiche désormais l'e-mail de chaque membre et son statut de connexion (point vert « En ligne », ou « Hors ligne · il y a X »/« Jamais connecté »), basé sur une activité API récente (moins de 2 minutes) plutôt qu'une vraie présence temps réel (pas de WebSocket dans ce projet à ce jour). Voir `docs/api/users.md`.

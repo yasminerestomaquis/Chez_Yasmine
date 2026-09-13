@@ -3,11 +3,12 @@
 ## Routes
 
 ```
-GET   /establishments/:establishmentId/notifications                 (authentifié, pas de permission dédiée)
-GET   /establishments/:establishmentId/notifications/unread-count    (authentifié)
-PATCH /establishments/:establishmentId/notifications/:id/read        (authentifié)
-POST  /establishments/:establishmentId/notifications/broadcast       (settings.manage)
-POST  /establishments/:establishmentId/notifications/low-stock-check (stock.manage)
+GET    /establishments/:establishmentId/notifications                 (authentifié, pas de permission dédiée)
+GET    /establishments/:establishmentId/notifications/unread-count    (authentifié)
+PATCH  /establishments/:establishmentId/notifications/:id/read        (authentifié)
+POST   /establishments/:establishmentId/notifications/broadcast       (authentifié — voir « Diffusion » ci-dessous)
+POST   /establishments/:establishmentId/notifications/low-stock-check (stock.manage)
+DELETE /establishments/:establishmentId/notifications                 (notifications.manage — Super Administrateur uniquement)
 ```
 
 ## Portée
@@ -17,6 +18,25 @@ Le schéma (Phase 3) définit une table `notifications` simple : `organizationId
 ## Particularité : `Notification` est rattachée à l'organisation, pas à l'établissement
 
 Toutes les autres routes de cette application sont scopées par `establishmentId`. `NotificationsService.getOrganizationId` fait la traduction en une seule fonction, réutilisée par toutes les méthodes du service, et sert **aussi** de contrôle d'appartenance : `list`/`unreadCount`/`markAsRead` n'ont volontairement aucun `@RequirePermissions` (comme `GET /auth/me` ou `SyncController`) — n'importe quel membre de l'établissement peut lire ses propres notifications, et c'est cette fonction, pas le guard, qui empêche un utilisateur non affilié d'accéder aux notifications d'une autre organisation.
+
+## Diffusion : opérationnelle pour tous les rôles (décision actée 2026-09-13)
+
+`POST .../broadcast` n'exige plus `settings.manage` — comme `list`/`unreadCount`/`markAsRead`, seule l'appartenance à l'établissement (`getOrganizationId`) est vérifiée. Demande utilisateur explicite : diffuser un message doit être une fonctionnalité opérationnelle par tous les rôles, pas réservée à qui gère les paramètres de l'établissement.
+
+## Badge « non lu » : disparaît après simple consultation, pas seulement après lecture individuelle (décision actée 2026-09-13)
+
+Avant ce correctif, le badge rouge de l'accueil (`unreadCount`) ne diminuait que lorsqu'une notification était marquée lue **individuellement** (`markAsRead`, un appui par notification) — or une diffusion (`userId` nul) ne peut jamais être marquée lue par un individu (voir la limite documentée ci-dessous), donc son badge ne disparaissait jamais tant que personne n'avait, par définition, un moyen de la faire disparaître. Demande utilisateur : le badge doit disparaître dès que l'utilisateur a simplement **consulté** l'écran Notifications, sans avoir à ouvrir chaque élément.
+
+Nouveau champ `UserProfile.notificationsViewedAt` (migration `20260913115537_add_user_profile_notifications_viewed_at.sql`), mis à jour à **chaque appel de `NotificationsService.list`** (donc à chaque ouverture de l'écran) :
+- `unreadCount` ne compte plus que les notifications dont `createdAt` est postérieur à ce marqueur (en plus de `readAt: null`, gardé pour la cohérence individuelle) — une notification déjà là lors de la dernière consultation ne recompte jamais, que ce soit une diffusion ou une notification ciblée jamais ouverte individuellement.
+- `notificationsViewedAt` nul (jamais consulté) équivaut à "depuis toujours" : comportement inchangé pour un compte qui n'a encore jamais ouvert l'écran.
+- Contrairement à `SupabaseJwtGuard.recordLastSeen` (`lastSeenAt`, best-effort, jamais attendu), cette écriture est **attendue avant de renvoyer la liste** — la justesse du badge dépend directement de ce marqueur, une perte occasionnelle ne serait pas acceptable ici comme elle l'est pour un simple indicateur de présence.
+
+## Effacer toutes les notifications : réservé au Super Administrateur (décision actée 2026-09-13)
+
+Nouvelle permission `notifications.manage`, **volontairement exclue** du bloc "accès complet" du seed (qui donne normalement toutes les permissions à Super Administrateur/Administrateur/Propriétaire) et accordée séparément au seul Super Administrateur — voir `supabase/seed/001_roles_permissions.sql`. `DELETE .../notifications` (`NotificationsService.clearAll`) supprime **toutes** les notifications de l'organisation, ciblées ou diffusées, sans distinction — une action destructive et irréversible, jamais un simple marquage lu.
+
+Côté Flutter, le bouton correspondant (icône balai, `lib/notifications/notifications_page.dart`) n'est affiché que si `roleName == 'Super Administrateur'` — un confort d'affichage, la vraie protection restant le refus serveur (403) pour quiconque n'a pas `notifications.manage`. Confirmation obligatoire avant l'appel (même motif que `UsersPage._removeMember`).
 
 ## Limite documentée : une notification diffusée ne peut pas être marquée lue individuellement
 
@@ -36,11 +56,13 @@ Chaque service métier concerné (`SalesService.create`, `PurchasesService.recei
 
 ## UI Flutter (`lib/notifications/`)
 
-Liste (gras = non lu, appui = marque lu si c'est une notification ciblée), bouton « Diffuser un message » (annonce libre, `settings.manage`), bouton « Vérifier les stocks bas » (déclenche `low-stock-check`, `stock.manage`). Comme le reste de l'application, aucun bouton n'est masqué selon les permissions côté client — un refus serveur (403) s'affiche normalement via le message d'erreur générique, cohérent avec le choix déjà fait pour tous les autres écrans.
+Liste (gras = non lu, appui = marque lu si c'est une notification ciblée), bouton « Diffuser un message » (annonce libre, opérationnel pour tous les rôles depuis le 2026-09-13), bouton « Vérifier les stocks bas » (déclenche `low-stock-check`, `stock.manage`), et bouton « Effacer toutes les notifications » (icône balai) **visible uniquement pour le rôle Super Administrateur**. En dehors de ce dernier bouton — une exception délibérée, demande explicite de l'utilisateur —, comme le reste de l'application, aucun bouton n'est masqué selon les permissions côté client : un refus serveur (403) s'affiche normalement via le message d'erreur générique.
+
+`NotificationsPage` exige désormais `roleName` (en plus de `establishmentId`), passé par `HomeDashboard` depuis ses deux points d'entrée (icône cloche de l'AppBar, tuile « Notifications » de PILOTAGE).
 
 ## Vérifications effectuées
 
-- `NotificationsService` : 9 tests (Prisma mocké) — rejet d'un non-membre, filtrage diffusion + ciblé, marquage lu restreint aux notifications ciblées, rejet d'un destinataire hors organisation, dédoublonnage des alertes de stock bas.
+- `NotificationsService` : 17 tests (Prisma mocké) — rejet d'un non-membre, filtrage diffusion + ciblé, marquage lu restreint aux notifications ciblées, rejet d'un destinataire hors organisation, dédoublonnage des alertes de stock bas, **`notificationsViewedAt` mis à jour à chaque `list`, `unreadCount` filtré par ce marqueur (avec et sans consultation préalable), `clearAll` supprime toute l'organisation et rejette un non-membre** (2026-09-13).
 - `ActivityNotifierService` appelé depuis chaque service métier : vérifié par un test dédié dans chacun des 6 fichiers de spec concernés (`sales`, `purchases`, `expenses`, `losses`, `stock-movements`, `cash`) — contenu du message, et absence de notification sur un rejeu idempotent déjà traité (`expenses`, `losses`, `sales`).
-- UI Flutter : `flutter analyze`/`flutter test`/`flutter build web` ✅, y compris la validation du formulaire de diffusion.
+- UI Flutter : `flutter analyze`/`flutter test`/`flutter build web` ✅, y compris la validation du formulaire de diffusion et la visibilité conditionnelle du bouton « Effacer tout » (3 nouveaux tests, 2026-09-13).
 - **Non vérifié en conditions réelles** : round-trip HTTP complet — même limitation `DATABASE_URL` que les phases précédentes.
