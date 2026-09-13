@@ -12,46 +12,70 @@ class UsersRepository {
 
   Future<List<TeamMember>> listTeam() async {
     final json = await _api.get('$_base/users') as List<dynamic>;
-    return json.map((e) => TeamMember.fromJson(e as Map<String, dynamic>)).toList();
+    return json
+        .map((e) => TeamMember.fromJson(e as Map<String, dynamic>))
+        .toList();
   }
 
   Future<List<RoleOption>> listRoles() async {
     final json = await _api.get('$_base/roles') as List<dynamic>;
-    return json.map((e) => RoleOption.fromJson(e as Map<String, dynamic>)).toList();
+    return json
+        .map((e) => RoleOption.fromJson(e as Map<String, dynamic>))
+        .toList();
   }
 
-  Future<void> invite({required String email, required String roleId, String? fullName}) {
-    return _api.post('$_base/users/invite', body: {'email': email, 'roleId': roleId, 'fullName': ?fullName});
+  Future<void> invite({
+    required String email,
+    required String roleId,
+    String? fullName,
+  }) {
+    return _api.post(
+      '$_base/users/invite',
+      body: {'email': email, 'roleId': roleId, 'fullName': ?fullName},
+    );
   }
 
   /// Même effet que [invite], sans passer par l'e-mail de Supabase (quota
   /// gratuit partagé très limité) — renvoie le lien à copier/transmettre
   /// soi-même par le canal de son choix.
-  Future<String> generateInviteLink({required String email, required String roleId, String? fullName}) async {
-    final json = await _api.post('$_base/users/invite-link', body: {
-      'email': email,
-      'roleId': roleId,
-      'fullName': ?fullName,
-    }) as Map<String, dynamic>;
+  Future<String> generateInviteLink({
+    required String email,
+    required String roleId,
+    String? fullName,
+  }) async {
+    final json = await _api.post(
+      '$_base/users/invite-link',
+      body: {'email': email, 'roleId': roleId, 'fullName': ?fullName},
+    ) as Map<String, dynamic>;
     return json['link'] as String;
   }
 
   /// [roleId]/[fullName] sont indépendants et optionnels — n'envoyer que ce
   /// qui a changé.
-  Future<void> updateMember(String membershipId, {String? roleId, String? fullName}) {
-    return _api.patch('$_base/users/$membershipId', body: {'roleId': ?roleId, 'fullName': ?fullName});
+  Future<void> updateMember(
+    String membershipId, {
+    String? roleId,
+    String? fullName,
+  }) {
+    return _api.patch(
+      '$_base/users/$membershipId',
+      body: {'roleId': ?roleId, 'fullName': ?fullName},
+    );
   }
 
   /// Génère un lien de réinitialisation de mot de passe pour un membre déjà
   /// en place, sans passer par l'e-mail de Supabase — même principe que
   /// [generateInviteLink] : à copier/transmettre soi-même.
   Future<String> generateRecoveryLink(String membershipId) async {
-    final json = await _api.post('$_base/users/$membershipId/recovery-link') as Map<String, dynamic>;
+    final json = await _api.post(
+      '$_base/users/$membershipId/recovery-link',
+    ) as Map<String, dynamic>;
     return json['link'] as String;
   }
 
   /// Retire l'utilisateur de cet établissement (révoque son affectation) —
   /// ne supprime jamais son compte Supabase, qui peut appartenir à d'autres
   /// établissements.
-  Future<void> removeMember(String membershipId) => _api.delete('$_base/users/$membershipId');
+  Future<void> removeMember(String membershipId) =>
+      _api.delete('$_base/users/$membershipId');
 }

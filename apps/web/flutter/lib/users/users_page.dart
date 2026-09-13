@@ -3,13 +3,20 @@ import 'package:flutter/services.dart' show Clipboard, ClipboardData;
 import 'package:supabase_flutter/supabase_flutter.dart';
 
 import '../api/api_client.dart';
+import '../common/formatting.dart';
+import '../theme/app_theme.dart';
 import 'user_models.dart';
 import 'users_repository.dart';
 
 enum _InviteAction { sendEmail, copyLink }
 
 class _InviteFormResult {
-  const _InviteFormResult({required this.action, required this.email, required this.roleId, this.fullName});
+  const _InviteFormResult({
+    required this.action,
+    required this.email,
+    required this.roleId,
+    this.fullName,
+  });
 
   final _InviteAction action;
   final String email;
@@ -27,7 +34,10 @@ class UsersPage extends StatefulWidget {
 }
 
 class _UsersPageState extends State<UsersPage> {
-  late final UsersRepository _repository = UsersRepository(ApiClient(), widget.establishmentId);
+  late final UsersRepository _repository = UsersRepository(
+    ApiClient(),
+    widget.establishmentId,
+  );
   late Future<(List<TeamMember>, List<RoleOption>)> _future = _load();
 
   Future<(List<TeamMember>, List<RoleOption>)> _load() async {
@@ -53,7 +63,9 @@ class _UsersPageState extends State<UsersPage> {
               action: action,
               email: email,
               roleId: roleId!,
-              fullName: fullNameController.text.trim().isEmpty ? null : fullNameController.text.trim(),
+              fullName: fullNameController.text.trim().isEmpty
+                  ? null
+                  : fullNameController.text.trim(),
             );
           }
 
@@ -68,12 +80,20 @@ class _UsersPageState extends State<UsersPage> {
                   keyboardType: TextInputType.emailAddress,
                   decoration: const InputDecoration(labelText: 'E-mail'),
                 ),
-                TextField(controller: fullNameController, decoration: const InputDecoration(labelText: 'Nom complet (optionnel)')),
+                TextField(
+                  controller: fullNameController,
+                  decoration: const InputDecoration(
+                    labelText: 'Nom complet (optionnel)',
+                  ),
+                ),
                 DropdownButtonFormField<String>(
                   initialValue: roleId,
                   isExpanded: true,
                   decoration: const InputDecoration(labelText: 'Rôle'),
-                  items: [for (final role in roles) DropdownMenuItem(value: role.id, child: Text(role.name))],
+                  items: [
+                    for (final role in roles)
+                      DropdownMenuItem(value: role.id, child: Text(role.name)),
+                  ],
                   onChanged: (value) => setDialogState(() => roleId = value),
                 ),
                 const SizedBox(height: 8),
@@ -86,13 +106,20 @@ class _UsersPageState extends State<UsersPage> {
               ],
             ),
             actions: [
-              TextButton(onPressed: () => Navigator.of(context).pop(), child: const Text('Annuler')),
+              TextButton(
+                onPressed: () => Navigator.of(context).pop(),
+                child: const Text('Annuler'),
+              ),
               OutlinedButton(
-                onPressed: () => Navigator.of(context).pop(buildResult(_InviteAction.copyLink)),
+                onPressed: () =>
+                    Navigator.of(context)
+                        .pop(buildResult(_InviteAction.copyLink)),
                 child: const Text('Copier le lien'),
               ),
               FilledButton(
-                onPressed: () => Navigator.of(context).pop(buildResult(_InviteAction.sendEmail)),
+                onPressed: () =>
+                    Navigator.of(context)
+                        .pop(buildResult(_InviteAction.sendEmail)),
                 child: const Text('Inviter'),
               ),
             ],
@@ -103,10 +130,16 @@ class _UsersPageState extends State<UsersPage> {
     if (result == null) return;
     try {
       if (result.action == _InviteAction.sendEmail) {
-        await _repository.invite(email: result.email, roleId: result.roleId, fullName: result.fullName);
+        await _repository.invite(
+          email: result.email,
+          roleId: result.roleId,
+          fullName: result.fullName,
+        );
         _reload();
         if (!mounted) return;
-        ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text('Invitation envoyée à ${result.email}.')));
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text('Invitation envoyée à ${result.email}.')),
+        );
       } else {
         final link = await _repository.generateInviteLink(
           email: result.email,
@@ -117,19 +150,26 @@ class _UsersPageState extends State<UsersPage> {
         _reload();
         if (!mounted) return;
         ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text('Lien copié — transmettez-le à ${result.email} par le canal de votre choix.')),
+          SnackBar(
+            content: Text(
+              'Lien copié — transmettez-le à ${result.email} par le canal de votre choix.',
+            ),
+          ),
         );
       }
     } on ApiException catch (e) {
       if (!mounted) return;
-      ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text(e.message)));
+      ScaffoldMessenger.of(context)
+          .showSnackBar(SnackBar(content: Text(e.message)));
     }
   }
 
   String? get _currentUserId => Supabase.instance.client.auth.currentUser?.id;
 
   Future<void> _editMember(TeamMember member, List<RoleOption> roles) async {
-    final fullNameController = TextEditingController(text: member.fullName ?? '');
+    final fullNameController = TextEditingController(
+      text: member.fullName ?? '',
+    );
     String roleId = member.roleId;
     final confirmed = await showDialog<bool>(
       context: context,
@@ -148,14 +188,24 @@ class _UsersPageState extends State<UsersPage> {
                 initialValue: roleId,
                 isExpanded: true,
                 decoration: const InputDecoration(labelText: 'Rôle'),
-                items: [for (final role in roles) DropdownMenuItem(value: role.id, child: Text(role.name))],
-                onChanged: (value) => setDialogState(() => roleId = value ?? roleId),
+                items: [
+                  for (final role in roles)
+                    DropdownMenuItem(value: role.id, child: Text(role.name)),
+                ],
+                onChanged: (value) =>
+                    setDialogState(() => roleId = value ?? roleId),
               ),
             ],
           ),
           actions: [
-            TextButton(onPressed: () => Navigator.of(context).pop(false), child: const Text('Annuler')),
-            FilledButton(onPressed: () => Navigator.of(context).pop(true), child: const Text('Valider')),
+            TextButton(
+              onPressed: () => Navigator.of(context).pop(false),
+              child: const Text('Annuler'),
+            ),
+            FilledButton(
+              onPressed: () => Navigator.of(context).pop(true),
+              child: const Text('Valider'),
+            ),
           ],
         ),
       ),
@@ -171,7 +221,8 @@ class _UsersPageState extends State<UsersPage> {
       _reload();
     } on ApiException catch (e) {
       if (!mounted) return;
-      ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text(e.message)));
+      ScaffoldMessenger.of(context)
+          .showSnackBar(SnackBar(content: Text(e.message)));
     }
   }
 
@@ -185,8 +236,14 @@ class _UsersPageState extends State<UsersPage> {
           "Son compte n'est pas supprimé — il pourra rester utilisable sur un autre établissement.",
         ),
         actions: [
-          TextButton(onPressed: () => Navigator.of(context).pop(false), child: const Text('Annuler')),
-          FilledButton(onPressed: () => Navigator.of(context).pop(true), child: const Text('Retirer')),
+          TextButton(
+            onPressed: () => Navigator.of(context).pop(false),
+            child: const Text('Annuler'),
+          ),
+          FilledButton(
+            onPressed: () => Navigator.of(context).pop(true),
+            child: const Text('Retirer'),
+          ),
         ],
       ),
     );
@@ -196,7 +253,8 @@ class _UsersPageState extends State<UsersPage> {
       _reload();
     } on ApiException catch (e) {
       if (!mounted) return;
-      ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text(e.message)));
+      ScaffoldMessenger.of(context)
+          .showSnackBar(SnackBar(content: Text(e.message)));
     }
   }
 
@@ -218,7 +276,8 @@ class _UsersPageState extends State<UsersPage> {
       );
     } on ApiException catch (e) {
       if (!mounted) return;
-      ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text(e.message)));
+      ScaffoldMessenger.of(context)
+          .showSnackBar(SnackBar(content: Text(e.message)));
     }
   }
 
@@ -233,7 +292,9 @@ class _UsersPageState extends State<UsersPage> {
             return const Center(child: CircularProgressIndicator());
           }
           if (snapshot.hasError) {
-            final message = snapshot.error is ApiException ? (snapshot.error as ApiException).message : '${snapshot.error}';
+            final message = snapshot.error is ApiException
+                ? (snapshot.error as ApiException).message
+                : '${snapshot.error}';
             return Center(
               child: Padding(
                 padding: const EdgeInsets.all(24),
@@ -242,7 +303,10 @@ class _UsersPageState extends State<UsersPage> {
                   children: [
                     Text(message, textAlign: TextAlign.center),
                     const SizedBox(height: 12),
-                    OutlinedButton(onPressed: _reload, child: const Text('Réessayer')),
+                    OutlinedButton(
+                      onPressed: _reload,
+                      child: const Text('Réessayer'),
+                    ),
                   ],
                 ),
               ),
@@ -251,12 +315,69 @@ class _UsersPageState extends State<UsersPage> {
           final (team, roles) = snapshot.data!;
           return ListView(
             children: [
-              if (team.isEmpty) const Padding(padding: EdgeInsets.all(24), child: Text('Aucun utilisateur.')),
+              if (team.isEmpty)
+                const Padding(
+                  padding: EdgeInsets.all(24),
+                  child: Text('Aucun utilisateur.'),
+                ),
               for (final member in team)
                 ListTile(
-                  leading: const Icon(Icons.person_outline),
-                  title: Text(member.fullName?.isNotEmpty == true ? member.fullName! : '(nom non renseigné)'),
-                  subtitle: Text(member.userId == _currentUserId ? '${member.roleName} (vous)' : member.roleName),
+                  leading: Stack(
+                    clipBehavior: Clip.none,
+                    children: [
+                      const Icon(Icons.person_outline),
+                      Positioned(
+                        right: -2,
+                        bottom: -2,
+                        child: Container(
+                          width: 10,
+                          height: 10,
+                          decoration: BoxDecoration(
+                            shape: BoxShape.circle,
+                            color: member.isOnline
+                                ? AppColors.green
+                                : AppColors.textSecondary,
+                            border: Border.all(
+                              color: Theme.of(context).scaffoldBackgroundColor,
+                              width: 1.5,
+                            ),
+                          ),
+                        ),
+                      ),
+                    ],
+                  ),
+                  title: Text(
+                    member.fullName?.isNotEmpty == true
+                        ? member.fullName!
+                        : '(nom non renseigné)',
+                  ),
+                  subtitle: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    mainAxisSize: MainAxisSize.min,
+                    children: [
+                      if (member.email != null) Text(member.email!),
+                      Text(
+                        member.userId == _currentUserId
+                            ? '${member.roleName} (vous)'
+                            : member.roleName,
+                      ),
+                      Text(
+                        member.isOnline
+                            ? 'En ligne'
+                            : member.lastSeenAt != null
+                            ? 'Hors ligne · ${formatRelativeTime(member.lastSeenAt!)}'
+                            : 'Jamais connecté',
+                        style: TextStyle(
+                          fontSize: 12,
+                          color: member.isOnline
+                              ? AppColors.green
+                              : AppColors.textSecondary,
+                          fontWeight: member.isOnline ? FontWeight.w600 : null,
+                        ),
+                      ),
+                    ],
+                  ),
+                  isThreeLine: true,
                   trailing: Row(
                     mainAxisSize: MainAxisSize.min,
                     children: [
