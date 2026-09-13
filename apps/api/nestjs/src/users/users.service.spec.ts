@@ -368,3 +368,66 @@ describe('UsersService.generateRecoveryLink', () => {
     ).rejects.toBeInstanceOf(BadRequestException);
   });
 });
+
+describe('UsersService.list', () => {
+  let prisma: ReturnType<typeof makePrismaMock>;
+  let service: UsersService;
+  let supabaseAdmin: { getEmailsByIds: ReturnType<typeof vi.fn> };
+
+  beforeEach(() => {
+    prisma = makePrismaMock();
+    supabaseAdmin = { getEmailsByIds: vi.fn() };
+    service = new UsersService(
+      prisma as unknown as PrismaService,
+      {} as unknown as AuthorizationService,
+      supabaseAdmin as unknown as SupabaseAdminService,
+    );
+  });
+
+  it('adds email (from Supabase Admin) and isOnline (from lastSeenAt) to each member', async () => {
+    const now = Date.now();
+    prisma.userEstablishmentRole.findMany.mockResolvedValue([
+      {
+        id: 'membership-1',
+        user: { id: 'user-1', fullName: 'Awa', lastSeenAt: new Date(now - 30_000) }, // il y a 30s : en ligne
+        role: { id: 'role-1', name: 'Serveur' },
+      },
+      {
+        id: 'membership-2',
+        user: { id: 'user-2', fullName: 'Koffi', lastSeenAt: new Date(now - 10 * 60_000) }, // il y a 10 min : hors ligne
+        role: { id: 'role-2', name: 'Caissier' },
+      },
+      {
+        id: 'membership-3',
+        user: { id: 'user-3', fullName: 'Jean', lastSeenAt: null }, // jamais vu
+        role: { id: 'role-3', name: 'Gérant' },
+      },
+    ]);
+    supabaseAdmin.getEmailsByIds.mockResolvedValue(
+      new Map([
+        ['user-1', 'awa@example.com'],
+        ['user-2', 'koffi@example.com'],
+        ['user-3', null],
+      ]),
+    );
+
+    const result = await service.list('est-1');
+
+    expect(supabaseAdmin.getEmailsByIds).toHaveBeenCalledWith(['user-1', 'user-2', 'user-3']);
+    expect(result[0].user).toMatchObject({ email: 'awa@example.com', isOnline: true });
+    expect(result[1].user).toMatchObject({ email: 'koffi@example.com', isOnline: false });
+    expect(result[2].user).toMatchObject({ email: null, isOnline: false });
+  });
+
+  it('requests each unique user id only once, even with several memberships for the same user', async () => {
+    prisma.userEstablishmentRole.findMany.mockResolvedValue([
+      { id: 'membership-1', user: { id: 'user-1', fullName: 'Awa', lastSeenAt: null }, role: { id: 'role-1', name: 'Serveur' } },
+      { id: 'membership-2', user: { id: 'user-1', fullName: 'Awa', lastSeenAt: null }, role: { id: 'role-2', name: 'Caissier' } },
+    ]);
+    supabaseAdmin.getEmailsByIds.mockResolvedValue(new Map([['user-1', 'awa@example.com']]));
+
+    await service.list('est-1');
+
+    expect(supabaseAdmin.getEmailsByIds).toHaveBeenCalledWith(['user-1']);
+  });
+});

@@ -9,6 +9,9 @@ const ROLE_WITH_PERMISSIONS_INCLUDE = {
   rolePermissions: { select: { permission: { select: { code: true } } } },
 } as const;
 
+/** En dessous de ce délai depuis `lastSeenAt`, un membre est considéré "en ligne" — voir SupabaseJwtGuard.recordLastSeen et docs/api/users.md. */
+const ONLINE_THRESHOLD_MS = 2 * 60_000;
+
 type RoleWithPermissions = { id: string; name: string; isSystem: boolean; organizationId: string | null } & {
   rolePermissions: { permission: { code: string } }[];
 };
@@ -21,11 +24,37 @@ export class UsersService {
     private readonly supabaseAdmin: SupabaseAdminService,
   ) {}
 
-  list(establishmentId: string) {
-    return this.prisma.userEstablishmentRole.findMany({
+  /**
+   * E-mail et statut de connexion ajoutés le 2026-09-13 (demande
+   * utilisateur) — voir docs/api/users.md pour le détail du calcul
+   * "en ligne" / "hors ligne depuis" et pourquoi l'e-mail vient de l'API
+   * Admin de Supabase plutôt que du schéma Prisma.
+   */
+  async list(establishmentId: string) {
+    const memberships = await this.prisma.userEstablishmentRole.findMany({
       where: { establishmentId },
-      include: { user: { select: { fullName: true } }, role: { select: { id: true, name: true } } },
+      include: {
+        user: { select: { id: true, fullName: true, lastSeenAt: true } },
+        role: { select: { id: true, name: true } },
+      },
       orderBy: { createdAt: 'asc' },
+    });
+
+    const uniqueUserIds = [...new Set(memberships.map((m) => m.user.id))];
+    const emailsById = await this.supabaseAdmin.getEmailsByIds(uniqueUserIds);
+    const now = Date.now();
+
+    return memberships.map((m) => {
+      const lastSeenAt = m.user.lastSeenAt;
+      const isOnline = lastSeenAt != null && now - lastSeenAt.getTime() < ONLINE_THRESHOLD_MS;
+      return {
+        ...m,
+        user: {
+          ...m.user,
+          email: emailsById.get(m.user.id) ?? null,
+          isOnline,
+        },
+      };
     });
   }
 

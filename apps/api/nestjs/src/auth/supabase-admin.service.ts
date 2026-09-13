@@ -92,6 +92,26 @@ export class SupabaseAdminService {
   }
 
   /**
+   * E-mail de chaque utilisateur demandé (`null` pour un id introuvable ou
+   * sans e-mail) — `auth.users` n'est pas répliqué dans le schéma Prisma
+   * (voir CLAUDE.md), c'est le seul endroit qui l'expose côté serveur pour
+   * plusieurs utilisateurs à la fois (module Utilisateurs, `docs/api/users.md`).
+   * Un appel par id (comme `generateRecoveryLink` déjà), en parallèle — une
+   * liste de membres d'établissement compte typiquement moins d'une
+   * vingtaine de personnes, `listUsers()` paginé n'apporterait rien ici.
+   */
+  async getEmailsByIds(userIds: string[]): Promise<Map<string, string | null>> {
+    const client = this.getClient();
+    const entries = await Promise.all(
+      userIds.map(async (id) => {
+        const { data, error } = await client.auth.admin.getUserById(id);
+        return [id, error ? null : (data.user?.email ?? null)] as const;
+      }),
+    );
+    return new Map(entries);
+  }
+
+  /**
    * Génère un lien de réinitialisation de mot de passe pour un utilisateur
    * *déjà existant* (contrairement à generateInviteLink, ne crée aucun
    * compte) — même principe : ne passe jamais par le mailer de Supabase,
