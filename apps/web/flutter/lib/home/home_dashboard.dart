@@ -894,10 +894,7 @@ class _HomeDashboardState extends State<HomeDashboard> {
                           label: 'Recettes boissons aujourd\'hui',
                           value: '${formatAmount(breakdown.boissonsRevenue)} F',
                           color: AppColors.green,
-                          iconAssets: const [
-                            'assets/malta.jpg',
-                            'assets/malta.jpg',
-                          ],
+                          iconAssets: const ['assets/malta.jpg'],
                         ),
                         if (!_isServeur)
                           _statCard(
@@ -905,10 +902,7 @@ class _HomeDashboardState extends State<HomeDashboard> {
                             label: 'Recettes plats aujourd\'hui',
                             value: '${formatAmount(breakdown.platsRevenue)} F',
                             color: AppColors.orange,
-                            iconAssets: const [
-                              'assets/kedjenou_poulet.jpg',
-                              'assets/kedjenou_poulet.jpg',
-                            ],
+                            iconAssets: const ['assets/kedjenou_poulet.jpg'],
                           ),
                       ],
                     ),
@@ -942,7 +936,6 @@ class _HomeDashboardState extends State<HomeDashboard> {
                           iconAssets: const [
                             'assets/home_icon_2.jpg',
                             'assets/malta.jpg',
-                            'assets/malta.jpg',
                           ],
                         ),
                         _statCard(
@@ -953,7 +946,6 @@ class _HomeDashboardState extends State<HomeDashboard> {
                           color: AppColors.green,
                           iconAssets: const [
                             'assets/home_icon_3.jpg',
-                            'assets/malta.jpg',
                             'assets/malta.jpg',
                           ],
                         ),
@@ -966,7 +958,6 @@ class _HomeDashboardState extends State<HomeDashboard> {
                             iconAssets: const [
                               'assets/home_icon_2.jpg',
                               'assets/kedjenou_poulet.jpg',
-                              'assets/kedjenou_poulet.jpg',
                             ],
                           ),
                           _statCard(
@@ -977,7 +968,6 @@ class _HomeDashboardState extends State<HomeDashboard> {
                             color: AppColors.orange,
                             iconAssets: const [
                               'assets/home_icon_3.jpg',
-                              'assets/kedjenou_poulet.jpg',
                               'assets/kedjenou_poulet.jpg',
                             ],
                           ),
