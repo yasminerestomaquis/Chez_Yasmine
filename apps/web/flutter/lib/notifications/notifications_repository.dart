@@ -12,7 +12,9 @@ class NotificationsRepository {
 
   Future<List<AppNotification>> listNotifications() async {
     final json = await _api.get(_base) as List<dynamic>;
-    return json.map((e) => AppNotification.fromJson(e as Map<String, dynamic>)).toList();
+    return json
+        .map((e) => AppNotification.fromJson(e as Map<String, dynamic>))
+        .toList();
   }
 
   Future<int> unreadCount() async {
@@ -29,5 +31,12 @@ class NotificationsRepository {
 
   Future<void> checkLowStock() {
     return _api.post('$_base/low-stock-check');
+  }
+
+  /// Réservé côté serveur au Super Administrateur (`notifications.manage`) —
+  /// efface toutes les notifications de l'organisation, pas seulement
+  /// celles de l'appelant.
+  Future<void> clearAll() {
+    return _api.delete(_base);
   }
 }

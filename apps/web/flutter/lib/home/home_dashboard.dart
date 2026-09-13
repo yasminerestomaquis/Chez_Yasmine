@@ -201,7 +201,10 @@ class _HomeDashboardState extends State<HomeDashboard> {
     _ModuleEntry(
       Icons.notifications_outlined,
       'Notifications',
-      (_) => NotificationsPage(establishmentId: widget.establishmentId),
+      (_) => NotificationsPage(
+        establishmentId: widget.establishmentId,
+        roleName: widget.roleName,
+      ),
     ),
     _ModuleEntry(
       Icons.insert_chart_outlined,
@@ -744,6 +747,7 @@ class _HomeDashboardState extends State<HomeDashboard> {
                     onPressed: () => _openPage(
                       (_) => NotificationsPage(
                         establishmentId: widget.establishmentId,
+                        roleName: widget.roleName,
                       ),
                     ),
                   ),
