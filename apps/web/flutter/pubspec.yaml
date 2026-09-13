@@ -75,12 +75,8 @@ flutter:
     - assets/home_icon_1.jpg
     - assets/home_icon_2.jpg
     - assets/home_icon_3.jpg
-    - assets/home_icon_4.jpg
-    - assets/home_icon_5.jpg
-    - assets/home_icon_6.jpg
-    - assets/home_icon_7.jpg
-    - assets/home_icon_8.jpg
-    - assets/home_icon_9.jpg
+    - assets/malta.jpg
+    - assets/kedjenou_poulet.jpg
 
   # An image asset can refer to one or more resolution-specific "variants", see
   # https://flutter.dev/to/resolution-aware-images

@@ -371,9 +371,12 @@ class _HomeDashboardState extends State<HomeDashboard> {
     required String label,
     required String value,
     required Color color,
-    // Petite icône décorative à côté du libellé (une image dédiée par carte
-    // — demande utilisateur du 2026-09-12) ; `null` : aucune icône.
-    String? iconAsset,
+    // Icônes décoratives à côté du libellé (demande utilisateur du
+    // 2026-09-12 : Wave/Espèces existants + 2 icônes produit — Malta pour
+    // les cartes "Boissons", Kedjenou de poulet pour les cartes "Plats" —,
+    // un peu plus grandes que l'icône unique précédente) ; `null`/vide :
+    // aucune icône.
+    List<String>? iconAssets,
   }) {
     return Card(
       child: Padding(
@@ -411,18 +414,19 @@ class _HomeDashboardState extends State<HomeDashboard> {
                     overflow: TextOverflow.ellipsis,
                   ),
                 ),
-                if (iconAsset != null) ...[
-                  const SizedBox(width: 4),
-                  ClipRRect(
-                    borderRadius: BorderRadius.circular(3),
-                    child: Image.asset(
-                      iconAsset,
-                      width: 14,
-                      height: 14,
-                      fit: BoxFit.cover,
+                if (iconAssets != null)
+                  for (final asset in iconAssets) ...[
+                    const SizedBox(width: 4),
+                    ClipRRect(
+                      borderRadius: BorderRadius.circular(4),
+                      child: Image.asset(
+                        asset,
+                        width: 18,
+                        height: 18,
+                        fit: BoxFit.cover,
+                      ),
                     ),
-                  ),
-                ],
+                  ],
               ],
             ),
           ],
@@ -890,7 +894,10 @@ class _HomeDashboardState extends State<HomeDashboard> {
                           label: 'Recettes boissons aujourd\'hui',
                           value: '${formatAmount(breakdown.boissonsRevenue)} F',
                           color: AppColors.green,
-                          iconAsset: 'assets/home_icon_4.jpg',
+                          iconAssets: const [
+                            'assets/malta.jpg',
+                            'assets/malta.jpg',
+                          ],
                         ),
                         if (!_isServeur)
                           _statCard(
@@ -898,7 +905,10 @@ class _HomeDashboardState extends State<HomeDashboard> {
                             label: 'Recettes plats aujourd\'hui',
                             value: '${formatAmount(breakdown.platsRevenue)} F',
                             color: AppColors.orange,
-                            iconAsset: 'assets/home_icon_5.jpg',
+                            iconAssets: const [
+                              'assets/kedjenou_poulet.jpg',
+                              'assets/kedjenou_poulet.jpg',
+                            ],
                           ),
                       ],
                     ),
@@ -929,7 +939,11 @@ class _HomeDashboardState extends State<HomeDashboard> {
                           label: 'Boissons · Espèces',
                           value: '${formatAmount(breakdown.boissonsCash)} F',
                           color: AppColors.green,
-                          iconAsset: 'assets/home_icon_6.jpg',
+                          iconAssets: const [
+                            'assets/home_icon_2.jpg',
+                            'assets/malta.jpg',
+                            'assets/malta.jpg',
+                          ],
                         ),
                         _statCard(
                           icon: Icons.phone_iphone_outlined,
@@ -937,7 +951,11 @@ class _HomeDashboardState extends State<HomeDashboard> {
                           value:
                               '${formatAmount(breakdown.boissonsMobileMoney)} F',
                           color: AppColors.green,
-                          iconAsset: 'assets/home_icon_7.jpg',
+                          iconAssets: const [
+                            'assets/home_icon_3.jpg',
+                            'assets/malta.jpg',
+                            'assets/malta.jpg',
+                          ],
                         ),
                         if (!_isServeur) ...[
                           _statCard(
@@ -945,7 +963,11 @@ class _HomeDashboardState extends State<HomeDashboard> {
                             label: 'Plats · Espèces',
                             value: '${formatAmount(breakdown.platsCash)} F',
                             color: AppColors.orange,
-                            iconAsset: 'assets/home_icon_8.jpg',
+                            iconAssets: const [
+                              'assets/home_icon_2.jpg',
+                              'assets/kedjenou_poulet.jpg',
+                              'assets/kedjenou_poulet.jpg',
+                            ],
                           ),
                           _statCard(
                             icon: Icons.phone_iphone_outlined,
@@ -953,7 +975,11 @@ class _HomeDashboardState extends State<HomeDashboard> {
                             value:
                                 '${formatAmount(breakdown.platsMobileMoney)} F',
                             color: AppColors.orange,
-                            iconAsset: 'assets/home_icon_9.jpg',
+                            iconAssets: const [
+                              'assets/home_icon_3.jpg',
+                              'assets/kedjenou_poulet.jpg',
+                              'assets/kedjenou_poulet.jpg',
+                            ],
                           ),
                         ],
                       ],
