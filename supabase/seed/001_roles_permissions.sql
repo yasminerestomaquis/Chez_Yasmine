@@ -44,12 +44,14 @@ cross join permissions p
 where r.is_system and r.name in ('Super Administrateur', 'Administrateur', 'Propriétaire')
 on conflict do nothing;
 
--- Gérant : tout sauf la gestion des rôles.
+-- Gérant : tout sauf la gestion des rôles et des utilisateurs (décision
+-- utilisateur du 2026-09-13 — le module Utilisateurs reste réservé à
+-- Super Administrateur/Administrateur/Propriétaire).
 insert into role_permissions (role_id, permission_id)
 select r.id, p.id
 from roles r
 cross join permissions p
-where r.is_system and r.name = 'Gérant' and p.code <> 'roles.manage'
+where r.is_system and r.name = 'Gérant' and p.code not in ('roles.manage', 'users.manage')
 on conflict do nothing;
 
 -- Caissier : caisse, remboursement, clients (encours crédit), rapports.

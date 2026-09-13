@@ -113,6 +113,13 @@ class _HomeDashboardState extends State<HomeDashboard> {
   // Commandes/Alertes stock — réservés aux rôles avec une vue d'ensemble.
   bool get _isServeur => widget.roleName == 'Serveur';
 
+  // Demande utilisateur du 2026-09-13 : le Gérant ne doit pas voir le module
+  // Utilisateurs (gestion des comptes/rôles) — masqué ici en plus du refus
+  // serveur (users.manage retirée de ce rôle, voir
+  // supabase/seed/001_roles_permissions.sql), défense en profondeur comme
+  // pour le reste de l'application.
+  bool get _isGerant => widget.roleName == 'Gérant';
+
   late final ReportsRepository _reports = ReportsRepository(
     ApiClient(),
     widget.establishmentId,
@@ -203,11 +210,12 @@ class _HomeDashboardState extends State<HomeDashboard> {
     ),
   ];
   late final List<_ModuleEntry> _administration = [
-    _ModuleEntry(
-      Icons.manage_accounts_outlined,
-      'Utilisateurs',
-      (_) => UsersPage(establishmentId: widget.establishmentId),
-    ),
+    if (!_isGerant)
+      _ModuleEntry(
+        Icons.manage_accounts_outlined,
+        'Utilisateurs',
+        (_) => UsersPage(establishmentId: widget.establishmentId),
+      ),
   ];
 
   /// Les 3 appels partent en parallèle (démarrés avant tout `await`), comme
@@ -1059,7 +1067,8 @@ class _HomeDashboardState extends State<HomeDashboard> {
                   _moduleSection('OPÉRATIONS', _operations),
                   _moduleSection('GESTION', _gestion),
                   _moduleSection('PILOTAGE', _pilotage),
-                  _moduleSection('ADMINISTRATION', _administration),
+                  if (_administration.isNotEmpty)
+                    _moduleSection('ADMINISTRATION', _administration),
                 ],
               );
             },

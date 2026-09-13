@@ -103,6 +103,14 @@ Demande utilisateur : afficher l'e-mail de chaque membre et voir s'il est actuel
 
 Côté Flutter (`lib/users/users_page.dart`) : un point de couleur (vert = en ligne, gris = hors ligne) superposé à l'icône de chaque membre, et sous le rôle, soit « En ligne » (vert), soit « Hors ligne · il y a X » (`formatRelativeTime`, `lib/common/formatting.dart` — minutes/heures/jours, jamais vu → « Jamais connecté »).
 
+## Accès retiré au rôle Gérant (décision actée 2026-09-13)
+
+Le Gérant avait `users.manage` par construction (règle générique « tout sauf `roles.manage` », voir `supabase/seed/001_roles_permissions.sql`) — retiré sur demande explicite de l'utilisateur : le module Utilisateurs reste désormais réservé à Super Administrateur/Administrateur/Propriétaire. Deux niveaux, comme partout ailleurs dans l'application :
+- **Côté serveur (l'API, pas le rôle "Serveur")** : le seed exclut maintenant `users.manage` de la règle générique du Gérant (`p.code not in ('roles.manage', 'users.manage')`) — un appel à une route `.../users*` par un Gérant renvoie désormais 403. Rejoué en production (idempotent) : la ligne `role_permissions` existante (Gérant, `users.manage`) a été supprimée explicitement, le seed additif (`on conflict do nothing`) n'efface jamais un octroi déjà en place.
+- **Client** : contrairement au reste de l'application (dont la règle est de ne jamais masquer un module selon la permission, un refus serveur suffisant), la tuile « Utilisateurs » de la section ADMINISTRATION de l'accueil est ici explicitement masquée pour le Gérant (`HomeDashboard._isGerant`, même section que le module lui-même — vide et donc masquée en entier pour ce rôle) — demande explicite de l'utilisateur (« ne pas voir »), au-delà du simple refus serveur.
+
+Vérifié en base de production : seuls Super Administrateur/Administrateur/Propriétaire portent encore `users.manage`.
+
 ## Vérifications effectuées
 
 - `UsersService` : 26 tests (Prisma + `AuthorizationService` + `SupabaseAdminService` mockés) — `invite`/`generateInviteLink` : rôle introuvable, rôle d'une autre organisation, protection anti-élévation, invitation réussie (métadonnées correctes transmises), e-mail déjà enregistré (`ConflictException`), autre erreur Supabase (`BadRequestException`) ; `removeMember`/`updateMember` : membre introuvable, auto-retrait/auto-modification de rôle refusés (mais pas l'auto-modification du nom), protection anti-élévation sur le rôle actuel et le nouveau rôle (jamais appliquée à un changement de nom seul), dernier gestionnaire d'utilisateurs protégé, rôle et nom modifiables indépendamment ou ensemble ; `generateRecoveryLink` : membre introuvable, protection anti-élévation, lien généré pour le bon utilisateur, erreur Supabase traduite ; **`list`** (2 tests, 2026-09-13) : e-mail + `isOnline` ajoutés à chaque membre selon `lastSeenAt`, un seul appel Admin par utilisateur unique même avec plusieurs affectations.
