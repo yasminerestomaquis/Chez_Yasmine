@@ -158,21 +158,31 @@ export class SalesService {
     return sale;
   }
 
-  /** Suggestion éditable pour la caisse : N° de la dernière commande d'achat enregistrée (toutes catégories/fournisseurs confondus), ou null s'il n'y en a aucune. Jamais imposé côté serveur. */
+  /**
+   * Suggestion éditable pour la caisse : N° de la dernière commande d'achat
+   * enregistrée (toutes catégories/fournisseurs confondus), ou null s'il n'y
+   * en a aucune. Jamais imposé côté serveur.
+   *
+   * Trié par `orderNumber` décroissant, pas par `createdAt` — même
+   * convention que `PurchasesService.nextOrderNumber` : la date de création
+   * d'une commande n'est pas forcément dans le même ordre que son N°
+   * (une commande peut être saisie après coup), donc trier par date
+   * risquerait de suggérer un numéro déjà dépassé.
+   */
   async lastOrderNumber(establishmentId: string): Promise<number | null> {
     const last = await this.prisma.purchase.findFirst({
       where: { establishmentId },
-      orderBy: { createdAt: 'desc' },
+      orderBy: { orderNumber: 'desc' },
       select: { orderNumber: true },
     });
     return last?.orderNumber ?? null;
   }
 
-  /** Même principe pour le dernier N° de marché (dépense « Marché ») enregistré. */
+  /** Même principe pour le dernier N° de marché (dépense « Marché ») enregistré — voir `lastOrderNumber` pour pourquoi trier par le numéro plutôt que par date, et `ExpensesService.nextMarketNumber` pour la même convention côté Dépenses. */
   async lastMarketNumber(establishmentId: string): Promise<number | null> {
     const last = await this.prisma.expense.findFirst({
-      where: { establishmentId, category: 'Marché' },
-      orderBy: { createdAt: 'desc' },
+      where: { establishmentId, category: 'Marché', marketNumber: { not: null } },
+      orderBy: { marketNumber: 'desc' },
       select: { marketNumber: true },
     });
     return last?.marketNumber ?? null;

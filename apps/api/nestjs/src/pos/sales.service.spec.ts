@@ -292,12 +292,16 @@ describe('SalesService.lastOrderNumber / lastMarketNumber', () => {
     await expect(service.lastOrderNumber('est-1')).resolves.toBeNull();
     expect(prisma.purchase.findFirst).toHaveBeenCalledWith({
       where: { establishmentId: 'est-1' },
-      orderBy: { createdAt: 'desc' },
+      orderBy: { orderNumber: 'desc' },
       select: { orderNumber: true },
     });
   });
 
-  it('returns the most recently created purchase order number', async () => {
+  it('returns the highest purchase order number, not the most recently created row', async () => {
+    // Même motif que PurchasesService.nextOrderNumber : une commande peut
+    // être saisie après coup, donc trier par date de création pourrait
+    // suggérer un numéro déjà dépassé — c'est le tri par `orderNumber`
+    // lui-même qui compte, pas `createdAt`.
     (prisma.purchase as any).findFirst.mockResolvedValue({ orderNumber: 5 });
     await expect(service.lastOrderNumber('est-1')).resolves.toBe(5);
   });
@@ -306,13 +310,13 @@ describe('SalesService.lastOrderNumber / lastMarketNumber', () => {
     (prisma.expense as any).findFirst.mockResolvedValue(null);
     await expect(service.lastMarketNumber('est-1')).resolves.toBeNull();
     expect(prisma.expense.findFirst).toHaveBeenCalledWith({
-      where: { establishmentId: 'est-1', category: 'Marché' },
-      orderBy: { createdAt: 'desc' },
+      where: { establishmentId: 'est-1', category: 'Marché', marketNumber: { not: null } },
+      orderBy: { marketNumber: 'desc' },
       select: { marketNumber: true },
     });
   });
 
-  it('returns the most recently created market number', async () => {
+  it('returns the highest market number, not the most recently created row', async () => {
     (prisma.expense as any).findFirst.mockResolvedValue({ marketNumber: 9 });
     await expect(service.lastMarketNumber('est-1')).resolves.toBe(9);
   });
