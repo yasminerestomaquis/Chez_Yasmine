@@ -8,5 +8,6 @@ import { CashService } from './cash.service.js';
   imports: [AuthModule, ActivityNotifierModule],
   controllers: [CashController],
   providers: [CashService],
+  exports: [CashService],
 })
 export class CashModule {}

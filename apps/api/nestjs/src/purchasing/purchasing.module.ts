@@ -10,5 +10,6 @@ import { SuppliersService } from './suppliers.service.js';
   imports: [AuthModule, ActivityNotifierModule],
   controllers: [SuppliersController, PurchasesController],
   providers: [SuppliersService, PurchasesService],
+  exports: [PurchasesService],
 })
 export class PurchasingModule {}

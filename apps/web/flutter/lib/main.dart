@@ -7,6 +7,9 @@ import 'auth/link_confirmation_gate.dart';
 import 'auth/me_repository.dart';
 import 'config/supabase_config.dart';
 import 'home/home_dashboard.dart';
+import 'sync/global_sync_context.dart';
+import 'sync/sync_queue_service.dart';
+import 'sync/sync_status_bar.dart';
 import 'theme/app_theme.dart';
 
 Future<void> main() async {
@@ -28,6 +31,25 @@ class ChezYasmineApp extends StatelessWidget {
       theme: buildAppTheme(),
       home: LinkConfirmationGate(
         child: AuthGate(authenticated: (context) => const HomePage()),
+      ),
+      // Barre de statut de synchronisation montée UNE SEULE FOIS, au-dessus
+      // de l'écran courant quel qu'il soit (`child` couvre tout le contenu
+      // routé) — visible dans n'importe quel module, pas seulement les
+      // écrans qui l'intégraient individuellement jusqu'ici (décision
+      // utilisateur du 2026-09-13). N'affiche rien tant qu'aucun
+      // établissement n'est résolu (avant connexion, ou pendant la sélection
+      // d'établissement) — voir `GlobalSyncContext`.
+      builder: (context, child) => ValueListenableBuilder<String?>(
+        valueListenable: GlobalSyncContext.establishmentId,
+        builder: (context, establishmentId, _) => Column(
+          children: [
+            if (establishmentId != null)
+              SyncStatusBar(
+                syncQueue: SyncQueueService(ApiClient(), establishmentId),
+              ),
+            Expanded(child: child ?? const SizedBox.shrink()),
+          ],
+        ),
       ),
     );
   }

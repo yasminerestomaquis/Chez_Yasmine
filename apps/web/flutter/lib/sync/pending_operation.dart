@@ -1,5 +1,7 @@
 /// Mirrors apps/api/nestjs/src/sync/dto/sync-batch.dto.ts — entityType is
-/// either 'sale' or 'stock_movement' (see prompt maître §25-27).
+/// one of 'sale', 'stock_movement', 'expense', 'loss', 'purchase' or
+/// 'cash_closing' (prompt maître §25-27, étendu le 2026-09-13 à Tables
+/// (checkout via 'sale'), Achats, Pertes et Clôture de caisse).
 class PendingOperation {
   PendingOperation({
     required this.id,

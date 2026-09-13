@@ -5,8 +5,6 @@ import '../catalog/catalog_cache.dart';
 import '../catalog/catalog_repository.dart';
 import '../catalog/models.dart';
 import '../common/formatting.dart';
-import '../sync/sync_queue_service.dart';
-import '../sync/sync_status_bar.dart';
 import '../theme/app_theme.dart';
 import 'product_stock_history_page.dart';
 import 'stock_models.dart';
@@ -50,10 +48,6 @@ class _StockPageState extends State<StockPage> {
     widget.establishmentId,
   );
   late final CatalogCache _cache = CatalogCache(widget.establishmentId);
-  late final SyncQueueService _syncQueue = SyncQueueService(
-    ApiClient(),
-    widget.establishmentId,
-  );
   late Future<(List<StockAlert>, List<Product>)> _future = _load();
 
   String _search = '';
@@ -113,7 +107,6 @@ class _StockPageState extends State<StockPage> {
       appBar: AppBar(title: const Text('Stock')),
       body: Column(
         children: [
-          SyncStatusBar(syncQueue: _syncQueue),
           Expanded(
             child: FutureBuilder<(List<StockAlert>, List<Product>)>(
               future: _future,

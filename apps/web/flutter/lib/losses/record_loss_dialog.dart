@@ -1,8 +1,12 @@
 import 'package:flutter/material.dart';
+import 'package:uuid/uuid.dart';
 
 import '../api/api_client.dart';
 import '../catalog/catalog_repository.dart';
 import '../catalog/models.dart';
+import '../sync/device_id.dart';
+import '../sync/pending_operation.dart';
+import '../sync/sync_queue_service.dart';
 import 'losses_repository.dart';
 
 /// Retourne `true` si une perte a été enregistrée (pour rafraîchir l'écran appelant).
@@ -50,6 +54,8 @@ class _RecordLossDialogState extends State<_RecordLossDialog> {
     }
     if (!_formKey.currentState!.validate()) return;
     final quantity = double.parse(_quantityController.text.trim().replaceAll(',', '.'));
+    final reason = _reasonController.text.trim();
+    final lossId = const Uuid().v4();
 
     setState(() {
       _isSubmitting = true;
@@ -57,16 +63,42 @@ class _RecordLossDialogState extends State<_RecordLossDialog> {
     });
     try {
       await widget.repository.recordLoss(
+        id: lossId,
         productId: _selectedProduct!.id,
         quantity: quantity,
-        reason: _reasonController.text.trim(),
+        reason: reason,
       );
       if (!mounted) return;
       Navigator.of(context).pop(true);
     } on ApiException catch (e) {
+      // Rejet métier réel — rejouer ne changerait rien, jamais mis en file.
       setState(() => _error = e.message);
     } catch (_) {
-      setState(() => _error = 'Impossible d\'enregistrer la perte.');
+      // Aucune réponse HTTP reçue — coupure réseau : mise en file, rejouée
+      // via SyncService (`entityType: 'loss'`) au retour du réseau.
+      final syncQueue = SyncQueueService(ApiClient(), widget.repository.establishmentId);
+      await syncQueue.enqueue(
+        PendingOperation(
+          id: lossId,
+          entityType: 'loss',
+          deviceId: await getDeviceId(),
+          payload: {
+            'productId': _selectedProduct!.id,
+            'quantity': quantity,
+            'reason': ?(reason.isEmpty ? null : reason),
+          },
+          createdAt: DateTime.now(),
+        ),
+      );
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text(
+            'Hors ligne : perte enregistrée localement, elle sera synchronisée automatiquement.',
+          ),
+        ),
+      );
+      Navigator.of(context).pop(true);
     } finally {
       if (mounted) setState(() => _isSubmitting = false);
     }

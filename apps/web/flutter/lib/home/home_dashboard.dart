@@ -18,6 +18,7 @@ import '../reports/report_models.dart';
 import '../reports/reports_page.dart';
 import '../reports/reports_repository.dart';
 import '../stock/stock_page.dart';
+import '../sync/global_sync_context.dart';
 import '../tables/floor_plan_page.dart';
 import '../theme/app_theme.dart';
 import '../users/users_page.dart';
@@ -129,6 +130,16 @@ class _HomeDashboardState extends State<HomeDashboard> {
     widget.establishmentId,
   );
   late Future<_DashboardData> _future = _load();
+
+  @override
+  void initState() {
+    super.initState();
+    // Fait connaître l'établissement courant à la barre de synchronisation
+    // globale (montée une seule fois au-dessus de l'écran courant, voir
+    // main.dart) — sans ça, elle n'a aucun moyen de savoir quelle file
+    // hors ligne afficher tant qu'aucun module n'a été ouvert.
+    GlobalSyncContext.establishmentId.value = widget.establishmentId;
+  }
 
   late final List<_ModuleEntry> _operations = [
     _ModuleEntry(

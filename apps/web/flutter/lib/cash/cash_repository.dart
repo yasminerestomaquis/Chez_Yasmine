@@ -15,8 +15,12 @@ class CashRepository {
     return json.map((e) => CashClosing.fromJson(e as Map<String, dynamic>)).toList();
   }
 
-  Future<CashClosing> close({required DateTime openedAt, required double countedAmount}) async {
+  /// `id` généré par l'appelant (plutôt qu'ici) pour qu'il puisse être réutilisé
+  /// comme clé d'idempotence de la file hors ligne si la requête échoue par
+  /// coupure réseau — voir `cash_page.dart`.
+  Future<CashClosing> close({required String id, required DateTime openedAt, required double countedAmount}) async {
     final json = await _api.post(_base, body: {
+      'id': id,
       'openedAt': openedAt.toUtc().toIso8601String(),
       'countedAmount': countedAmount,
     }) as Map<String, dynamic>;

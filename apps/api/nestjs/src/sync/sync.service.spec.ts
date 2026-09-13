@@ -1,8 +1,11 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import type { AuthorizationService } from '../auth/authorization.service.js';
 import type { PrismaService } from '../prisma/prisma.service.js';
+import type { CashService } from '../cash/cash.service.js';
 import type { ExpensesService } from '../expenses/expenses.service.js';
+import type { LossesService } from '../losses/losses.service.js';
 import type { SalesService } from '../pos/sales.service.js';
+import type { PurchasesService } from '../purchasing/purchases.service.js';
 import type { StockMovementsService } from '../stock/stock-movements.service.js';
 import { SyncService } from './sync.service.js';
 
@@ -18,6 +21,9 @@ describe('SyncService.processBatch', () => {
   let sales: { create: ReturnType<typeof vi.fn> };
   let stockMovements: { create: ReturnType<typeof vi.fn> };
   let expenses: { create: ReturnType<typeof vi.fn> };
+  let losses: { create: ReturnType<typeof vi.fn> };
+  let purchases: { create: ReturnType<typeof vi.fn> };
+  let cash: { close: ReturnType<typeof vi.fn> };
   let service: SyncService;
 
   beforeEach(() => {
@@ -26,12 +32,18 @@ describe('SyncService.processBatch', () => {
     sales = { create: vi.fn() };
     stockMovements = { create: vi.fn() };
     expenses = { create: vi.fn() };
+    losses = { create: vi.fn() };
+    purchases = { create: vi.fn() };
+    cash = { close: vi.fn() };
     service = new SyncService(
       prisma as unknown as PrismaService,
       authorization as unknown as AuthorizationService,
       sales as unknown as SalesService,
       stockMovements as unknown as StockMovementsService,
       expenses as unknown as ExpensesService,
+      losses as unknown as LossesService,
+      purchases as unknown as PurchasesService,
+      cash as unknown as CashService,
     );
   });
 
@@ -117,6 +129,56 @@ describe('SyncService.processBatch', () => {
     ]);
 
     expect(expenses.create).toHaveBeenCalledWith('est-1', expect.objectContaining({ id: 'op-6', label: 'Eau', amount: 5000 }));
+    expect(result.status).toBe('SYNCED');
+  });
+
+  it('dispatches a loss operation with the operation id reused as the loss id, and marks it SYNCED', async () => {
+    prisma.syncOperation.findUnique.mockResolvedValue(null);
+    losses.create.mockResolvedValue({ id: 'op-7' });
+
+    const [result] = await service.processBatch('est-1', 'user-1', [
+      { id: 'op-7', entityType: 'loss', deviceId: 'device-1', payload: { productId: 'p1', quantity: 2, reason: 'Casse' } },
+    ]);
+
+    expect(losses.create).toHaveBeenCalledWith(
+      'est-1',
+      'user-1',
+      expect.objectContaining({ id: 'op-7', productId: 'p1', quantity: 2 }),
+    );
+    expect(result.status).toBe('SYNCED');
+  });
+
+  it('dispatches a purchase operation with the operation id reused as the purchase id, and marks it SYNCED', async () => {
+    prisma.syncOperation.findUnique.mockResolvedValue(null);
+    purchases.create.mockResolvedValue({ id: 'op-8' });
+
+    const [result] = await service.processBatch('est-1', 'user-1', [
+      {
+        id: 'op-8',
+        entityType: 'purchase',
+        deviceId: 'device-1',
+        payload: { orderNumber: 12, items: [{ productId: 'p1', casesOrdered: 2 }] },
+      },
+    ]);
+
+    expect(purchases.create).toHaveBeenCalledWith('est-1', 'user-1', expect.objectContaining({ id: 'op-8', orderNumber: 12 }));
+    expect(result.status).toBe('SYNCED');
+  });
+
+  it('dispatches a cash_closing operation with the operation id reused as the closing id, and marks it SYNCED', async () => {
+    prisma.syncOperation.findUnique.mockResolvedValue(null);
+    cash.close.mockResolvedValue({ id: 'op-9' });
+
+    const [result] = await service.processBatch('est-1', 'user-1', [
+      {
+        id: 'op-9',
+        entityType: 'cash_closing',
+        deviceId: 'device-1',
+        payload: { openedAt: '2026-09-13T08:00:00.000Z', countedAmount: 5000 },
+      },
+    ]);
+
+    expect(cash.close).toHaveBeenCalledWith('est-1', 'user-1', expect.objectContaining({ id: 'op-9', countedAmount: 5000 }));
     expect(result.status).toBe('SYNCED');
   });
 

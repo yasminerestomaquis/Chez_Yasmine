@@ -1,8 +1,11 @@
 import { Injectable, Logger } from '@nestjs/common';
 import { AuthorizationService } from '../auth/authorization.service.js';
 import { PrismaService } from '../prisma/prisma.service.js';
+import { CashService } from '../cash/cash.service.js';
 import { ExpensesService } from '../expenses/expenses.service.js';
+import { LossesService } from '../losses/losses.service.js';
 import { SalesService } from '../pos/sales.service.js';
+import { PurchasesService } from '../purchasing/purchases.service.js';
 import { StockMovementsService } from '../stock/stock-movements.service.js';
 import type { SyncEntityType, SyncOperationDto } from './dto/sync-batch.dto.js';
 
@@ -11,6 +14,9 @@ const REQUIRED_PERMISSION: Record<SyncEntityType, string> = {
   sale: 'pos.sell',
   stock_movement: 'stock.manage',
   expense: 'expenses.manage',
+  loss: 'losses.manage',
+  purchase: 'purchases.manage',
+  cash_closing: 'cash.manage',
 };
 
 export interface SyncOperationResult {
@@ -30,6 +36,9 @@ export class SyncService {
     private readonly sales: SalesService,
     private readonly stockMovements: StockMovementsService,
     private readonly expenses: ExpensesService,
+    private readonly losses: LossesService,
+    private readonly purchases: PurchasesService,
+    private readonly cash: CashService,
   ) {}
 
   async processBatch(establishmentId: string, userId: string, operations: SyncOperationDto[]): Promise<SyncOperationResult[]> {
@@ -115,6 +124,12 @@ export class SyncService {
       }
       case 'expense':
         return this.expenses.create(establishmentId, { ...(operation.payload as object), id: operation.id } as any);
+      case 'loss':
+        return this.losses.create(establishmentId, userId, { ...(operation.payload as object), id: operation.id } as any);
+      case 'purchase':
+        return this.purchases.create(establishmentId, userId, { ...(operation.payload as object), id: operation.id } as any);
+      case 'cash_closing':
+        return this.cash.close(establishmentId, userId, { ...(operation.payload as object), id: operation.id } as any);
     }
   }
 }

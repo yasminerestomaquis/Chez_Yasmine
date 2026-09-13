@@ -37,6 +37,18 @@ export class CashService {
    * assumption holds in practice; revisit if that stops being true.
    */
   async close(establishmentId: string, userId: string, dto: CreateCashClosingDto) {
+    // Idempotent replay: a client-supplied id lets the same offline closing
+    // be resubmitted safely (network retry, sync queue) without creating a
+    // second closing for the same period — see docs/api/sync.md.
+    if (dto.id) {
+      const existing = await this.prisma.cashClosing.findFirst({
+        where: { id: dto.id, cashRegister: { pointOfSale: { establishmentId } } },
+      });
+      if (existing) {
+        return { ...existing, difference: existing.countedAmount.toNumber() - existing.expectedAmount.toNumber() };
+      }
+    }
+
     const register = await this.getOrCreateDefaultRegister(establishmentId);
     const openedAt = new Date(dto.openedAt);
     const closedAt = new Date();
@@ -56,6 +68,7 @@ export class CashService {
 
     const closing = await this.prisma.cashClosing.create({
       data: {
+        id: dto.id,
         cashRegisterId: register.id,
         openedAt,
         closedAt,

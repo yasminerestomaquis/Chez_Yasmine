@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'package:uuid/uuid.dart';
 
 import '../api/api_client.dart';
 import '../catalog/catalog_repository.dart';
@@ -8,6 +9,9 @@ import '../pos/payment_dialog.dart';
 import '../pos/pos_repository.dart';
 import '../pos/product_grid.dart';
 import '../pos/receipt_page.dart';
+import '../sync/device_id.dart';
+import '../sync/pending_operation.dart';
+import '../sync/sync_queue_service.dart';
 import '../theme/app_theme.dart';
 import 'tables_models.dart';
 import 'tables_repository.dart';
@@ -40,6 +44,10 @@ class _TableOrderPageState extends State<TableOrderPage> {
     widget.establishmentId,
   );
   late final PosRepository _pos = PosRepository(
+    ApiClient(),
+    widget.establishmentId,
+  );
+  late final SyncQueueService _syncQueue = SyncQueueService(
     ApiClient(),
     widget.establishmentId,
   );
@@ -238,25 +246,30 @@ class _TableOrderPageState extends State<TableOrderPage> {
     );
     if (outcome == null) return;
 
+    final saleId = const Uuid().v4();
+    // `unitPrice` est repris de la ligne d'addition : indispensable pour un
+    // produit à prix variable (`SalesService.create` refuse la vente sans
+    // lui), ignoré côté serveur pour un produit à prix fixe dont le prix
+    // catalogue prévaut toujours.
+    final items = order.items
+        .map(
+          (i) => {
+            'productId': i.productId,
+            'quantity': i.quantity,
+            'unitPrice': i.unitPrice,
+          },
+        )
+        .toList();
+    final payments = outcome.lines
+        .map((p) => {'method': p.method, 'amount': p.amount})
+        .toList();
+
     setState(() => _isBusy = true);
     try {
       final sale = await _pos.createSale(
-        // `unitPrice` est repris de la ligne d'addition : indispensable pour
-        // un produit à prix variable (`SalesService.create` refuse la vente
-        // sans lui), ignoré côté serveur pour un produit à prix fixe dont le
-        // prix catalogue prévaut toujours.
-        items: order.items
-            .map(
-              (i) => {
-                'productId': i.productId,
-                'quantity': i.quantity,
-                'unitPrice': i.unitPrice,
-              },
-            )
-            .toList(),
-        payments: outcome.lines
-            .map((p) => {'method': p.method, 'amount': p.amount})
-            .toList(),
+        id: saleId,
+        items: items,
+        payments: payments,
         orderId: order.id,
         tableId: widget.tableId,
         source: 'table',
@@ -268,22 +281,46 @@ class _TableOrderPageState extends State<TableOrderPage> {
         MaterialPageRoute(builder: (_) => ReceiptPage(sale: sale)),
       );
     } on ApiException catch (e) {
+      // Rejet métier réel (ex. addition déjà clôturée, paiement invalide) —
+      // rejouer ne changerait rien, jamais mis en file.
       if (!mounted) return;
       ScaffoldMessenger.of(context)
           .showSnackBar(SnackBar(content: Text(e.message)));
     } catch (_) {
-      // Contrairement à PosPage, une vente de table n'est pas mise en file
-      // hors ligne ici : la vente référence une addition serveur précise
-      // (orderId) qu'il faut d'abord confirmer encore ouverte au retour du
-      // réseau — hors périmètre de cette tâche, voir docs/superpowers/specs.
+      // Aucune réponse HTTP reçue — coupure réseau. Même traitement que
+      // PosPage._checkout : mise en file avec saleId comme clé d'idempotence,
+      // rejouée plus tard via SyncService (`entityType: 'sale'`, qui gère
+      // déjà orderId/tableId/source — voir docs/api/sync.md). L'addition
+      // reste ouverte côté serveur jusqu'à la synchronisation ; on quitte
+      // l'écran pour éviter un second encaissement accidentel sur la même
+      // addition avant que la file n'ait pu être vidée.
+      if (!mounted) return;
+      await _syncQueue.enqueue(
+        PendingOperation(
+          id: saleId,
+          entityType: 'sale',
+          deviceId: await getDeviceId(),
+          payload: {
+            'items': items,
+            'payments': payments,
+            'orderId': order.id,
+            'tableId': widget.tableId,
+            'source': 'table',
+            'orderNumber': ?outcome.orderNumber,
+            'marketNumber': ?outcome.marketNumber,
+          },
+          createdAt: DateTime.now(),
+        ),
+      );
       if (!mounted) return;
       ScaffoldMessenger.of(context).showSnackBar(
         const SnackBar(
           content: Text(
-            'Erreur réseau — encaissement non enregistré, réessayez',
+            'Hors ligne : encaissement enregistré localement, il sera synchronisé automatiquement.',
           ),
         ),
       );
+      Navigator.of(context).pop();
     } finally {
       if (mounted) setState(() => _isBusy = false);
     }

@@ -107,6 +107,20 @@ describe('PurchasesService.create', () => {
     );
   });
 
+  it('replays an already-created purchase (same client id) without recreating it or re-touching stock', async () => {
+    (prisma.purchase as any).findFirst.mockResolvedValue({ id: 'purchase-1', orderNumber: 1, items: [] });
+
+    const result = await service.create('est-1', 'user-1', {
+      id: 'purchase-1',
+      orderNumber: 1,
+      items: [{ productId: 'p1', casesOrdered: 2 }],
+    });
+
+    expect(result).toEqual({ id: 'purchase-1', orderNumber: 1, items: [] });
+    expect(prisma.purchase.create).not.toHaveBeenCalled();
+    expect(prisma.product.update).not.toHaveBeenCalled();
+  });
+
   it('increments stock immediately (no separate reception step) and notifies', async () => {
     (prisma.product as any).findMany.mockResolvedValue([caseProduct()]);
     (prisma.purchase as any).create.mockResolvedValue({

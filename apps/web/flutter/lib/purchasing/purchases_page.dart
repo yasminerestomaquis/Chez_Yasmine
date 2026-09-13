@@ -1,10 +1,14 @@
 import 'package:flutter/material.dart';
 import 'package:intl/intl.dart';
+import 'package:uuid/uuid.dart';
 
 import '../api/api_client.dart';
 import '../catalog/catalog_repository.dart';
 import '../catalog/models.dart';
 import '../common/formatting.dart';
+import '../sync/device_id.dart';
+import '../sync/pending_operation.dart';
+import '../sync/sync_queue_service.dart';
 import 'purchase_order_detail_page.dart';
 import 'purchasing_models.dart';
 import 'purchasing_repository.dart';
@@ -45,6 +49,10 @@ class _PurchasesPageState extends State<PurchasesPage>
     widget.establishmentId,
   );
   late final CatalogRepository _catalog = CatalogRepository(
+    ApiClient(),
+    widget.establishmentId,
+  );
+  late final SyncQueueService _syncQueue = SyncQueueService(
     ApiClient(),
     widget.establishmentId,
   );
@@ -176,19 +184,22 @@ class _PurchasesPageState extends State<PurchasesPage>
       ).showSnackBar(const SnackBar(content: Text('N° de commande invalide')));
       return;
     }
+    final purchaseId = const Uuid().v4();
+    final items = _draftLines
+        .map(
+          (l) => {
+            'productId': l.product.id,
+            'casesOrdered': l.casesOrdered,
+          },
+        )
+        .toList();
     try {
       await _repository.createPurchase(
+        id: purchaseId,
         supplierId: _draftSupplierId,
         orderNumber: orderNumber,
         orderDate: _draftOrderDate,
-        items: _draftLines
-            .map(
-              (l) => {
-                'productId': l.product.id,
-                'casesOrdered': l.casesOrdered,
-              },
-            )
-            .toList(),
+        items: items,
       );
       setState(() {
         _draftLines.clear();
@@ -202,9 +213,44 @@ class _PurchasesPageState extends State<PurchasesPage>
           .showSnackBar(const SnackBar(content: Text('Commande enregistrée.')));
       _tabController.animateTo(2);
     } on ApiException catch (e) {
+      // Rejet métier réel (ex. produit non conforme au module par casier) —
+      // rejouer ne changerait rien, jamais mis en file.
       if (!mounted) return;
       ScaffoldMessenger.of(context)
           .showSnackBar(SnackBar(content: Text(e.message)));
+    } catch (_) {
+      // Aucune réponse HTTP reçue — coupure réseau : mise en file (voir
+      // PosPage._checkout pour le même principe), rejouée via SyncService
+      // (`entityType: 'purchase'`) au retour du réseau.
+      await _syncQueue.enqueue(
+        PendingOperation(
+          id: purchaseId,
+          entityType: 'purchase',
+          deviceId: await getDeviceId(),
+          payload: {
+            'supplierId': ?_draftSupplierId,
+            'orderNumber': orderNumber,
+            'orderDate': _draftOrderDate.toIso8601String(),
+            'items': items,
+          },
+          createdAt: DateTime.now(),
+        ),
+      );
+      setState(() {
+        _draftLines.clear();
+        _draftSupplierId = null;
+        _draftOrderDate = DateTime.now();
+      });
+      _refreshOrderNumberSuggestion();
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text(
+            'Hors ligne : commande enregistrée localement, elle sera synchronisée automatiquement.',
+          ),
+        ),
+      );
+      _tabController.animateTo(2);
     }
   }
 

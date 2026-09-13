@@ -12,7 +12,7 @@ function makePrismaMock() {
     cashRegister: { create: vi.fn() },
     payment: { aggregate: vi.fn() },
     expense: { aggregate: vi.fn() },
-    cashClosing: { create: vi.fn(), findMany: vi.fn() },
+    cashClosing: { create: vi.fn(), findMany: vi.fn(), findFirst: vi.fn() },
   };
   return prisma;
 }
@@ -40,6 +40,21 @@ describe('CashService.close', () => {
       'Clôture de caisse',
       expect.stringContaining('19'),
     );
+  });
+
+  it('replays an already-created closing (same client id) without recreating it', async () => {
+    const existing = { id: 'closing-1', expectedAmount: new Decimal(20000), countedAmount: new Decimal(19000) };
+    (prisma.cashClosing as any).findFirst.mockResolvedValue(existing);
+
+    const result = await service.close('est-1', 'user-1', {
+      id: 'closing-1',
+      openedAt: '2026-09-05T06:00:00.000Z',
+      countedAmount: 19000,
+    });
+
+    expect(result).toEqual({ ...existing, difference: -1000 });
+    expect(prisma.cashClosing.create).not.toHaveBeenCalled();
+    expect(prisma.pointOfSale.findFirst).not.toHaveBeenCalled();
   });
 
   it('creates a default point of sale and register on first use', async () => {

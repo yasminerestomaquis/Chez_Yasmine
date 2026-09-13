@@ -8,5 +8,6 @@ import { LossesService } from './losses.service.js';
   imports: [AuthModule, ActivityNotifierModule],
   controllers: [LossesController],
   providers: [LossesService],
+  exports: [LossesService],
 })
 export class LossesModule {}

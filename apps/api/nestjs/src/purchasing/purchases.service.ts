@@ -80,6 +80,14 @@ export class PurchasesService {
    * (voir docs/api/reports.md).
    */
   async create(establishmentId: string, userId: string, dto: CreatePurchaseDto) {
+    // Idempotent replay: a client-supplied id lets the same offline purchase
+    // order be resubmitted safely (network retry, sync queue) without
+    // double-applying its stock effect — see docs/api/sync.md.
+    if (dto.id) {
+      const existing = await this.prisma.purchase.findFirst({ where: { id: dto.id, establishmentId }, include: purchaseInclude });
+      if (existing) return existing;
+    }
+
     if (dto.supplierId) {
       const supplier = await this.prisma.supplier.findFirst({ where: { id: dto.supplierId, establishmentId } });
       if (!supplier) {
@@ -92,6 +100,7 @@ export class PurchasesService {
     const purchase = await this.prisma.$transaction(async (tx) => {
       const created = await tx.purchase.create({
         data: {
+          id: dto.id,
           establishmentId,
           supplierId: dto.supplierId,
           orderNumber: dto.orderNumber,

@@ -1,5 +1,3 @@
-import 'package:uuid/uuid.dart';
-
 import '../api/api_client.dart';
 import 'loss_models.dart';
 
@@ -17,9 +15,12 @@ class LossesRepository {
     return json.map((e) => Loss.fromJson(e as Map<String, dynamic>)).toList();
   }
 
-  Future<void> recordLoss({required String productId, required double quantity, String? reason}) {
+  /// `id` généré par l'appelant (plutôt qu'ici) pour qu'il puisse être réutilisé
+  /// comme clé d'idempotence de la file hors ligne si la requête échoue par
+  /// coupure réseau — voir `record_loss_dialog.dart`.
+  Future<void> recordLoss({required String id, required String productId, required double quantity, String? reason}) {
     return _api.post(_base, body: {
-      'id': const Uuid().v4(),
+      'id': id,
       'productId': productId,
       'quantity': quantity,
       'reason': ?reason,

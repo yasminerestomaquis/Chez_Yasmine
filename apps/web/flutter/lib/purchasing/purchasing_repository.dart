@@ -44,12 +44,14 @@ class PurchasingRepository {
   }
 
   Future<Purchase> createPurchase({
+    String? id,
     String? supplierId,
     required int orderNumber,
     required DateTime orderDate,
     required List<Map<String, dynamic>> items,
   }) async {
     final json = await _api.post('$_base/purchases', body: {
+      'id': ?id,
       'supplierId': ?supplierId,
       'orderNumber': orderNumber,
       'orderDate': _dateOnly(orderDate),

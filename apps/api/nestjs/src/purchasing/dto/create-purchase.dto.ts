@@ -12,6 +12,11 @@ export class PurchaseItemDto {
 }
 
 export class CreatePurchaseDto {
+  /** Client-generated UUID — same idempotent-replay pattern as sales/pertes (voir docs/api/sync.md). */
+  @IsOptional()
+  @IsUUID()
+  id?: string;
+
   @IsOptional()
   @IsUUID()
   supplierId?: string;

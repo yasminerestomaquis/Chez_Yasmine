@@ -1,8 +1,12 @@
 import 'package:flutter/material.dart';
 import 'package:intl/intl.dart';
+import 'package:uuid/uuid.dart';
 
 import '../api/api_client.dart';
 import '../common/formatting.dart';
+import '../sync/device_id.dart';
+import '../sync/pending_operation.dart';
+import '../sync/sync_queue_service.dart';
 import 'cash_models.dart';
 import 'cash_repository.dart';
 
@@ -17,6 +21,7 @@ class CashPage extends StatefulWidget {
 
 class _CashPageState extends State<CashPage> {
   late final CashRepository _repository = CashRepository(ApiClient(), widget.establishmentId);
+  late final SyncQueueService _syncQueue = SyncQueueService(ApiClient(), widget.establishmentId);
   late Future<List<CashClosing>> _future = _repository.listClosings();
 
   void _reload() => setState(() => _future = _repository.listClosings());
@@ -76,16 +81,36 @@ class _CashPageState extends State<CashPage> {
             FilledButton(
               onPressed: () async {
                 if (!formKey.currentState!.validate()) return;
+                final closingId = const Uuid().v4();
+                final countedAmount = double.parse(countedController.text.trim().replaceAll(',', '.'));
                 try {
-                  await _repository.close(
-                    openedAt: openedAt,
-                    countedAmount: double.parse(countedController.text.trim().replaceAll(',', '.')),
-                  );
+                  await _repository.close(id: closingId, openedAt: openedAt, countedAmount: countedAmount);
                   if (context.mounted) Navigator.of(context).pop(true);
                 } on ApiException catch (e) {
+                  // Rejet métier réel — rejouer ne changerait rien, jamais mis en file.
                   setDialogState(() => error = e.message);
                 } catch (_) {
-                  setDialogState(() => error = 'Impossible d\'enregistrer la clôture.');
+                  // Aucune réponse HTTP reçue — coupure réseau : mise en file,
+                  // rejouée via SyncService (`entityType: 'cash_closing'`) au
+                  // retour du réseau.
+                  await _syncQueue.enqueue(
+                    PendingOperation(
+                      id: closingId,
+                      entityType: 'cash_closing',
+                      deviceId: await getDeviceId(),
+                      payload: {'openedAt': openedAt.toUtc().toIso8601String(), 'countedAmount': countedAmount},
+                      createdAt: DateTime.now(),
+                    ),
+                  );
+                  if (!context.mounted) return;
+                  ScaffoldMessenger.of(context).showSnackBar(
+                    const SnackBar(
+                      content: Text(
+                        'Hors ligne : clôture enregistrée localement, elle sera synchronisée automatiquement.',
+                      ),
+                    ),
+                  );
+                  Navigator.of(context).pop(true);
                 }
               },
               child: const Text('Clôturer'),

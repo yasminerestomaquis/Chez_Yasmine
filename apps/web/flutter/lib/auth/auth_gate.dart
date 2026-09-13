@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 
+import '../sync/global_sync_context.dart';
 import 'login_page.dart';
 import 'set_password_page.dart';
 
@@ -27,6 +28,17 @@ class AuthGate extends StatelessWidget {
           if (needsPasswordSetup) return const SetPasswordPage();
           return authenticated(context);
         }
+        // Déconnexion : la barre de synchronisation globale ne doit plus
+        // afficher le statut de l'établissement de la session précédente.
+        // Différé après la frame courante — modifier le ValueNotifier
+        // pendant le build() de ce widget notifierait immédiatement le
+        // ValueListenableBuilder de main.dart, qui est un ANCÊTRE de cet
+        // arbre (son builder englobe AuthGate) : le reconstruire pendant que
+        // le build de son propre descendant est encore en cours lèverait
+        // une exception Flutter.
+        WidgetsBinding.instance.addPostFrameCallback(
+          (_) => GlobalSyncContext.establishmentId.value = null,
+        );
         return const LoginPage();
       },
     );

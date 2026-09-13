@@ -8,7 +8,6 @@ import '../catalog/models.dart';
 import '../sync/device_id.dart';
 import '../sync/pending_operation.dart';
 import '../sync/sync_queue_service.dart';
-import '../sync/sync_status_bar.dart';
 import 'cart_panel.dart';
 import 'payment_dialog.dart';
 import 'pos_models.dart';
@@ -285,7 +284,6 @@ class _PosPageState extends State<PosPage> {
       appBar: AppBar(title: const Text('Caisse')),
       body: Column(
         children: [
-          SyncStatusBar(syncQueue: _syncQueue),
           Expanded(
             child: FutureBuilder<(List<Category>, List<Product>)>(
               future: _future,

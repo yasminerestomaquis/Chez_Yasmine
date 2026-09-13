@@ -8,7 +8,6 @@ import '../common/reload_on_tab_visit_mixin.dart';
 import '../sync/device_id.dart';
 import '../sync/pending_operation.dart';
 import '../sync/sync_queue_service.dart';
-import '../sync/sync_status_bar.dart';
 import 'expense_models.dart';
 import 'expenses_repository.dart';
 
@@ -357,7 +356,6 @@ class _ExpensesFormTabState extends State<ExpensesFormTab>
       children: [
         Column(
           children: [
-            SyncStatusBar(syncQueue: _syncQueue),
             Expanded(
               child: FutureBuilder<List<Expense>>(
                 future: _future,
