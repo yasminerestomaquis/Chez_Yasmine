@@ -5,6 +5,7 @@ import '../api/api_client.dart';
 import '../cash/cash_page.dart';
 import '../catalog/catalog_page.dart';
 import '../charts/graphiques_page.dart';
+import '../common/app_reload.dart';
 import '../common/formatting.dart';
 import '../customers/customers_page.dart';
 import '../expenses/expenses_page.dart';
@@ -220,23 +221,33 @@ class _HomeDashboardState extends State<HomeDashboard> {
     final breakdownFuture = _reports.getPaymentCategoryBreakdown();
     final unreadFuture = _notifications.unreadCount();
 
+    // Les 3 futures sont attendues ici quoi qu'il arrive (jamais de `rethrow`
+    // avant d'avoir attendu les 3) : un `rethrow` immédiat sur `summary`
+    // laisserait `breakdownFuture`/`unreadFuture`, déjà lancées, sans jamais
+    // être observées si elles échouent aussi — une "unhandled exception"
+    // silencieuse en prime d'une régression bien plus difficile à repérer.
+    Object? unexpectedError;
+
     ReportSummary? summary;
     try {
       summary = await summaryFuture;
     } on ApiException catch (e) {
-      if (e.statusCode != 403) rethrow;
+      if (e.statusCode != 403) unexpectedError = e;
     }
     PaymentCategoryBreakdown? breakdown;
     try {
       breakdown = await breakdownFuture;
     } on ApiException catch (e) {
-      if (e.statusCode != 403) rethrow;
+      if (e.statusCode != 403) unexpectedError ??= e;
     }
+    final unreadCount = await unreadFuture;
+
+    if (unexpectedError != null) throw unexpectedError;
 
     return _DashboardData(
       summary: summary,
       breakdown: breakdown,
-      unreadCount: await unreadFuture,
+      unreadCount: unreadCount,
     );
   }
 
@@ -703,6 +714,15 @@ class _HomeDashboardState extends State<HomeDashboard> {
           ],
         ),
         actions: [
+          // Rechargement complet du navigateur (pas seulement _reload()) :
+          // récupère aussi bien les dernières données que, le cas échéant,
+          // un nouveau `main.dart.js` déployé depuis le dernier chargement
+          // — demande utilisateur du 2026-09-13.
+          IconButton(
+            tooltip: 'Synchroniser / actualiser l\'application',
+            icon: const Icon(Icons.sync),
+            onPressed: reloadApp,
+          ),
           FutureBuilder<_DashboardData>(
             future: _future,
             builder: (context, snapshot) {
