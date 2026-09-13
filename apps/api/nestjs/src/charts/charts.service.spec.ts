@@ -8,7 +8,11 @@ function makePrismaMock() {
     saleItem: { findMany: vi.fn() },
     product: { findFirst: vi.fn(), findMany: vi.fn() },
     stockMovement: { findMany: vi.fn() },
-    expense: { findMany: vi.fn() },
+    // Défaut "aucune dépense/perte sur la période" : le calcul du bénéfice
+    // net (voir applyNetProfitAdjustments) les interroge désormais à chaque
+    // appel avec metric: 'profit', même quand un test ne s'y intéresse pas.
+    expense: { findMany: vi.fn().mockResolvedValue([]) },
+    loss: { findMany: vi.fn().mockResolvedValue([]) },
     purchase: { findMany: vi.fn() },
   };
 }
@@ -242,14 +246,98 @@ describe('ChartsService — répartition du coût "Marché" (Poulets/Poissons/Pl
     expect(result.series[0].points.reduce((sum, p) => sum + p.value, 0)).toBe(700);
   });
 
-  it('never queries expenses when no line belongs to a variable-pricing category', async () => {
+  it('never queries the "Marché" category when no line belongs to a variable-pricing category (other expense queries for the net-profit total still run)', async () => {
     const prisma = makePrismaMock();
     const service = new ChartsService(prisma as unknown as PrismaService);
     prisma.saleItem.findMany.mockResolvedValue([item({ hasCasePricing: true, purchasePrice: 60, quantity: 1, unitPrice: 100 })]);
 
     await service.weeklyTotal('est-1', 'profit', '2026-09-07');
 
-    expect(prisma.expense.findMany).not.toHaveBeenCalled();
+    expect(prisma.expense.findMany).not.toHaveBeenCalledWith(
+      expect.objectContaining({ where: expect.objectContaining({ category: 'Marché' }) }),
+    );
+  });
+});
+
+describe('ChartsService — bénéfice net (toutes natures de dépenses + pertes, demande utilisateur du 2026-09-13)', () => {
+  it('leaves the "revenue" metric untouched by expenses/losses (only "profit" is a net figure)', async () => {
+    const prisma = makePrismaMock();
+    const service = new ChartsService(prisma as unknown as PrismaService);
+    prisma.saleItem.findMany.mockResolvedValue([item({ createdAt: new Date('2026-09-07T10:00:00Z'), quantity: 1, unitPrice: 1000 })]);
+    prisma.expense.findMany.mockResolvedValue([expense({ amount: 500, category: 'Salaires', createdAt: new Date('2026-09-07T10:00:00Z') })]);
+
+    const result = await service.weeklyTotal('est-1', 'revenue', '2026-09-07');
+
+    expect(result.series[0].points[0].value).toBe(1000);
+  });
+
+  it('subtracts a non-amortized nature (e.g. Salaires) in full, on its own day', async () => {
+    const prisma = makePrismaMock();
+    const service = new ChartsService(prisma as unknown as PrismaService);
+    prisma.saleItem.findMany.mockResolvedValue([item({ createdAt: new Date('2026-09-07T10:00:00Z'), quantity: 1, unitPrice: 1000, purchasePrice: 0 })]);
+    prisma.expense.findMany.mockResolvedValue([expense({ amount: 300, category: 'Salaires', createdAt: new Date('2026-09-08T10:00:00Z') })]);
+
+    const result = await service.weeklyTotal('est-1', 'profit', '2026-09-07');
+
+    expect(result.series[0].points[0].value).toBe(1000); // Lundi : pas concerné
+    expect(result.series[0].points[1].value).toBe(-300); // Mardi : la dépense Salaires
+  });
+
+  it('subtracts a registered loss on its own day', async () => {
+    const prisma = makePrismaMock();
+    const service = new ChartsService(prisma as unknown as PrismaService);
+    prisma.saleItem.findMany.mockResolvedValue([]);
+    prisma.loss.findMany.mockResolvedValue([
+      { createdAt: new Date('2026-09-09T10:00:00Z'), quantity: new Decimal(2), product: { purchasePrice: new Decimal(150), bottlesPerCase: null, purchasePricePerCase: null, category: { hasCasePricing: false } } },
+    ]);
+
+    const result = await service.weeklyTotal('est-1', 'profit', '2026-09-07');
+
+    expect(result.series[0].points[2].value).toBe(-300); // Mercredi : 2 × 150
+  });
+
+  it('spreads a monthly-cycle expense (Loyer) evenly across the 7 days of a week it overlaps', async () => {
+    const prisma = makePrismaMock();
+    const service = new ChartsService(prisma as unknown as PrismaService);
+    prisma.saleItem.findMany.mockResolvedValue([]);
+    // Loyer payé le 1er septembre, cycle de 30 jours (01/09 → 01/10) : recouvre
+    // entièrement la semaine du 07/09 au 13/09 (7 jours sur 30).
+    prisma.expense.findMany.mockResolvedValue([expense({ amount: 3000, category: 'Loyer', createdAt: new Date('2026-09-01T00:00:00Z') })]);
+
+    const result = await service.weeklyTotal('est-1', 'profit', '2026-09-07');
+
+    const weekTotal = result.series[0].points.reduce((sum, p) => sum + p.value, 0);
+    expect(weekTotal).toBeCloseTo((-3000 * 7) / 30);
+    // Étalé à parts égales : chaque jour porte 1/7 de la part hebdomadaire.
+    expect(result.series[0].points[0].value).toBeCloseTo(weekTotal / 7);
+  });
+
+  it('never double-counts "Marché" (already allocated line-by-line by allocateMarcheCost)', async () => {
+    const prisma = makePrismaMock();
+    const service = new ChartsService(prisma as unknown as PrismaService);
+    prisma.saleItem.findMany.mockResolvedValue([
+      item({ categoryId: 'c-poulet', hasVariablePricing: true, quantity: 1, unitPrice: 700, purchasePrice: 0, createdAt: new Date('2026-09-07T10:00:00Z') }),
+    ]);
+    prisma.expense.findMany.mockResolvedValue([expense({ amount: 700, category: 'Marché', createdAt: new Date('2026-09-07T09:00:00Z') })]);
+
+    const result = await service.weeklyTotal('est-1', 'profit', '2026-09-07');
+
+    // Coût Marché déjà imputé à la ligne (700 - 700 = 0) : ne doit pas être
+    // retranché une seconde fois par applyNetProfitAdjustments.
+    expect(result.series[0].points[0].value).toBe(0);
+  });
+
+  it('amortizes an annual-cycle expense (Patentes) evenly across the 12 months (straight-line, not weighted by days-in-month)', async () => {
+    const prisma = makePrismaMock();
+    const service = new ChartsService(prisma as unknown as PrismaService);
+    prisma.saleItem.findMany.mockResolvedValue([]);
+    prisma.expense.findMany.mockResolvedValue([expense({ amount: 3650, category: 'Patentes', createdAt: new Date('2026-01-01T00:00:00Z') })]);
+
+    const result = await service.monthly('est-1', 'profit', 2026);
+
+    const perMonth = -3650 / 12;
+    expect(result.months[0].value).toBeCloseTo(perMonth, 0); // Janvier
+    expect(result.months[1].value).toBeCloseTo(perMonth, 0); // Février — même part que Janvier malgré 3 jours de moins
   });
 });
 

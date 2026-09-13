@@ -63,6 +63,30 @@ function valueOf(metric: ChartMetric, line: Pick<SoldLine, 'revenue' | 'cost'>):
   return metric === 'revenue' ? line.revenue : line.revenue - line.cost;
 }
 
+const MS_PER_DAY = 24 * 60 * 60 * 1000;
+
+/**
+ * Cycle de facturation habituel (en jours) des natures de dépenses dont le
+ * rythme réel dépasse la granularité "semaine"/"mois" des graphiques
+ * "Bénéfices" — décision utilisateur du 2026-09-13 : le bénéfice total
+ * (hebdomadaire/mensuel) doit refléter une PART de ces charges plutôt que
+ * de les ignorer (comme avant) ou de les compter en entier le seul jour où
+ * elles sont payées (ce qui créerait un creux artificiel ce jour-là et un
+ * bénéfice surestimé le reste du temps). Ex. Loyer payé une fois par mois :
+ * une semaine de 7 jours n'en supporte que 7/30 ≈ le quart. Absente d'ici =
+ * pas de lissage, comptée intégralement à sa date réelle (Salaires — déjà
+ * hebdomadaire par construction, voir PayrollService —, Entretien,
+ * Bouteilles de gaz, Charbon, "Autre" : aucun rythme fixe connu). "Marché"
+ * n'apparaît jamais ici : déjà imputée ligne à ligne par
+ * `allocateMarcheCost`, qui resterait sinon comptée deux fois.
+ */
+const AMORTIZED_CATEGORY_CYCLE_DAYS: Record<string, number> = {
+  Loyer: 30,
+  Cie: 30,
+  Eau: 30,
+  Patentes: 365,
+};
+
 /**
  * "Recettes" = chiffre d'affaires ligne à ligne (`quantité × prix de vente`),
  * jamais réduit par une remise (les remises ne sont enregistrées qu'au niveau
@@ -168,6 +192,98 @@ export class ChartsService {
     }
   }
 
+  /**
+   * Part de chaque dépense à cycle long (voir `AMORTIZED_CATEGORY_CYCLE_DAYS`)
+   * qui recouvre effectivement `[from, to]`, au prorata du nombre de jours de
+   * recouvrement — une dépense datée avant `from` peut donc contribuer (ex.
+   * un loyer payé le 1er du mois compte pour toutes les semaines de ce
+   * mois). La fenêtre de recherche remonte jusqu'à `maxCycleDays` avant
+   * `from` pour ne manquer aucune dépense dont le cycle empièterait sur la
+   * période demandée.
+   */
+  private async amortizedOverheadTotal(establishmentId: string, from: Date, to: Date): Promise<number> {
+    const categories = Object.keys(AMORTIZED_CATEGORY_CYCLE_DAYS);
+    const maxCycleDays = Math.max(...Object.values(AMORTIZED_CATEGORY_CYCLE_DAYS));
+    const lookbackStart = new Date(from.getTime() - maxCycleDays * MS_PER_DAY);
+
+    const expenses = await this.prisma.expense.findMany({
+      where: { establishmentId, category: { in: categories }, expenseDate: { gte: lookbackStart, lte: to } },
+      select: { amount: true, expenseDate: true, category: true },
+    });
+
+    let total = 0;
+    for (const e of expenses) {
+      const cycleDays = e.category ? AMORTIZED_CATEGORY_CYCLE_DAYS[e.category] : undefined;
+      if (!cycleDays) continue;
+      const coverageEnd = new Date(e.expenseDate.getTime() + cycleDays * MS_PER_DAY);
+      const overlapStart = e.expenseDate > from ? e.expenseDate : from;
+      const overlapEnd = coverageEnd < to ? coverageEnd : to;
+      const overlapMs = overlapEnd.getTime() - overlapStart.getTime();
+      if (overlapMs <= 0) continue;
+      total += e.amount.toNumber() * (overlapMs / (cycleDays * MS_PER_DAY));
+    }
+    return total;
+  }
+
+  /** Pertes enregistrées sur `[from, to]`, même calcul de coût que `ReportsService.summary` (`effectiveUnitCost`). */
+  private async lossLines(establishmentId: string, from: Date, to: Date): Promise<{ createdAt: Date; amount: number }[]> {
+    const losses = await this.prisma.loss.findMany({
+      where: { establishmentId, createdAt: { gte: from, lte: to } },
+      include: {
+        product: {
+          select: {
+            purchasePrice: true,
+            bottlesPerCase: true,
+            purchasePricePerCase: true,
+            category: { select: { hasCasePricing: true } },
+          },
+        },
+      },
+    });
+    return losses.map((l) => ({ createdAt: l.createdAt, amount: l.quantity.toNumber() * effectiveUnitCost(l.product) }));
+  }
+
+  /**
+   * Transforme une marge brute (`values`, une case par "case" — jour de la
+   * semaine ou mois de l'année selon `bucketIndexOf`) en un bénéfice net
+   * qui tient compte de TOUTES les natures de dépenses et des pertes
+   * (décision utilisateur du 2026-09-13) :
+   * - Les dépenses à cycle long (Loyer/Cie/Eau/Patentes) sont réparties au
+   *   prorata du recouvrement (`amortizedOverheadTotal`) puis étalées à
+   *   parts égales sur toutes les cases de `values` — aucune date précise
+   *   ne leur est plus pertinente une fois réparties.
+   * - Les autres natures (Salaires, Entretien, Bouteilles de gaz, Charbon,
+   *   "Autre"...) et les pertes sont comptées en entier à leur date réelle,
+   *   dans la case correspondante — "Marché" est explicitement exclue :
+   *   déjà imputée ligne à ligne par `allocateMarcheCost`, la recompter ici
+   *   la compterait deux fois.
+   */
+  private async applyNetProfitAdjustments(
+    establishmentId: string,
+    from: Date,
+    to: Date,
+    values: number[],
+    bucketIndexOf: (date: Date) => number,
+  ): Promise<void> {
+    const [expenses, losses, amortizedTotal] = await Promise.all([
+      this.expenseLines(establishmentId, from, to),
+      this.lossLines(establishmentId, from, to),
+      this.amortizedOverheadTotal(establishmentId, from, to),
+    ]);
+
+    const amortizedPerBucket = amortizedTotal / values.length;
+    for (let i = 0; i < values.length; i++) {
+      values[i] -= amortizedPerBucket;
+    }
+    for (const e of expenses) {
+      if (e.category === 'Marché' || (e.category && AMORTIZED_CATEGORY_CYCLE_DAYS[e.category])) continue;
+      values[bucketIndexOf(e.createdAt)] -= e.amount;
+    }
+    for (const l of losses) {
+      values[bucketIndexOf(l.createdAt)] -= l.amount;
+    }
+  }
+
   private weekRange(weekStart?: string): { from: Date; to: Date; monday: Date } {
     const monday = mondayOf(weekStart ? new Date(weekStart) : new Date());
     const to = new Date(monday);
@@ -190,12 +306,23 @@ export class ChartsService {
     };
   }
 
+  /**
+   * "Bénéfice total" (pas les vues par catégorie/produit ci-dessous, voir le
+   * commentaire au-dessus de `soldLines` : aucune façon correcte d'attribuer
+   * une charge générale à un produit) — décision utilisateur du 2026-09-13 :
+   * doit désormais tenir compte de TOUTES les natures de dépenses (pas
+   * seulement "Marché") et des pertes enregistrées, pas seulement de la
+   * marge brute. Voir `applyNetProfitAdjustments`.
+   */
   async weeklyTotal(establishmentId: string, metric: ChartMetric, weekStart?: string) {
     const { from, to, monday } = this.weekRange(weekStart);
     const lines = await this.soldLines(establishmentId, from, to);
     const values = emptyWeek();
     for (const line of lines) {
       values[weekdayIndex(line.createdAt)] += valueOf(metric, line);
+    }
+    if (metric === 'profit') {
+      await this.applyNetProfitAdjustments(establishmentId, from, to, values, weekdayIndex);
     }
     return this.buildWeekResponse(monday, [{ id: null, name: 'Total', values }]);
   }
@@ -257,6 +384,9 @@ export class ChartsService {
     const values = new Array(12).fill(0) as number[];
     for (const line of lines) {
       values[line.createdAt.getMonth()] += valueOf(metric, line);
+    }
+    if (metric === 'profit') {
+      await this.applyNetProfitAdjustments(establishmentId, from, to, values, (date) => date.getMonth());
     }
     return { year, months: MONTH_LABELS.map((month, i) => ({ month, value: values[i] })) };
   }
