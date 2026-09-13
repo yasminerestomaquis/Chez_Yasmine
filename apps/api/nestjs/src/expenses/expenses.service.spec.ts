@@ -297,7 +297,7 @@ describe('ExpensesService.exportHistoryExcel', () => {
         status: 'paid',
       },
     ]);
-    const { buffer, filename } = await service.exportHistoryExcel('est-1', { period: 'week', weekOf: '2026-09-10' });
+    const { filename } = await service.exportHistoryExcel('est-1', { period: 'week', weekOf: '2026-09-10' });
     expect(filename).toContain('.xlsx');
     expect(prisma.expense.findMany).toHaveBeenCalledWith(
       expect.not.objectContaining({ skip: expect.anything(), take: expect.anything() }),
