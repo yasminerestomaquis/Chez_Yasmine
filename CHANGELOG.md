@@ -2,6 +2,11 @@
 
 ## [Unreleased]
 
+### Corrigé (2026-09-13) — Caisse/Tables : survente possible sur un produit à lignes multiples ou en cas de concurrence
+- **Vérification du stock par ligne plutôt que par produit** : un produit à prix variable (Poulets, Poissons, Plats africains) peut légitimement apparaître sur plusieurs lignes d'une même vente (prix différents) — vérifier chaque ligne isolément laissait passer une vente dont la *somme* des quantités du même produit dépassait le stock réel (ex. stock = 3, deux lignes de 2 : chacune tient seule, 4 au total ne tient pas). Corrigé : les quantités sont désormais agrégées par produit avant toute vérification.
+- **Vérification du stock hors transaction** : le contrôle initial n'était pas atomique — deux ventes concurrentes du même produit pouvaient chacune le passer avant qu'aucune n'ait décrémenté, vendant ensemble plus que le stock disponible (aucune contrainte de base n'empêchait un stock négatif). Corrigé : la décrémentation, dans la transaction, est désormais une requête conditionnelle unique par produit (`stockQuantity >= quantité demandée`) — si le stock ne suffit plus au moment réel de l'exécution, toute la vente est annulée.
+- Les deux corrections sont partagées par la Caisse et les Tables (même `SalesService.create`). 345/345 tests NestJS (3 nouveaux), build/lint propres.
+
 ### Ajouté (2026-09-13) — Notifications : diffusion pour tous, badge qui se vide à la consultation, effacement réservé au Super Administrateur
 - **Diffuser un message** n'exige plus `settings.manage` — opérationnel pour tous les rôles membres de l'établissement, comme demandé.
 - Le badge rouge « 9+ » de l'accueil disparaît désormais dès que l'utilisateur **consulte** l'écran Notifications, plus seulement après avoir ouvert chaque notification une par une — corrige en particulier le cas des diffusions (annonces, alertes de stock bas...), qui ne pouvaient jamais être marquées lues individuellement et laissaient donc le badge bloqué indéfiniment.

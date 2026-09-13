@@ -9,7 +9,12 @@ const activityNotifierMock = { notify: vi.fn() } as unknown as ActivityNotifierS
 
 function makePrismaMock() {
   const prisma: Record<string, unknown> = {
-    product: { findMany: vi.fn(), update: vi.fn(), findUniqueOrThrow: vi.fn() },
+    product: {
+      findMany: vi.fn(),
+      update: vi.fn(),
+      updateMany: vi.fn().mockResolvedValue({ count: 1 }),
+      findUniqueOrThrow: vi.fn(),
+    },
     stockMovement: { create: vi.fn() },
     sale: { create: vi.fn(), findFirst: vi.fn(), findMany: vi.fn(), update: vi.fn() },
     customer: { findFirst: vi.fn(), update: vi.fn(), findUniqueOrThrow: vi.fn() },
@@ -111,7 +116,10 @@ describe('SalesService.create', () => {
       payments: [{ method: 'cash', amount: 3000 }],
     } as any);
 
-    expect(prisma.product.update).toHaveBeenCalledWith({ where: { id: 'p1' }, data: { stockQuantity: { decrement: 3 } } });
+    expect(prisma.product.updateMany).toHaveBeenCalledWith({
+      where: { id: 'p1', stockQuantity: { gte: 3 } },
+      data: { stockQuantity: { decrement: 3 } },
+    });
     expect(prisma.stockMovement.create).toHaveBeenCalledWith({
       data: { productId: 'p1', type: 'sale', quantity: 3, createdBy: 'user-1' },
     });
@@ -120,6 +128,61 @@ describe('SalesService.create', () => {
     );
     expect(prisma.credit.create).not.toHaveBeenCalled();
     expect(activityNotifierMock.notify).toHaveBeenCalledWith('est-1', 'Nouvelle vente', expect.stringContaining('3'));
+  });
+
+  describe('two lines of the same product (variable-pricing sold at two different prices the same day)', () => {
+    it('rejects the sale when the SUM of both lines exceeds stock, even though each line alone would fit', async () => {
+      // Stock = 3 ; deux lignes de 2 (prix différents) : chacune isolément
+      // tient (2 < 3), mais ensemble elles demandent 4 > 3.
+      (prisma.product as any).findMany.mockResolvedValue([product({ stockQuantity: 3, salePrice: null })]);
+
+      await expect(
+        service.create('est-1', 'user-1', {
+          items: [
+            { productId: 'p1', quantity: 2, unitPrice: 1000 },
+            { productId: 'p1', quantity: 2, unitPrice: 1200 },
+          ],
+          payments: [{ method: 'cash', amount: 4400 }],
+        } as any),
+      ).rejects.toBeInstanceOf(ConflictException);
+      expect(prisma.$transaction).not.toHaveBeenCalled();
+    });
+
+    it('decrements stock by the aggregated quantity once, but still records one stock movement per line', async () => {
+      (prisma.product as any).findMany.mockResolvedValue([product({ stockQuantity: 4, salePrice: null })]);
+      (prisma.sale as any).create.mockResolvedValue({ id: 'sale-1', items: [], payments: [] });
+
+      await service.create('est-1', 'user-1', {
+        items: [
+          { productId: 'p1', quantity: 2, unitPrice: 1000 },
+          { productId: 'p1', quantity: 2, unitPrice: 1200 },
+        ],
+        payments: [{ method: 'cash', amount: 4400 }],
+      } as any);
+
+      expect(prisma.product.updateMany).toHaveBeenCalledTimes(1);
+      expect(prisma.product.updateMany).toHaveBeenCalledWith({
+        where: { id: 'p1', stockQuantity: { gte: 4 } },
+        data: { stockQuantity: { decrement: 4 } },
+      });
+      expect(prisma.stockMovement.create).toHaveBeenCalledTimes(2);
+    });
+  });
+
+  it('rejects the sale (rolling back the transaction) when a concurrent sale already consumed the stock the pre-check saw as sufficient', async () => {
+    // Simule la course : le pré-contrôle (product.findMany) voit encore du
+    // stock, mais la décrémentation conditionnelle dans la transaction
+    // échoue (count: 0) parce qu'une autre vente l'a consommé entre-temps.
+    (prisma.product as any).findMany.mockResolvedValue([product({ stockQuantity: 5 })]);
+    (prisma.product as any).updateMany.mockResolvedValueOnce({ count: 0 });
+
+    await expect(
+      service.create('est-1', 'user-1', {
+        items: [{ productId: 'p1', quantity: 3 }],
+        payments: [{ method: 'cash', amount: 3000 }],
+      } as any),
+    ).rejects.toBeInstanceOf(ConflictException);
+    expect(prisma.sale.create).not.toHaveBeenCalled();
   });
 
   describe('variable-pricing products (ex. Poulets, Poissons, Plats africains)', () => {

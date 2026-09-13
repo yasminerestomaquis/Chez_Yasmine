@@ -31,9 +31,24 @@ export class SalesService {
     }
     const productById = new Map(products.map((p) => [p.id, p]));
 
+    // Agrégé par produit, pas par ligne : un produit à prix variable (Poulets/
+    // Poissons/Plats africains) peut légitimement apparaître sur plusieurs
+    // lignes du même panier (prix différents, voir PosPage._addToCart /
+    // OrdersService.addItem) — vérifier chaque ligne isolément laisserait
+    // passer une vente dont la SOMME des quantités dépasse le stock réel,
+    // même si chaque ligne prise seule semble tenir dans le stock.
+    const quantityByProductId = new Map<string, number>();
     for (const item of dto.items) {
-      const product = productById.get(item.productId)!;
-      if (product.stockQuantity.toNumber() < item.quantity) {
+      quantityByProductId.set(item.productId, (quantityByProductId.get(item.productId) ?? 0) + item.quantity);
+    }
+    // Contrôle rapide, avant d'ouvrir la transaction — message d'erreur clair
+    // pour le cas courant. Ne suffit pas seul contre deux ventes concurrentes
+    // du même produit (lu-puis-écrit, pas atomique) : voir le contrôle
+    // conditionnel dans la transaction ci-dessous, qui est ce qui empêche
+    // réellement une survente en cas de concurrence.
+    for (const [productId, quantity] of quantityByProductId) {
+      const product = productById.get(productId)!;
+      if (product.stockQuantity.toNumber() < quantity) {
         throw new ConflictException(`Stock insuffisant pour ${product.name}`);
       }
     }
@@ -98,8 +113,24 @@ export class SalesService {
     }
 
     const sale = await this.prisma.$transaction(async (tx) => {
+      // Décrémentation atomique et conditionnelle (une seule requête SQL par
+      // produit, quantité déjà agrégée ci-dessus) : `updateMany` avec
+      // `stockQuantity: { gte: quantity }` dans le WHERE ne modifie la ligne
+      // que si le stock est encore suffisant AU MOMENT de l'exécution — le
+      // verrou de ligne pris par Postgres pendant l'UPDATE empêche deux
+      // transactions concurrentes de décrémenter le même produit sur la base
+      // du même état de stock déjà lu. `count === 0` : le stock a changé
+      // entre-temps (autre vente concurrente) et ne suffit plus.
+      for (const [productId, quantity] of quantityByProductId) {
+        const { count } = await tx.product.updateMany({
+          where: { id: productId, stockQuantity: { gte: quantity } },
+          data: { stockQuantity: { decrement: quantity } },
+        });
+        if (count === 0) {
+          throw new ConflictException(`Stock insuffisant pour ${productById.get(productId)!.name}`);
+        }
+      }
       for (const item of dto.items) {
-        await tx.product.update({ where: { id: item.productId }, data: { stockQuantity: { decrement: item.quantity } } });
         await tx.stockMovement.create({
           data: { productId: item.productId, type: 'sale', quantity: item.quantity, createdBy: userId },
         });
