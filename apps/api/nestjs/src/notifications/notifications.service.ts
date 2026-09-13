@@ -90,6 +90,22 @@ export class NotificationsService {
   }
 
   /**
+   * Réservé au Super Administrateur (voir NotificationsController.remove) —
+   * efface une notification précise de l'organisation, ciblée ou diffusée,
+   * au choix de l'appelant (demande utilisateur, 2026-09-13 : suppression
+   * au cas par cas, en plus d'« Effacer tout »). Filtrée par
+   * `organizationId` (pas seulement `id`) pour ne jamais permettre de
+   * deviner/effacer une notification d'une autre organisation.
+   */
+  async remove(establishmentId: string, callerId: string, notificationId: string): Promise<void> {
+    const organizationId = await this.getOrganizationId(establishmentId, callerId);
+    const { count } = await this.prisma.notification.deleteMany({ where: { id: notificationId, organizationId } });
+    if (count === 0) {
+      throw new NotFoundException('Notification introuvable pour cette organisation');
+    }
+  }
+
+  /**
    * Only a notification targeted at this exact user can be marked read — a
    * broadcast row (userId null) has a single shared readAt, so marking it
    * read for one person would mark it read for the whole organization.

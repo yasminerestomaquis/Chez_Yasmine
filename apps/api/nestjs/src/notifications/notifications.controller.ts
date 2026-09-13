@@ -61,4 +61,16 @@ export class NotificationsController {
   clearAll(@Req() request: Request, @Param('establishmentId') establishmentId: string) {
     return this.notifications.clearAll(establishmentId, request.user!.sub);
   }
+
+  /** Réservé au Super Administrateur — efface une notification précise, au choix de l'appelant (demande utilisateur, 2026-09-13), en plus d'« Effacer tout » ci-dessus. */
+  @Delete(':notificationId')
+  @RequirePermissions('notifications.manage')
+  @HttpCode(HttpStatus.NO_CONTENT)
+  remove(
+    @Req() request: Request,
+    @Param('establishmentId') establishmentId: string,
+    @Param('notificationId') notificationId: string,
+  ) {
+    return this.notifications.remove(establishmentId, request.user!.sub, notificationId);
+  }
 }

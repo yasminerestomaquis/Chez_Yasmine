@@ -9,6 +9,7 @@ PATCH  /establishments/:establishmentId/notifications/:id/read        (authentif
 POST   /establishments/:establishmentId/notifications/broadcast       (authentifié — voir « Diffusion » ci-dessous)
 POST   /establishments/:establishmentId/notifications/low-stock-check (stock.manage)
 DELETE /establishments/:establishmentId/notifications                 (notifications.manage — Super Administrateur uniquement)
+DELETE /establishments/:establishmentId/notifications/:id             (notifications.manage — Super Administrateur uniquement)
 ```
 
 ## Portée
@@ -38,6 +39,12 @@ Nouvelle permission `notifications.manage`, **volontairement exclue** du bloc "a
 
 Côté Flutter, le bouton correspondant (icône balai, `lib/notifications/notifications_page.dart`) n'est affiché que si `roleName == 'Super Administrateur'` — un confort d'affichage, la vraie protection restant le refus serveur (403) pour quiconque n'a pas `notifications.manage`. Confirmation obligatoire avant l'appel (même motif que `UsersPage._removeMember`).
 
+## Effacer une notification précise : même réservation, au choix du Super Administrateur (décision actée 2026-09-13)
+
+En complément d'« Effacer tout » ci-dessus — demande utilisateur explicite : le Super Administrateur doit pouvoir supprimer, au cas par cas et selon ses propres choix, une notification particulière plutôt que d'être limité au tout ou rien. `DELETE .../notifications/:id` (`NotificationsService.remove`), même permission `notifications.manage`, même défense en profondeur (filtré par `organizationId`, pas seulement par `id`, pour ne jamais permettre de deviner/effacer une notification d'une autre organisation ; `NotFoundException` si l'id n'existe pas dans cette organisation).
+
+Côté Flutter, un bouton (icône corbeille) apparaît en fin de chaque ligne de la liste, **uniquement pour `roleName == 'Super Administrateur'`** — même confort d'affichage que le bouton « Effacer tout », même confirmation obligatoire avant l'appel.
+
 ## Limite documentée : une notification diffusée ne peut pas être marquée lue individuellement
 
 `readAt` est une colonne unique sur la ligne `Notification` — pour une notification ciblée (`userId` non nul), la marquer lue n'affecte qu'un seul destinataire, cohérent. Pour une diffusion (`userId` nul), il n'existe pas de table de suivi de lecture par utilisateur dans le schéma ; `markAsRead` refuse donc (404) toute tentative sur une notification qui n'est pas explicitement adressée à l'appelant. Une diffusion reste visible indéfiniment comme non lue pour tout le monde — acceptable pour de simples annonces, documenté plutôt que contourné par une fausse table.
@@ -66,13 +73,13 @@ Chaque service métier concerné (`SalesService.create`, `PurchasesService.recei
 
 ## UI Flutter (`lib/notifications/`)
 
-Liste (gras = non lu, appui = marque lu si c'est une notification ciblée), bouton « Diffuser un message » (annonce libre, opérationnel pour tous les rôles depuis le 2026-09-13), bouton « Vérifier les stocks bas » (déclenche `low-stock-check`, `stock.manage`), et bouton « Effacer toutes les notifications » (icône balai) **visible uniquement pour le rôle Super Administrateur**. En dehors de ce dernier bouton — une exception délibérée, demande explicite de l'utilisateur —, comme le reste de l'application, aucun bouton n'est masqué selon les permissions côté client : un refus serveur (403) s'affiche normalement via le message d'erreur générique.
+Liste (gras = non lu, appui = marque lu si c'est une notification ciblée), bouton « Diffuser un message » (annonce libre, opérationnel pour tous les rôles depuis le 2026-09-13), bouton « Vérifier les stocks bas » (déclenche `low-stock-check`, `stock.manage`), bouton « Effacer toutes les notifications » (icône balai) et bouton de suppression individuelle par ligne (icône corbeille) — **tous deux visibles uniquement pour le rôle Super Administrateur**. En dehors de ces deux boutons — une exception délibérée, demande explicite de l'utilisateur —, comme le reste de l'application, aucun bouton n'est masqué selon les permissions côté client : un refus serveur (403) s'affiche normalement via le message d'erreur générique.
 
 `NotificationsPage` exige désormais `roleName` (en plus de `establishmentId`), passé par `HomeDashboard` depuis ses deux points d'entrée (icône cloche de l'AppBar, tuile « Notifications » de PILOTAGE).
 
 ## Vérifications effectuées
 
-- `NotificationsService` : 14 tests (Prisma mocké) — rejet d'un non-membre, filtrage diffusion + ciblé, marquage lu restreint aux notifications ciblées, rejet d'un destinataire hors organisation, dédoublonnage des alertes de stock bas, `notificationsViewedAt` mis à jour à chaque `list`, `unreadCount` filtré par ce marqueur (avec et sans consultation préalable), `clearAll` supprime toute l'organisation et rejette un non-membre, **`createdByName` aplati depuis `createdByUser.fullName` (présent et absent) et diffusion créditée à l'auteur qui l'envoie** (2026-09-13).
+- `NotificationsService` : 17 tests (Prisma mocké) — rejet d'un non-membre, filtrage diffusion + ciblé, marquage lu restreint aux notifications ciblées, rejet d'un destinataire hors organisation, dédoublonnage des alertes de stock bas, `notificationsViewedAt` mis à jour à chaque `list`, `unreadCount` filtré par ce marqueur (avec et sans consultation préalable), `clearAll` supprime toute l'organisation et rejette un non-membre, `createdByName` aplati depuis `createdByUser.fullName` (présent et absent) et diffusion créditée à l'auteur qui l'envoie, **`remove` supprime une notification précise scopée à l'organisation, 404 si absente, rejette un non-membre** (2026-09-13).
 - `ActivityNotifierService` appelé depuis chaque service métier avec l'id de l'auteur : vérifié par un test dédié dans chacun des 6 fichiers de spec qui asserent le contenu de l'appel (`sales`, `purchases`, `expenses`, `losses`, `stock-movements`, `cash`) — contenu du message, id de l'auteur transmis, et absence de notification sur un rejeu idempotent déjà traité (`expenses`, `losses`, `sales`). `payroll.service.spec.ts` invoque aussi `pay()` avec le mock notifier mais sans assertion dédiée sur son contenu (comportement inchangé par ce correctif).
-- UI Flutter : `flutter analyze`/`flutter test`/`flutter build web` ✅, y compris la validation du formulaire de diffusion, la visibilité conditionnelle du bouton « Effacer tout » et le parsing de `createdByName` (2 nouveaux tests, 2026-09-13).
+- UI Flutter : `flutter analyze`/`flutter test`/`flutter build web` ✅, y compris la validation du formulaire de diffusion, la visibilité conditionnelle du bouton « Effacer tout » et le parsing de `createdByName` (2026-09-13). Le bouton de suppression individuelle n'a pas de test widget dédié : aucun backend en test ne permet d'afficher une vraie ligne de notification dans `flutter test` (limite déjà documentée pour le reste de la liste) — couvert côté serveur par `NotificationsService.remove` (voir ci-dessus).
 - **Non vérifié en conditions réelles** : round-trip HTTP complet — même limitation `DATABASE_URL` que les phases précédentes.

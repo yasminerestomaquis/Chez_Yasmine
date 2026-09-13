@@ -39,4 +39,10 @@ class NotificationsRepository {
   Future<void> clearAll() {
     return _api.delete(_base);
   }
+
+  /// Réservé côté serveur au Super Administrateur (`notifications.manage`) —
+  /// efface une notification précise, au choix de l'appelant.
+  Future<void> remove(String notificationId) {
+    return _api.delete('$_base/$notificationId');
+  }
 }

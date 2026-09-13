@@ -121,6 +121,34 @@ describe('NotificationsService.clearAll', () => {
   });
 });
 
+describe('NotificationsService.remove', () => {
+  let prisma: ReturnType<typeof makePrismaMock>;
+  let service: NotificationsService;
+
+  beforeEach(() => {
+    prisma = makePrismaMock();
+    service = new NotificationsService(prisma as unknown as PrismaService, makeStockMovementsMock() as unknown as StockMovementsService);
+    (prisma.userEstablishmentRole as any).findFirst.mockResolvedValue({ establishment: { organizationId: 'org-1' } });
+  });
+
+  it('deletes one notification, targeted or broadcast, scoped to the organization', async () => {
+    (prisma.notification as any).deleteMany.mockResolvedValue({ count: 1 });
+    await service.remove('est-1', 'caller-1', 'notif-1');
+    expect(prisma.notification.deleteMany).toHaveBeenCalledWith({ where: { id: 'notif-1', organizationId: 'org-1' } });
+  });
+
+  it('throws NotFoundException when the notification does not exist in this organization', async () => {
+    (prisma.notification as any).deleteMany.mockResolvedValue({ count: 0 });
+    await expect(service.remove('est-1', 'caller-1', 'notif-x')).rejects.toBeInstanceOf(NotFoundException);
+  });
+
+  it('rejects a caller with no role on the establishment', async () => {
+    (prisma.userEstablishmentRole as any).findFirst.mockResolvedValue(null);
+    await expect(service.remove('est-1', 'user-x', 'notif-1')).rejects.toBeInstanceOf(ForbiddenException);
+    expect(prisma.notification.deleteMany).not.toHaveBeenCalled();
+  });
+});
+
 describe('NotificationsService.markAsRead', () => {
   let prisma: ReturnType<typeof makePrismaMock>;
   let service: NotificationsService;

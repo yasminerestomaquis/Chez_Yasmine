@@ -139,6 +139,45 @@ class _NotificationsPageState extends State<NotificationsPage> {
     }
   }
 
+  /// Suppression au cas par cas, au choix du Super Administrateur (demande
+  /// utilisateur, 2026-09-13), en plus d'« Effacer tout » ci-dessous — même
+  /// motif de confirmation obligatoire (action réelle, irréversible).
+  Future<void> _removeNotification(AppNotification notification) async {
+    final confirmed = await showDialog<bool>(
+      context: context,
+      builder: (context) => AlertDialog(
+        title: const Text('Effacer cette notification ?'),
+        content: Text(
+          '« ${notification.title} » sera définitivement supprimée. Cette action est irréversible.',
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.of(context).pop(false),
+            child: const Text('Annuler'),
+          ),
+          FilledButton(
+            onPressed: () => Navigator.of(context).pop(true),
+            child: const Text('Effacer'),
+          ),
+        ],
+      ),
+    );
+    if (confirmed != true) return;
+    try {
+      await _repository.remove(notification.id);
+      _reload();
+    } on ApiException catch (e) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(context)
+          .showSnackBar(SnackBar(content: Text(e.message)));
+    } catch (_) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text("Impossible d'effacer la notification.")),
+      );
+    }
+  }
+
   /// Action destructive et irréversible (suppression réelle, pas un simple
   /// marquage lu) — confirmation obligatoire, même motif que
   /// `UsersPage._removeMember`.
@@ -245,6 +284,13 @@ class _NotificationsPageState extends State<NotificationsPage> {
                   ),
                   isThreeLine: n.body != null && n.body!.isNotEmpty,
                   onTap: () => _openNotification(n),
+                  trailing: _isSuperAdmin
+                      ? IconButton(
+                          tooltip: 'Effacer cette notification',
+                          icon: const Icon(Icons.delete_outline),
+                          onPressed: () => _removeNotification(n),
+                        )
+                      : null,
                 ),
             ],
           );

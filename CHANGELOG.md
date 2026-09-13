@@ -2,6 +2,11 @@
 
 ## [Unreleased]
 
+### Ajouté (2026-09-13) — Notifications : suppression au cas par cas, réservée au Super Administrateur
+- En complément d'« Effacer tout », `DELETE /establishments/:id/notifications/:notificationId` (`notifications.manage`, même permission déjà réservée au Super Administrateur) permet de supprimer une notification précise, ciblée ou diffusée, au choix de l'utilisateur.
+- Côté Flutter, un bouton (icône corbeille) apparaît en fin de chaque ligne de la liste, visible uniquement pour le rôle Super Administrateur, avec confirmation obligatoire avant suppression.
+- 354/354 tests NestJS (3 nouveaux), `flutter analyze`/`test`/`build web` ✅ (73/73, sans régression).
+
 ### Corrigé (2026-09-13) — Caisse : les photos produits redemandaient une URL signée au serveur à chaque interaction
 - L'écran Caisse semblait ralenti par le réseau à l'affichage : `CatalogRepository.getImageUrl` redemandait une URL signée pour chaque vignette produit à **chaque** ajout au panier (la `FutureBuilder` de la vignette est reconstruite à chaque `setState` du panier), au lieu de la charger une seule fois.
 - Corrigé : les URL signées sont désormais mises en cache côté client (mémorisées par produit/image/variante), sans jamais mettre en cache un échec (coupure réseau) — le prochain appel réessaie normalement.
