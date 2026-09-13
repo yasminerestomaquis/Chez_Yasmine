@@ -3,6 +3,7 @@ import 'package:intl/intl.dart';
 
 import '../api/api_client.dart';
 import '../common/formatting.dart';
+import '../common/reload_on_tab_visit_mixin.dart';
 import '../theme/app_theme.dart';
 import 'expense_category_donut_chart.dart';
 import 'expense_summary_models.dart';
@@ -31,11 +32,18 @@ class ExpensesOverviewTab extends StatefulWidget {
   State<ExpensesOverviewTab> createState() => _ExpensesOverviewTabState();
 }
 
-class _ExpensesOverviewTabState extends State<ExpensesOverviewTab> {
+class _ExpensesOverviewTabState extends State<ExpensesOverviewTab>
+    with ReloadOnTabVisitMixin<ExpensesOverviewTab> {
   late final ExpensesRepository _repository = ExpensesRepository(
     ApiClient(),
     widget.establishmentId,
   );
+
+  @override
+  int get tabIndex => 0;
+
+  @override
+  void onTabVisited() => _reload();
 
   String _period = 'month';
   var _year = DateTime.now().year;
@@ -234,16 +242,19 @@ class _ExpensesOverviewTabState extends State<ExpensesOverviewTab> {
                         _kpiCard(
                           'Total des salaires',
                           s.totalSalaries,
+                          changePercent: s.changePercentSalaries,
                           color: AppColors.orange,
                         ),
                         _kpiCard(
                           'Achats / Marché',
                           s.totalMarket,
+                          changePercent: s.changePercentMarket,
                           color: AppColors.green,
                         ),
                         _kpiCard(
                           'Charges fixes',
                           s.totalFixedCharges,
+                          changePercent: s.changePercentFixedCharges,
                           color: AppColors.orange,
                         ),
                       ],

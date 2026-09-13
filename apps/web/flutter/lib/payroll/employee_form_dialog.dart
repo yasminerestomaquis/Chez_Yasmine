@@ -1,34 +1,47 @@
 import 'package:flutter/material.dart';
 
+import 'employee_models.dart';
+
 final _ciPhoneRegex = RegExp(r'^0\d{9}$');
 
 String _formatDate(DateTime date) =>
     '${date.day.toString().padLeft(2, '0')}/${date.month.toString().padLeft(2, '0')}/${date.year}';
 
-/// Formulaire de création d'un employé — champs alignés sur
+/// Formulaire de création OU de modification d'un employé (`initial` non nul
+/// = édition, champs pré-remplis) — champs alignés sur
 /// apps/api/nestjs/src/payroll/dto/employee.dto.ts. Retourne un `Map` prêt à
-/// passer à `EmployeesRepository.createEmployee`, ou `null` si annulé.
-Future<Map<String, dynamic>?> showEmployeeFormDialog(BuildContext context) {
-  final lastNameController = TextEditingController();
-  final firstNameController = TextEditingController();
-  final phoneController = TextEditingController();
-  final addressController = TextEditingController();
-  final positionController = TextEditingController();
-  final weeklySalaryController = TextEditingController();
-  final teamController = TextEditingController();
-  final registrationNumberController = TextEditingController();
-  final notesController = TextEditingController();
+/// passer à `EmployeesRepository.createEmployee`/`updateEmployee`, ou `null`
+/// si annulé.
+Future<Map<String, dynamic>?> showEmployeeFormDialog(
+  BuildContext context, {
+  Employee? initial,
+}) {
+  final lastNameController = TextEditingController(text: initial?.lastName);
+  final firstNameController = TextEditingController(text: initial?.firstName);
+  final phoneController = TextEditingController(text: initial?.phone);
+  final addressController = TextEditingController(text: initial?.address);
+  final positionController = TextEditingController(text: initial?.position);
+  final weeklySalaryController = TextEditingController(
+    text: initial?.weeklySalary.toStringAsFixed(0),
+  );
+  final teamController = TextEditingController(text: initial?.team);
+  final registrationNumberController = TextEditingController(
+    text: initial?.registrationNumber,
+  );
+  final notesController = TextEditingController(text: initial?.notes);
   final formKey = GlobalKey<FormState>();
-  String? gender;
-  DateTime? birthDate;
-  var hireDate = DateTime.now();
-  String? contractType;
+  String? gender = initial?.gender;
+  DateTime? birthDate = initial?.birthDate;
+  var hireDate = initial?.hireDate ?? DateTime.now();
+  String? contractType = initial?.contractType;
 
   return showDialog<Map<String, dynamic>>(
     context: context,
     builder: (context) => StatefulBuilder(
       builder: (context, setDialogState) => AlertDialog(
-        title: const Text('Ajouter un employé'),
+        title: Text(
+          initial == null ? 'Ajouter un employé' : "Modifier l'employé",
+        ),
         content: SizedBox(
           width: 420,
           child: Form(

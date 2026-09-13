@@ -4,6 +4,7 @@ import 'package:uuid/uuid.dart';
 
 import '../api/api_client.dart';
 import '../common/formatting.dart';
+import '../common/reload_on_tab_visit_mixin.dart';
 import '../sync/device_id.dart';
 import '../sync/pending_operation.dart';
 import '../sync/sync_queue_service.dart';
@@ -24,7 +25,8 @@ class ExpensesFormTab extends StatefulWidget {
   State<ExpensesFormTab> createState() => _ExpensesFormTabState();
 }
 
-class _ExpensesFormTabState extends State<ExpensesFormTab> {
+class _ExpensesFormTabState extends State<ExpensesFormTab>
+    with ReloadOnTabVisitMixin<ExpensesFormTab> {
   late final ExpensesRepository _repository = ExpensesRepository(
     ApiClient(),
     widget.establishmentId,
@@ -34,6 +36,12 @@ class _ExpensesFormTabState extends State<ExpensesFormTab> {
     widget.establishmentId,
   );
   late Future<List<Expense>> _future = _repository.listExpenses();
+
+  @override
+  int get tabIndex => 1;
+
+  @override
+  void onTabVisited() => _reload();
 
   void _reload() => setState(() => _future = _repository.listExpenses());
 
@@ -47,7 +55,16 @@ class _ExpensesFormTabState extends State<ExpensesFormTab> {
     String? selectedCategory;
     var periodicity = ExpensePeriodicity.oneOff;
     var expenseDate = DateTime.now();
+    var paymentMethod = ExpensePaymentMethod.cash;
+    var status = ExpenseStatus.paid;
     final dateFieldFormat = DateFormat('dd/MM/yyyy');
+    // "Salaires" est réservée aux paiements de paie (onglet Salaires) : son
+    // montant ne doit jamais être saisi à la main — voir
+    // docs/api/expenses.md. Le serveur refuse aussi cette nature en saisie
+    // manuelle (défense en profondeur), voir ExpensesService.create.
+    final manualCategories = kPredefinedExpenseCategories
+        .where((c) => c != 'Salaires')
+        .toList();
 
     final saved = await showDialog<bool>(
       context: context,
@@ -96,7 +113,7 @@ class _ExpensesFormTabState extends State<ExpensesFormTab> {
                         labelText: 'Nature de la dépense',
                       ),
                       items: [
-                        for (final category in kPredefinedExpenseCategories)
+                        for (final category in manualCategories)
                           DropdownMenuItem(
                             value: category,
                             child: Text(category),
@@ -151,6 +168,38 @@ class _ExpensesFormTabState extends State<ExpensesFormTab> {
                         }
                         return null;
                       },
+                    ),
+                    DropdownButtonFormField<ExpensePaymentMethod>(
+                      initialValue: paymentMethod,
+                      decoration: const InputDecoration(
+                        labelText: 'Mode de paiement',
+                      ),
+                      items: [
+                        for (final m in ExpensePaymentMethod.values)
+                          DropdownMenuItem(value: m, child: Text(m.label)),
+                      ],
+                      onChanged: (v) => setDialogState(
+                        () => paymentMethod = v ?? paymentMethod,
+                      ),
+                    ),
+                    const SizedBox(height: 8),
+                    Align(
+                      alignment: Alignment.centerLeft,
+                      child: SegmentedButton<ExpenseStatus>(
+                        segments: const [
+                          ButtonSegment(
+                            value: ExpenseStatus.paid,
+                            label: Text('Payée'),
+                          ),
+                          ButtonSegment(
+                            value: ExpenseStatus.pending,
+                            label: Text('En attente'),
+                          ),
+                        ],
+                        selected: {status},
+                        onSelectionChanged: (selection) =>
+                            setDialogState(() => status = selection.first),
+                      ),
                     ),
                     const SizedBox(height: 12),
                     Align(
@@ -224,6 +273,8 @@ class _ExpensesFormTabState extends State<ExpensesFormTab> {
         note: note,
         expenseDate: expenseDate,
         marketNumber: marketNumber,
+        paymentMethod: paymentMethod,
+        status: status,
       );
       _reload();
     } on ApiException catch (e) {
@@ -248,6 +299,8 @@ class _ExpensesFormTabState extends State<ExpensesFormTab> {
             'expenseDate':
                 '${expenseDate.year.toString().padLeft(4, '0')}-${expenseDate.month.toString().padLeft(2, '0')}-${expenseDate.day.toString().padLeft(2, '0')}',
             'marketNumber': ?marketNumber,
+            'paymentMethod': paymentMethod.value,
+            'status': status.value,
           },
           createdAt: DateTime.now(),
         ),
@@ -275,6 +328,24 @@ class _ExpensesFormTabState extends State<ExpensesFormTab> {
       if (!mounted) return;
       ScaffoldMessenger.of(context).showSnackBar(
         const SnackBar(content: Text('Impossible de supprimer la dépense.')),
+      );
+    }
+  }
+
+  /// Conserve la dépense (contrairement à "Supprimer") en la marquant
+  /// "Annulée" — seul moyen d'atteindre ce statut depuis l'interface.
+  Future<void> _cancelExpense(Expense expense) async {
+    try {
+      await _repository.setExpenseStatus(expense.id, ExpenseStatus.cancelled);
+      _reload();
+    } on ApiException catch (e) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(context)
+          .showSnackBar(SnackBar(content: Text(e.message)));
+    } catch (_) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('Impossible d\'annuler la dépense.')),
       );
     }
   }
@@ -335,7 +406,8 @@ class _ExpensesFormTabState extends State<ExpensesFormTab> {
                                   '${expense.category != null && expense.category!.isNotEmpty ? '${expense.category}' : ''}'
                                   '${expense.marketNumber != null ? ' n°${expense.marketNumber}' : ''}'
                                   '${expense.category != null && expense.category!.isNotEmpty ? ' — ' : ''}'
-                                  '${dateFormat.format(expense.expenseDate.toLocal())} · ${expense.periodicity.label}',
+                                  '${dateFormat.format(expense.expenseDate.toLocal())} · ${expense.periodicity.label}'
+                                  '${expense.status != ExpenseStatus.paid ? ' · ${expense.status.label}' : ''}',
                                 ),
                                 trailing: Row(
                                   mainAxisSize: MainAxisSize.min,
@@ -343,11 +415,27 @@ class _ExpensesFormTabState extends State<ExpensesFormTab> {
                                     Text(
                                       '${formatAmount(expense.amount)} FCFA',
                                     ),
-                                    IconButton(
-                                      tooltip: 'Supprimer',
-                                      icon: const Icon(Icons.delete_outline),
-                                      onPressed: () => _deleteExpense(expense),
-                                    ),
+                                    // Une dépense générée par un paiement de
+                                    // paie ne peut être ni annulée ni
+                                    // supprimée ici : elle doit rester
+                                    // cohérente avec son PayrollRun (voir
+                                    // docs/api/expenses.md).
+                                    if (!expense.isFromPayroll &&
+                                        expense.status !=
+                                            ExpenseStatus.cancelled)
+                                      IconButton(
+                                        tooltip: 'Annuler',
+                                        icon: const Icon(Icons.block_outlined),
+                                        onPressed: () =>
+                                            _cancelExpense(expense),
+                                      ),
+                                    if (!expense.isFromPayroll)
+                                      IconButton(
+                                        tooltip: 'Supprimer',
+                                        icon: const Icon(Icons.delete_outline),
+                                        onPressed: () =>
+                                            _deleteExpense(expense),
+                                      ),
                                   ],
                                 ),
                               ),

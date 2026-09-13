@@ -62,6 +62,19 @@ class ExpensesRepository {
     return _api.delete('$_base/$expenseId');
   }
 
+  /// Utilisé pour l'action « Annuler » d'une dépense (garde son historique
+  /// au lieu de la supprimer) — voir `docs/api/expenses.md`.
+  Future<Expense> setExpenseStatus(
+    String expenseId,
+    ExpenseStatus status,
+  ) async {
+    final json = await _api.patch(
+      '$_base/$expenseId',
+      body: {'status': status.value},
+    ) as Map<String, dynamic>;
+    return Expense.fromJson(json);
+  }
+
   Future<ExpenseSummary> getSummary({
     required String period,
     required int year,

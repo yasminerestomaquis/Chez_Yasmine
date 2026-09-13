@@ -57,7 +57,20 @@ void main() {
   });
 
   testWidgets(
-    'offers the predefined expense categories plus a free-text "Autre" option',
+    'offers a Mode de paiement dropdown and a Payée/En attente status selector, defaulting to Espèces/Payée',
+    (tester) async {
+      await openAddDialog(tester);
+
+      expect(find.text('Mode de paiement'), findsOneWidget);
+      expect(find.text('Espèces'), findsOneWidget);
+      expect(find.text('Payée'), findsOneWidget);
+      expect(find.text('En attente'), findsOneWidget);
+    },
+  );
+
+  testWidgets(
+    'offers the predefined expense categories plus a free-text "Autre" option, '
+    'but never "Salaires" (must come from a real payroll payment)',
     (tester) async {
       await openAddDialog(tester);
 
@@ -65,7 +78,7 @@ void main() {
       await tester.pumpAndSettle();
 
       expect(find.text('Loyer').hitTestable(), findsOneWidget);
-      expect(find.text('Salaires').hitTestable(), findsOneWidget);
+      expect(find.text('Salaires').hitTestable(), findsNothing);
       expect(find.text('Bouteilles de gaz').hitTestable(), findsOneWidget);
       expect(find.text('Autre…').hitTestable(), findsOneWidget);
     },

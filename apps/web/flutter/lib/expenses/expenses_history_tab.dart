@@ -4,6 +4,7 @@ import 'package:intl/intl.dart';
 import '../api/api_client.dart';
 import '../common/browser_download.dart';
 import '../common/formatting.dart';
+import '../common/reload_on_tab_visit_mixin.dart';
 import 'expense_models.dart';
 import 'expense_summary_models.dart';
 import 'expenses_repository.dart';
@@ -40,11 +41,18 @@ class ExpensesHistoryTab extends StatefulWidget {
   State<ExpensesHistoryTab> createState() => _ExpensesHistoryTabState();
 }
 
-class _ExpensesHistoryTabState extends State<ExpensesHistoryTab> {
+class _ExpensesHistoryTabState extends State<ExpensesHistoryTab>
+    with ReloadOnTabVisitMixin<ExpensesHistoryTab> {
   late final ExpensesRepository _repository = ExpensesRepository(
     ApiClient(),
     widget.establishmentId,
   );
+
+  @override
+  int get tabIndex => 3;
+
+  @override
+  void onTabVisited() => _reload();
 
   String? _period;
   int? _periodYear;

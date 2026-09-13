@@ -75,6 +75,7 @@ class Expense {
     this.marketNumber,
     this.paymentMethod = ExpensePaymentMethod.cash,
     this.status = ExpenseStatus.paid,
+    this.payrollRunId,
   });
 
   final String id;
@@ -90,6 +91,13 @@ class Expense {
   final ExpensePaymentMethod paymentMethod;
   final ExpenseStatus status;
 
+  /// Non nul uniquement pour une dépense "Salaires" générée automatiquement
+  /// par un paiement de paie — ni modifiable ni supprimable depuis l'écran
+  /// Dépenses (voir docs/api/expenses.md).
+  final String? payrollRunId;
+
+  bool get isFromPayroll => payrollRunId != null;
+
   factory Expense.fromJson(Map<String, dynamic> json) => Expense(
     id: json['id'] as String,
     label: json['label'] as String,
@@ -103,5 +111,6 @@ class Expense {
       json['paymentMethod'] as String?,
     ),
     status: ExpenseStatus.fromValue(json['status'] as String?),
+    payrollRunId: json['payrollRunId'] as String?,
   );
 }

@@ -22,6 +22,9 @@ class ExpenseSummary {
     required this.totalFixedCharges,
     required this.previousTotalAmount,
     this.changePercent,
+    this.changePercentSalaries,
+    this.changePercentMarket,
+    this.changePercentFixedCharges,
     required this.byCategory,
     required this.recent,
   });
@@ -34,6 +37,9 @@ class ExpenseSummary {
   final double totalFixedCharges;
   final double previousTotalAmount;
   final double? changePercent;
+  final double? changePercentSalaries;
+  final double? changePercentMarket;
+  final double? changePercentFixedCharges;
   final List<ExpenseCategoryAmount> byCategory;
   final List<Expense> recent;
 
@@ -46,6 +52,10 @@ class ExpenseSummary {
     totalFixedCharges: (json['totalFixedCharges'] as num).toDouble(),
     previousTotalAmount: (json['previousTotalAmount'] as num).toDouble(),
     changePercent: (json['changePercent'] as num?)?.toDouble(),
+    changePercentSalaries: (json['changePercentSalaries'] as num?)?.toDouble(),
+    changePercentMarket: (json['changePercentMarket'] as num?)?.toDouble(),
+    changePercentFixedCharges: (json['changePercentFixedCharges'] as num?)
+        ?.toDouble(),
     byCategory: (json['byCategory'] as List<dynamic>)
         .map((e) => ExpenseCategoryAmount.fromJson(e as Map<String, dynamic>))
         .toList(),
