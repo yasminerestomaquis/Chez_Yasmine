@@ -1,4 +1,4 @@
-import { Injectable, NotFoundException } from '@nestjs/common';
+import { BadRequestException, Injectable, NotFoundException } from '@nestjs/common';
 import ExcelJS from 'exceljs';
 import { PrismaService } from '../prisma/prisma.service.js';
 import { ActivityNotifierService } from '../notifications/activity-notifier.service.js';
@@ -94,6 +94,16 @@ export class ExpensesService {
       const existing = await this.prisma.expense.findFirst({ where: { id: dto.id, establishmentId } });
       if (existing) return existing;
     }
+    // La nature "Salaires" ne doit jamais être saisie à la main : son
+    // montant doit toujours provenir d'un paiement de paie réel
+    // (PayrollService.pay(), voir docs/api/expenses.md) — sans cette garde,
+    // rien n'empêchait de créer une dépense "Salaires" fictive en plus de
+    // celle générée automatiquement.
+    if (dto.category === 'Salaires') {
+      throw new BadRequestException(
+        'La nature "Salaires" est réservée aux paiements de paie — utilisez l\'onglet Salaires pour payer les employés.',
+      );
+    }
     const expense = await this.prisma.expense.create({
       data: {
         id: dto.id,
@@ -115,9 +125,29 @@ export class ExpensesService {
     return expense;
   }
 
+  /**
+   * Une dépense générée automatiquement par un paiement de paie
+   * (`payrollRunId` non nul) ne peut être ni modifiée ni supprimée depuis ce
+   * service générique — la corriger ici désynchroniserait silencieusement
+   * le `PayrollRun` correspondant (voir docs/api/expenses.md).
+   */
+  private async findOwnExpenseOrThrow(establishmentId: string, expenseId: string) {
+    const existing = await this.prisma.expense.findFirst({ where: { id: expenseId, establishmentId } });
+    if (!existing) {
+      throw new NotFoundException('Dépense introuvable pour cet établissement');
+    }
+    return existing;
+  }
+
   async update(establishmentId: string, expenseId: string, dto: UpdateExpenseDto) {
-    const { count } = await this.prisma.expense.updateMany({
-      where: { id: expenseId, establishmentId },
+    const existing = await this.findOwnExpenseOrThrow(establishmentId, expenseId);
+    if (existing.payrollRunId) {
+      throw new BadRequestException(
+        'Cette dépense provient d\'un paiement de salaires — elle ne peut être modifiée que depuis l\'onglet Salaires.',
+      );
+    }
+    return this.prisma.expense.update({
+      where: { id: expenseId },
       data: {
         label: dto.label,
         category: dto.category,
@@ -126,19 +156,20 @@ export class ExpensesService {
         expenseDate: dto.expenseDate ? new Date(dto.expenseDate) : undefined,
         periodicity: dto.periodicity,
         marketNumber: dto.marketNumber,
+        paymentMethod: dto.paymentMethod,
+        status: dto.status,
       },
     });
-    if (count === 0) {
-      throw new NotFoundException('Dépense introuvable pour cet établissement');
-    }
-    return this.prisma.expense.findUniqueOrThrow({ where: { id: expenseId } });
   }
 
   async remove(establishmentId: string, expenseId: string): Promise<void> {
-    const { count } = await this.prisma.expense.deleteMany({ where: { id: expenseId, establishmentId } });
-    if (count === 0) {
-      throw new NotFoundException('Dépense introuvable pour cet établissement');
+    const existing = await this.findOwnExpenseOrThrow(establishmentId, expenseId);
+    if (existing.payrollRunId) {
+      throw new BadRequestException(
+        'Cette dépense provient d\'un paiement de salaires — annulez plutôt la paie correspondante depuis l\'onglet Salaires.',
+      );
     }
+    await this.prisma.expense.delete({ where: { id: expenseId } });
   }
 
   /**
@@ -174,17 +205,28 @@ export class ExpensesService {
       }),
       this.prisma.expense.findMany({
         where: { establishmentId, expenseDate: { gte: previous.from, lte: previous.to } },
-        select: { amount: true },
+        select: { amount: true, category: true },
       }),
     ]);
 
     const sum = (list: { amount: { toNumber(): number } }[]) => list.reduce((s, e) => s + e.amount.toNumber(), 0);
+    const pct = (current: number, previousValue: number) =>
+      previousValue > 0 ? ((current - previousValue) / previousValue) * 100 : null;
+
     const totalAmount = sum(expenses);
     const totalSalaries = sum(expenses.filter((e) => e.category === 'Salaires'));
     const totalMarket = sum(expenses.filter((e) => e.category === 'Marché'));
     const totalFixedCharges = totalAmount - totalSalaries - totalMarket;
+
     const previousTotalAmount = sum(previousExpenses);
-    const changePercent = previousTotalAmount > 0 ? ((totalAmount - previousTotalAmount) / previousTotalAmount) * 100 : null;
+    const previousTotalSalaries = sum(previousExpenses.filter((e) => e.category === 'Salaires'));
+    const previousTotalMarket = sum(previousExpenses.filter((e) => e.category === 'Marché'));
+    const previousTotalFixedCharges = previousTotalAmount - previousTotalSalaries - previousTotalMarket;
+
+    const changePercent = pct(totalAmount, previousTotalAmount);
+    const changePercentSalaries = pct(totalSalaries, previousTotalSalaries);
+    const changePercentMarket = pct(totalMarket, previousTotalMarket);
+    const changePercentFixedCharges = pct(totalFixedCharges, previousTotalFixedCharges);
 
     const byCategoryMap = new Map<string, number>();
     for (const e of expenses) {
@@ -202,6 +244,9 @@ export class ExpensesService {
       totalFixedCharges,
       previousTotalAmount,
       changePercent,
+      changePercentSalaries,
+      changePercentMarket,
+      changePercentFixedCharges,
       byCategory,
       recent: [...expenses]
         .sort((a, b) => b.expenseDate.getTime() - a.expenseDate.getTime())
@@ -238,6 +283,18 @@ export class ExpensesService {
     return { items, total, page, pageSize };
   }
 
+  /** Mêmes libellés français que `ExpensePaymentMethod`/`ExpenseStatus` côté Flutter (`expense_models.dart`) — l'export doit afficher exactement ce qui est montré à l'écran, pas les valeurs techniques brutes stockées en base. */
+  private static readonly paymentMethodLabels: Record<string, string> = {
+    cash: 'Espèces',
+    mobile_money: 'Mobile Money',
+    bank_transfer: 'Virement',
+  };
+  private static readonly statusLabels: Record<string, string> = {
+    paid: 'Payée',
+    pending: 'En attente',
+    cancelled: 'Annulée',
+  };
+
   /** Même pattern que ReportsService.beveragesSoldExcel — respecte les filtres actifs, jamais paginé (l'export contient tout ce qui correspond au filtre). */
   async exportHistoryExcel(establishmentId: string, query: ExpenseHistoryQueryDto): Promise<{ buffer: Buffer; filename: string }> {
     const where = this.historyWhere(establishmentId, query);
@@ -265,8 +322,8 @@ export class ExpensesService {
         category: e.category ?? 'Autre',
         amount,
         periodicity: e.periodicity === 'recurring' ? 'Récurrente' : 'Ponctuelle',
-        paymentMethod: e.paymentMethod,
-        status: e.status,
+        paymentMethod: ExpensesService.paymentMethodLabels[e.paymentMethod] ?? e.paymentMethod,
+        status: ExpensesService.statusLabels[e.status] ?? e.status,
       });
     }
     const totalRow = sheet.addRow({ label: 'TOTAL', amount: total });

@@ -1,4 +1,4 @@
-import { NotFoundException } from '@nestjs/common';
+import { BadRequestException, NotFoundException } from '@nestjs/common';
 import ExcelJS from 'exceljs';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import type { PrismaService } from '../prisma/prisma.service.js';
@@ -13,9 +13,8 @@ function makePrismaMock() {
       findMany: vi.fn(),
       findFirst: vi.fn(),
       create: vi.fn(),
-      updateMany: vi.fn(),
-      findUniqueOrThrow: vi.fn(),
-      deleteMany: vi.fn(),
+      update: vi.fn(),
+      delete: vi.fn(),
     },
   };
   return prisma;
@@ -62,18 +61,42 @@ describe('ExpensesService.update / remove', () => {
   });
 
   it('throws NotFoundException updating an expense outside the establishment', async () => {
-    (prisma.expense as any).updateMany.mockResolvedValue({ count: 0 });
+    (prisma.expense as any).findFirst.mockResolvedValue(null);
     await expect(service.update('est-1', 'exp-x', { amount: 100 })).rejects.toBeInstanceOf(NotFoundException);
   });
 
   it('throws NotFoundException removing an expense outside the establishment', async () => {
-    (prisma.expense as any).deleteMany.mockResolvedValue({ count: 0 });
+    (prisma.expense as any).findFirst.mockResolvedValue(null);
     await expect(service.remove('est-1', 'exp-x')).rejects.toBeInstanceOf(NotFoundException);
   });
 
   it('removes an expense that belongs to the establishment', async () => {
-    (prisma.expense as any).deleteMany.mockResolvedValue({ count: 1 });
+    (prisma.expense as any).findFirst.mockResolvedValue({ id: 'exp-1', payrollRunId: null });
+    (prisma.expense as any).delete.mockResolvedValue({ id: 'exp-1' });
     await expect(service.remove('est-1', 'exp-1')).resolves.toBeUndefined();
+    expect(prisma.expense.delete).toHaveBeenCalledWith({ where: { id: 'exp-1' } });
+  });
+
+  it('updates an expense that belongs to the establishment, including paymentMethod/status', async () => {
+    (prisma.expense as any).findFirst.mockResolvedValue({ id: 'exp-1', payrollRunId: null });
+    (prisma.expense as any).update.mockResolvedValue({ id: 'exp-1', status: 'cancelled' });
+    await service.update('est-1', 'exp-1', { status: 'cancelled', paymentMethod: 'mobile_money' });
+    expect(prisma.expense.update).toHaveBeenCalledWith({
+      where: { id: 'exp-1' },
+      data: expect.objectContaining({ status: 'cancelled', paymentMethod: 'mobile_money' }),
+    });
+  });
+
+  it('rejects deleting a payroll-generated expense', async () => {
+    (prisma.expense as any).findFirst.mockResolvedValue({ id: 'exp-1', payrollRunId: 'run-1' });
+    await expect(service.remove('est-1', 'exp-1')).rejects.toBeInstanceOf(BadRequestException);
+    expect(prisma.expense.delete).not.toHaveBeenCalled();
+  });
+
+  it('rejects updating a payroll-generated expense', async () => {
+    (prisma.expense as any).findFirst.mockResolvedValue({ id: 'exp-1', payrollRunId: 'run-1' });
+    await expect(service.update('est-1', 'exp-1', { amount: 1 })).rejects.toBeInstanceOf(BadRequestException);
+    expect(prisma.expense.update).not.toHaveBeenCalled();
   });
 });
 
@@ -109,6 +132,13 @@ describe('ExpensesService.create', () => {
     (prisma.expense as any).findFirst.mockResolvedValue({ id: 'exp-1' });
     await service.create('est-1', { id: 'exp-1', label: 'Loyer', amount: 50000 });
     expect(activityNotifierMock.notify).not.toHaveBeenCalled();
+  });
+
+  it('rejects a manually-created expense with category "Salaires" (must come from a payroll payment)', async () => {
+    await expect(
+      service.create('est-1', { label: 'Salaires équipe', amount: 100000, category: 'Salaires' }),
+    ).rejects.toBeInstanceOf(BadRequestException);
+    expect(prisma.expense.create).not.toHaveBeenCalled();
   });
 
   it('passes through an explicit periodicity', async () => {
@@ -198,6 +228,24 @@ describe('ExpensesService.summary', () => {
     expect(result.totalAmount).toBe(200000);
     expect(result.previousTotalAmount).toBe(100000);
     expect(result.changePercent).toBe(100);
+  });
+
+  it('computes a percentage-change comparison per KPI (Salaires, Marché, charges fixes), not only the total', async () => {
+    (prisma.expense as any).findMany
+      .mockResolvedValueOnce([
+        { category: 'Salaires', amount: { toNumber: () => 200000 }, expenseDate: new Date('2026-09-01') },
+        { category: 'Marché', amount: { toNumber: () => 40000 }, expenseDate: new Date('2026-09-02') },
+        { category: 'Loyer', amount: { toNumber: () => 60000 }, expenseDate: new Date('2026-09-03') },
+      ])
+      .mockResolvedValueOnce([
+        { category: 'Salaires', amount: { toNumber: () => 100000 } },
+        { category: 'Marché', amount: { toNumber: () => 40000 } },
+        { category: 'Loyer', amount: { toNumber: () => 30000 } },
+      ]);
+    const result = await service.summary('est-1', { period: 'month', year: 2026, month: 9 });
+    expect(result.changePercentSalaries).toBe(100);
+    expect(result.changePercentMarket).toBe(0);
+    expect(result.changePercentFixedCharges).toBe(100);
   });
 
   it('groups a category breakdown for the donut chart', async () => {
@@ -338,6 +386,11 @@ describe('ExpensesService.exportHistoryExcel', () => {
     expect(sheet.getRow(2).getCell(5).value).toBe('Ponctuelle');
     expect(sheet.getRow(3).getCell(2).value).toBe('Facture eau');
     expect(sheet.getRow(3).getCell(5).value).toBe('Récurrente');
+
+    // Mêmes libellés français que ce que l'écran affiche (ExpensePaymentMethod/ExpenseStatus côté Flutter) — jamais les valeurs techniques brutes.
+    expect(sheet.getRow(2).getCell(6).value).toBe('Espèces');
+    expect(sheet.getRow(2).getCell(7).value).toBe('Payée');
+    expect(sheet.getRow(3).getCell(6).value).toBe('Mobile Money');
 
     const totalRow = sheet.getRow(4);
     expect(totalRow.getCell(2).value).toBe('TOTAL');
