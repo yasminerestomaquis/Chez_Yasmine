@@ -35,15 +35,25 @@ class _PayrollRunPageState extends State<PayrollRunPage> {
   late Future<List<PayrollRun>> _future = _repository.listRuns();
   bool _isBusy = false;
 
-  void _reload() => setState(() => _future = _repository.listRuns());
+  Future<void> _reload() async {
+    final future = _repository.listRuns();
+    setState(() => _future = future);
+    await future;
+  }
 
   Future<void> _prepare() async {
+    if (_isBusy) return;
     final monday = _mondayOf(DateTime.now());
     final sunday = monday.add(const Duration(days: 6));
     setState(() => _isBusy = true);
     try {
       await _repository.prepare(periodStart: monday, periodEnd: sunday);
-      _reload();
+      // Attendu explicitement : le backend n'a aucune contrainte d'unicité
+      // de période (voir Task 4), donc `_isBusy` seul ne protège que la
+      // fenêtre de l'appel réseau — `await` ici (pas de fire-and-forget)
+      // garantit que la liste rechargée est affichée AVANT de réactiver le
+      // FAB, fermant la fenêtre où un second appui créerait un doublon.
+      await _reload();
     } on ApiException catch (e) {
       if (!mounted) return;
       ScaffoldMessenger.of(context)
@@ -60,31 +70,45 @@ class _PayrollRunPageState extends State<PayrollRunPage> {
     final adjustmentController = TextEditingController(
       text: line.adjustment.toStringAsFixed(0),
     );
+    final formKey = GlobalKey<FormState>();
+    // Une saisie non numérique doit bloquer l'enregistrement plutôt que de
+    // silencieusement écraser l'avance/l'ajustement existant par 0 — même
+    // niveau de rigueur que employee_form_dialog.dart.
+    String? validateAmount(String? v) {
+      final value = double.tryParse((v ?? '').trim().replaceAll(',', '.'));
+      return value == null ? 'Montant invalide' : null;
+    }
+
     final saved = await showDialog<bool>(
       context: context,
       builder: (context) => AlertDialog(
         title: Text(line.employeeName),
-        content: Column(
-          mainAxisSize: MainAxisSize.min,
-          children: [
-            TextField(
-              controller: advanceController,
-              keyboardType: const TextInputType.numberWithOptions(
-                decimal: true,
+        content: Form(
+          key: formKey,
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              TextFormField(
+                controller: advanceController,
+                keyboardType: const TextInputType.numberWithOptions(
+                  decimal: true,
+                ),
+                decoration: const InputDecoration(labelText: 'Avance'),
+                validator: validateAmount,
               ),
-              decoration: const InputDecoration(labelText: 'Avance'),
-            ),
-            TextField(
-              controller: adjustmentController,
-              keyboardType: const TextInputType.numberWithOptions(
-                decimal: true,
-                signed: true,
+              TextFormField(
+                controller: adjustmentController,
+                keyboardType: const TextInputType.numberWithOptions(
+                  decimal: true,
+                  signed: true,
+                ),
+                decoration: const InputDecoration(
+                  labelText: 'Prime (+) / Retenue (-)',
+                ),
+                validator: validateAmount,
               ),
-              decoration: const InputDecoration(
-                labelText: 'Prime (+) / Retenue (-)',
-              ),
-            ),
-          ],
+            ],
+          ),
         ),
         actions: [
           TextButton(
@@ -92,39 +116,51 @@ class _PayrollRunPageState extends State<PayrollRunPage> {
             child: const Text('Annuler'),
           ),
           FilledButton(
-            onPressed: () => Navigator.of(context).pop(true),
+            onPressed: () {
+              if (!formKey.currentState!.validate()) return;
+              Navigator.of(context).pop(true);
+            },
             child: const Text('Enregistrer'),
           ),
         ],
       ),
     );
     if (saved != true) return;
+    if (_isBusy) return;
+    setState(() => _isBusy = true);
     try {
       await _repository.updateLine(
         run.id,
         line.id,
-        advance:
-            double.tryParse(advanceController.text.replaceAll(',', '.')) ?? 0,
-        adjustment:
-            double.tryParse(adjustmentController.text.replaceAll(',', '.')) ??
-            0,
+        advance: double.parse(
+          advanceController.text.trim().replaceAll(',', '.'),
+        ),
+        adjustment: double.parse(
+          adjustmentController.text.trim().replaceAll(',', '.'),
+        ),
       );
-      _reload();
+      await _reload();
     } on ApiException catch (e) {
       if (!mounted) return;
       ScaffoldMessenger.of(context)
           .showSnackBar(SnackBar(content: Text(e.message)));
+    } finally {
+      if (mounted) setState(() => _isBusy = false);
     }
   }
 
   Future<void> _validate(PayrollRun run) async {
+    if (_isBusy) return;
+    setState(() => _isBusy = true);
     try {
       await _repository.validate(run.id);
-      _reload();
+      await _reload();
     } on ApiException catch (e) {
       if (!mounted) return;
       ScaffoldMessenger.of(context)
           .showSnackBar(SnackBar(content: Text(e.message)));
+    } finally {
+      if (mounted) setState(() => _isBusy = false);
     }
   }
 
@@ -150,24 +186,32 @@ class _PayrollRunPageState extends State<PayrollRunPage> {
       ),
     );
     if (confirmed != true) return;
+    if (_isBusy) return;
+    setState(() => _isBusy = true);
     try {
       await _repository.pay(run.id);
-      _reload();
+      await _reload();
     } on ApiException catch (e) {
       if (!mounted) return;
       ScaffoldMessenger.of(context)
           .showSnackBar(SnackBar(content: Text(e.message)));
+    } finally {
+      if (mounted) setState(() => _isBusy = false);
     }
   }
 
   Future<void> _cancel(PayrollRun run) async {
+    if (_isBusy) return;
+    setState(() => _isBusy = true);
     try {
       await _repository.cancel(run.id);
-      _reload();
+      await _reload();
     } on ApiException catch (e) {
       if (!mounted) return;
       ScaffoldMessenger.of(context)
           .showSnackBar(SnackBar(content: Text(e.message)));
+    } finally {
+      if (mounted) setState(() => _isBusy = false);
     }
   }
 
@@ -179,15 +223,38 @@ class _PayrollRunPageState extends State<PayrollRunPage> {
     _ => status,
   };
 
+  /// Vrai si une paie non annulée de la semaine en cours existe déjà — le
+  /// backend n'a aucune contrainte d'unicité de période (voir
+  /// PayrollService.prepare), donc c'est la seule protection contre un
+  /// doublon si l'utilisateur ré-appuie sur "Préparer" alors qu'une paie de
+  /// cette semaine est déjà `prepared`/`validated`/`paid`.
+  bool _alreadyPreparedThisWeek(List<PayrollRun> runs) {
+    final monday = _mondayOf(DateTime.now());
+    return runs.any(
+      (r) => r.status != 'cancelled' && r.periodStart.isAtSameMomentAs(monday),
+    );
+  }
+
   @override
   Widget build(BuildContext context) {
     final fmt = DateFormat('dd/MM/yyyy');
     return Scaffold(
       appBar: AppBar(title: const Text('Préparer la paie')),
-      floatingActionButton: FloatingActionButton.extended(
-        onPressed: _isBusy ? null : _prepare,
-        icon: const Icon(Icons.add),
-        label: const Text('Préparer la semaine en cours'),
+      floatingActionButton: FutureBuilder<List<PayrollRun>>(
+        future: _future,
+        builder: (context, snapshot) {
+          final alreadyPrepared =
+              snapshot.data != null && _alreadyPreparedThisWeek(snapshot.data!);
+          return FloatingActionButton.extended(
+            onPressed: (_isBusy || alreadyPrepared) ? null : _prepare,
+            icon: const Icon(Icons.add),
+            label: Text(
+              alreadyPrepared
+                  ? 'Paie de la semaine déjà préparée'
+                  : 'Préparer la semaine en cours',
+            ),
+          );
+        },
       ),
       body: FutureBuilder<List<PayrollRun>>(
         future: _future,
@@ -245,7 +312,7 @@ class _PayrollRunPageState extends State<PayrollRunPage> {
                                 fontWeight: FontWeight.w600,
                               ),
                             ),
-                            onTap: run.status == 'prepared'
+                            onTap: (run.status == 'prepared' && !_isBusy)
                                 ? () => _editLine(run, line)
                                 : null,
                           ),
@@ -263,21 +330,27 @@ class _PayrollRunPageState extends State<PayrollRunPage> {
                               children: [
                                 if (run.status == 'prepared') ...[
                                   TextButton(
-                                    onPressed: () => _cancel(run),
+                                    onPressed: _isBusy
+                                        ? null
+                                        : () => _cancel(run),
                                     child: const Text('Annuler'),
                                   ),
                                   FilledButton(
-                                    onPressed: () => _validate(run),
+                                    onPressed: _isBusy
+                                        ? null
+                                        : () => _validate(run),
                                     child: const Text('Valider'),
                                   ),
                                 ],
                                 if (run.status == 'validated') ...[
                                   TextButton(
-                                    onPressed: () => _cancel(run),
+                                    onPressed: _isBusy
+                                        ? null
+                                        : () => _cancel(run),
                                     child: const Text('Annuler'),
                                   ),
                                   FilledButton(
-                                    onPressed: () => _pay(run),
+                                    onPressed: _isBusy ? null : () => _pay(run),
                                     child: const Text('Payer'),
                                   ),
                                 ],
