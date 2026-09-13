@@ -1,4 +1,4 @@
-import { Body, Controller, Get, HttpCode, HttpStatus, Param, Patch, Post, Req, UseGuards } from '@nestjs/common';
+import { Body, Controller, Delete, Get, HttpCode, HttpStatus, Param, Patch, Post, Req, UseGuards } from '@nestjs/common';
 import type { Request } from 'express';
 import { PermissionsGuard } from '../auth/permissions.guard.js';
 import { RequirePermissions } from '../auth/permissions.decorator.js';
@@ -35,8 +35,11 @@ export class NotificationsController {
     return this.notifications.markAsRead(establishmentId, request.user!.sub, notificationId);
   }
 
+  // Aucune @RequirePermissions ici non plus (demande utilisateur du
+  // 2026-09-13 : diffuser un message doit être opérationnel pour tous les
+  // rôles) — seule l'appartenance à l'établissement (vérifiée dans le
+  // service) est exigée, comme list/unreadCount/markAsRead ci-dessus.
   @Post('broadcast')
-  @RequirePermissions('settings.manage')
   broadcast(
     @Req() request: Request,
     @Param('establishmentId') establishmentId: string,
@@ -49,5 +52,13 @@ export class NotificationsController {
   @RequirePermissions('stock.manage')
   generateLowStockAlerts(@Req() request: Request, @Param('establishmentId') establishmentId: string) {
     return this.notifications.generateLowStockAlerts(establishmentId, request.user!.sub);
+  }
+
+  /** Réservé au Super Administrateur (seul rôle avec notifications.manage — voir supabase/seed/001_roles_permissions.sql). Efface définitivement toutes les notifications de l'organisation, pas seulement celles de l'appelant. */
+  @Delete()
+  @RequirePermissions('notifications.manage')
+  @HttpCode(HttpStatus.NO_CONTENT)
+  clearAll(@Req() request: Request, @Param('establishmentId') establishmentId: string) {
+    return this.notifications.clearAll(establishmentId, request.user!.sub);
   }
 }

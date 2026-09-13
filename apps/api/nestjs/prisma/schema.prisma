@@ -94,6 +94,15 @@ model UserProfile {
    * docs/api/users.md. `null` : jamais vu depuis l'ajout de ce champ.
    */
   lastSeenAt     DateTime? @map("last_seen_at")
+  /**
+   * Mis à jour à chaque chargement de la liste des notifications
+   * (NotificationsService.list) — sert de seuil pour "unreadCount" : une
+   * notification apparue avant ce moment ne compte plus dans le badge, que
+   * l'utilisateur l'ait ouverte individuellement ou non (voir
+   * docs/api/notifications.md pour pourquoi, notamment pour les diffusions,
+   * dont `readAt` est partagé par toute l'organisation).
+   */
+  notificationsViewedAt DateTime? @map("notifications_viewed_at")
 
   organization Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
 

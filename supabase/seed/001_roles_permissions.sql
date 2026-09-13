@@ -22,7 +22,8 @@ insert into permissions (code, description) values
   ('roles.manage',      'Gestion des rôles et permissions'),
   ('settings.manage',   'Paramètres de l''établissement'),
   ('payroll.manage',    'Gérer les employés et le workflow de paie (préparer/valider/payer/annuler)'),
-  ('payroll.view',      'Consulter les employés, la paie et son historique — sans les modifier')
+  ('payroll.view',      'Consulter les employés, la paie et son historique — sans les modifier'),
+  ('notifications.manage', 'Effacer toutes les notifications de l''organisation — réservé au Super Administrateur')
 on conflict (code) do nothing;
 
 insert into roles (organization_id, name, is_system) values
@@ -36,12 +37,25 @@ insert into roles (organization_id, name, is_system) values
   (null, 'Comptable',            true)
 on conflict (name) where organization_id is null do nothing;
 
--- Rôles à accès complet (plateforme / propriétaire) : toutes les permissions.
+-- Rôles à accès complet (plateforme / propriétaire) : toutes les permissions
+-- sauf notifications.manage (décision utilisateur du 2026-09-13 : réservée
+-- au seul Super Administrateur, jamais à Administrateur/Propriétaire malgré
+-- leur accès par ailleurs complet — voir la grille dédiée plus bas).
 insert into role_permissions (role_id, permission_id)
 select r.id, p.id
 from roles r
 cross join permissions p
 where r.is_system and r.name in ('Super Administrateur', 'Administrateur', 'Propriétaire')
+  and p.code <> 'notifications.manage'
+on conflict do nothing;
+
+-- notifications.manage : Super Administrateur uniquement (bouton "Effacer
+-- toutes les notifications", voir docs/api/notifications.md).
+insert into role_permissions (role_id, permission_id)
+select r.id, p.id
+from roles r
+join permissions p on p.code = 'notifications.manage'
+where r.is_system and r.name = 'Super Administrateur'
 on conflict do nothing;
 
 -- Gérant : tout sauf la gestion des rôles et des utilisateurs (décision

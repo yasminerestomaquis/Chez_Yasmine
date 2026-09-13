@@ -30,19 +30,52 @@ export class NotificationsService {
     return membership.establishment.organizationId;
   }
 
+  /**
+   * Marque aussi la liste comme "vue à l'instant" (`UserProfile.notificationsViewedAt`)
+   * — c'est ce qui fait disparaître le badge "9+" de l'accueil après avoir
+   * simplement ouvert cet écran, sans avoir à ouvrir chaque notification une
+   * par une (demande utilisateur du 2026-09-13). Voir `unreadCount` pour
+   * comment ce champ est utilisé, et pourquoi c'est nécessaire pour les
+   * diffusions (`readAt` y est partagé par toute l'organisation, donc ne
+   * peut pas servir de marqueur "vu par MOI").
+   */
   async list(establishmentId: string, userId: string) {
     const organizationId = await this.getOrganizationId(establishmentId, userId);
-    return this.prisma.notification.findMany({
-      where: { organizationId, OR: [{ userId }, { userId: null }] },
-      orderBy: { createdAt: 'desc' },
+    const [notifications] = await Promise.all([
+      this.prisma.notification.findMany({
+        where: { organizationId, OR: [{ userId }, { userId: null }] },
+        orderBy: { createdAt: 'desc' },
+      }),
+      this.prisma.userProfile.update({ where: { id: userId }, data: { notificationsViewedAt: new Date() } }),
+    ]);
+    return notifications;
+  }
+
+  /**
+   * Une notification apparue avant la dernière consultation de la liste
+   * (`notificationsViewedAt`) ne compte plus dans le badge — que
+   * l'utilisateur l'ait ouverte individuellement ou non. `notificationsViewedAt`
+   * `null` (jamais consultée) équivaut à "depuis toujours" : tout compte,
+   * comportement inchangé pour un utilisateur qui n'a encore jamais ouvert
+   * l'écran Notifications.
+   */
+  async unreadCount(establishmentId: string, userId: string): Promise<number> {
+    const organizationId = await this.getOrganizationId(establishmentId, userId);
+    const profile = await this.prisma.userProfile.findUnique({ where: { id: userId }, select: { notificationsViewedAt: true } });
+    return this.prisma.notification.count({
+      where: {
+        organizationId,
+        readAt: null,
+        createdAt: { gt: profile?.notificationsViewedAt ?? new Date(0) },
+        OR: [{ userId }, { userId: null }],
+      },
     });
   }
 
-  async unreadCount(establishmentId: string, userId: string): Promise<number> {
-    const organizationId = await this.getOrganizationId(establishmentId, userId);
-    return this.prisma.notification.count({
-      where: { organizationId, readAt: null, OR: [{ userId }, { userId: null }] },
-    });
+  /** Réservé au Super Administrateur (voir NotificationsController.clearAll) — efface toutes les notifications de l'organisation, ciblées ou diffusées, sans distinction. */
+  async clearAll(establishmentId: string, callerId: string): Promise<void> {
+    const organizationId = await this.getOrganizationId(establishmentId, callerId);
+    await this.prisma.notification.deleteMany({ where: { organizationId } });
   }
 
   /**

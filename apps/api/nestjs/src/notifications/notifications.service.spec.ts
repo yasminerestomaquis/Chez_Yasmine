@@ -7,7 +7,8 @@ import { NotificationsService } from './notifications.service.js';
 function makePrismaMock() {
   const prisma: Record<string, unknown> = {
     userEstablishmentRole: { findFirst: vi.fn() },
-    notification: { findMany: vi.fn(), count: vi.fn(), updateMany: vi.fn(), create: vi.fn(), findFirst: vi.fn() },
+    notification: { findMany: vi.fn(), count: vi.fn(), updateMany: vi.fn(), create: vi.fn(), findFirst: vi.fn(), deleteMany: vi.fn() },
+    userProfile: { update: vi.fn().mockResolvedValue({}), findUnique: vi.fn().mockResolvedValue(null) },
   };
   return prisma;
 }
@@ -50,13 +51,60 @@ describe('NotificationsService.list / unreadCount', () => {
     });
   });
 
-  it('counts unread the same way', async () => {
+  it('records that the user just viewed the list (clears the badge from now on)', async () => {
+    (prisma.notification as any).findMany.mockResolvedValue([]);
+    await service.list('est-1', 'user-1');
+    expect(prisma.userProfile.update).toHaveBeenCalledWith({
+      where: { id: 'user-1' },
+      data: { notificationsViewedAt: expect.any(Date) },
+    });
+  });
+
+  it('counts unread notifications created after the last time the list was viewed', async () => {
+    (prisma.userProfile as any).findUnique.mockResolvedValue({ notificationsViewedAt: new Date('2026-09-13T10:00:00Z') });
     (prisma.notification as any).count.mockResolvedValue(3);
     const result = await service.unreadCount('est-1', 'user-1');
     expect(result).toBe(3);
     expect(prisma.notification.count).toHaveBeenCalledWith({
-      where: { organizationId: 'org-1', readAt: null, OR: [{ userId: 'user-1' }, { userId: null }] },
+      where: {
+        organizationId: 'org-1',
+        readAt: null,
+        createdAt: { gt: new Date('2026-09-13T10:00:00Z') },
+        OR: [{ userId: 'user-1' }, { userId: null }],
+      },
     });
+  });
+
+  it('counts everything (since the beginning of time) when the user has never viewed the list', async () => {
+    (prisma.userProfile as any).findUnique.mockResolvedValue({ notificationsViewedAt: null });
+    (prisma.notification as any).count.mockResolvedValue(5);
+    await service.unreadCount('est-1', 'user-1');
+    expect(prisma.notification.count).toHaveBeenCalledWith(
+      expect.objectContaining({ where: expect.objectContaining({ createdAt: { gt: new Date(0) } }) }),
+    );
+  });
+});
+
+describe('NotificationsService.clearAll', () => {
+  let prisma: ReturnType<typeof makePrismaMock>;
+  let service: NotificationsService;
+
+  beforeEach(() => {
+    prisma = makePrismaMock();
+    service = new NotificationsService(prisma as unknown as PrismaService, makeStockMovementsMock() as unknown as StockMovementsService);
+    (prisma.userEstablishmentRole as any).findFirst.mockResolvedValue({ establishment: { organizationId: 'org-1' } });
+  });
+
+  it('deletes every notification of the organization, targeted or broadcast', async () => {
+    (prisma.notification as any).deleteMany.mockResolvedValue({ count: 7 });
+    await service.clearAll('est-1', 'caller-1');
+    expect(prisma.notification.deleteMany).toHaveBeenCalledWith({ where: { organizationId: 'org-1' } });
+  });
+
+  it('rejects a caller with no role on the establishment', async () => {
+    (prisma.userEstablishmentRole as any).findFirst.mockResolvedValue(null);
+    await expect(service.clearAll('est-1', 'user-x')).rejects.toBeInstanceOf(ForbiddenException);
+    expect(prisma.notification.deleteMany).not.toHaveBeenCalled();
   });
 });
 
