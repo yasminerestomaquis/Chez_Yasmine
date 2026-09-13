@@ -133,6 +133,7 @@ export class PayrollService {
 
     await this.activityNotifier.notify(
       establishmentId,
+      userId,
       'Salaires payés',
       `${total.toLocaleString('fr-FR')} FCFA versés pour ${run.lines.length} employé(s)`,
     );

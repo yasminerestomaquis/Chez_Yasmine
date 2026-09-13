@@ -239,7 +239,9 @@ class _NotificationsPageState extends State<NotificationsPage> {
                     ),
                   ),
                   subtitle: Text(
-                    '${n.body != null && n.body!.isNotEmpty ? '${n.body}\n' : ''}${dateFormat.format(n.createdAt.toLocal())}',
+                    '${n.body != null && n.body!.isNotEmpty ? '${n.body}\n' : ''}'
+                    '${dateFormat.format(n.createdAt.toLocal())}'
+                    '${n.createdByName != null ? ' · Par ${n.createdByName}' : ''}',
                   ),
                   isThreeLine: n.body != null && n.body!.isNotEmpty,
                   onTap: () => _openNotification(n),

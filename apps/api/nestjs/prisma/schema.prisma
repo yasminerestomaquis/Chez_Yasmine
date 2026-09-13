@@ -113,7 +113,8 @@ model UserProfile {
   salesCreated         Sale[]                  @relation("SaleCreatedBy")
   serverCommissions    ServerCommission[]
   cashClosings         CashClosing[]
-  notifications        Notification[]
+  notifications        Notification[]         @relation("NotificationRecipient")
+  notificationsCreated Notification[]         @relation("NotificationCreatedBy")
   syncOperations       SyncOperation[]
   auditLogs            AuditLog[]
   payrollRunsPrepared  PayrollRun[]            @relation("PayrollRunPreparedBy")
@@ -716,13 +717,20 @@ model Notification {
   id             String    @id @default(uuid())
   organizationId String    @map("organization_id")
   userId         String?   @map("user_id")
+  /// Auteur de l'opération ayant déclenché la notification (qui a vendu,
+  /// saisi la dépense, diffusé le message...) — distinct de `userId`, qui
+  /// est le DESTINATAIRE (`null` = diffusion à toute l'organisation). Peut
+  /// être `null` pour une notification générée automatiquement (alerte de
+  /// stock bas), qui n'a pas d'auteur humain.
+  createdBy      String?   @map("created_by")
   title          String
   body           String?
   readAt         DateTime? @map("read_at")
   createdAt      DateTime  @default(now()) @map("created_at")
 
-  organization Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
-  user         UserProfile? @relation(fields: [userId], references: [id], onDelete: Cascade)
+  organization  Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  user          UserProfile? @relation("NotificationRecipient", fields: [userId], references: [id], onDelete: Cascade)
+  createdByUser UserProfile? @relation("NotificationCreatedBy", fields: [createdBy], references: [id])
 
   @@map("notifications")
 }

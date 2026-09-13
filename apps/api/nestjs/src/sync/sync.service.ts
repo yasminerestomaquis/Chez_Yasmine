@@ -123,7 +123,7 @@ export class SyncService {
         return this.stockMovements.create(establishmentId, productId, userId, { ...rest, id: operation.id } as any);
       }
       case 'expense':
-        return this.expenses.create(establishmentId, { ...(operation.payload as object), id: operation.id } as any);
+        return this.expenses.create(establishmentId, userId, { ...(operation.payload as object), id: operation.id } as any);
       case 'loss':
         return this.losses.create(establishmentId, userId, { ...(operation.payload as object), id: operation.id } as any);
       case 'purchase':

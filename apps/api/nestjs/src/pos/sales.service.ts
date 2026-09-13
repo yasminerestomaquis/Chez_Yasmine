@@ -185,7 +185,7 @@ export class SalesService {
 
       return sale;
     });
-    await this.activityNotifier.notify(establishmentId, 'Nouvelle vente', `${totals.total.toLocaleString('fr-FR')} FCFA`);
+    await this.activityNotifier.notify(establishmentId, userId, 'Nouvelle vente', `${totals.total.toLocaleString('fr-FR')} FCFA`);
     return sale;
   }
 

@@ -86,7 +86,7 @@ export class ExpensesService {
     return (last?.marketNumber ?? 0) + 1;
   }
 
-  async create(establishmentId: string, dto: CreateExpenseDto) {
+  async create(establishmentId: string, userId: string, dto: CreateExpenseDto) {
     // Idempotent replay — même motif que SalesService.create : une dépense
     // saisie hors ligne peut être renvoyée plusieurs fois par la file de
     // synchronisation sans créer de doublon.
@@ -119,6 +119,7 @@ export class ExpensesService {
     });
     await this.activityNotifier.notify(
       establishmentId,
+      userId,
       'Nouvelle dépense',
       `${dto.label} — ${dto.amount.toLocaleString('fr-FR')} FCFA${dto.category ? ` (${dto.category})` : ''}`,
     );

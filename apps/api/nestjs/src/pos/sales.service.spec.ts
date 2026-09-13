@@ -127,7 +127,7 @@ describe('SalesService.create', () => {
       expect.objectContaining({ data: expect.objectContaining({ subtotal: 3000, discount: 0, total: 3000 }) }),
     );
     expect(prisma.credit.create).not.toHaveBeenCalled();
-    expect(activityNotifierMock.notify).toHaveBeenCalledWith('est-1', 'Nouvelle vente', expect.stringContaining('3'));
+    expect(activityNotifierMock.notify).toHaveBeenCalledWith('est-1', 'user-1', 'Nouvelle vente', expect.stringContaining('3'));
   });
 
   describe('two lines of the same product (variable-pricing sold at two different prices the same day)', () => {

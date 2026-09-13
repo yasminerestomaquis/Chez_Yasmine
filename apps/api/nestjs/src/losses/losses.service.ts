@@ -47,6 +47,7 @@ export class LossesService {
     });
     await this.activityNotifier.notify(
       establishmentId,
+      userId,
       'Perte enregistrée',
       `${product.name} — ${dto.quantity}${dto.reason ? ` (${dto.reason})` : ''}`,
     );

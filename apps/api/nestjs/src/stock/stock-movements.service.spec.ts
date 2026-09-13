@@ -54,6 +54,7 @@ describe('StockMovementsService', () => {
     expect(prisma.$transaction).toHaveBeenCalledTimes(1);
     expect(activityNotifierMock.notify).toHaveBeenCalledWith(
       'est-1',
+      'user-1',
       'Mouvement de stock',
       expect.stringContaining('Bière Flag'),
     );

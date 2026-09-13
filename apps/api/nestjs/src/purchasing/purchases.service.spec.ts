@@ -135,7 +135,7 @@ describe('PurchasesService.create', () => {
     expect(prisma.stockMovement.create).toHaveBeenCalledWith({
       data: { productId: 'p1', type: 'in', quantity: 24, reason: 'Commande n°1', createdBy: 'user-1' },
     });
-    expect(activityNotifierMock.notify).toHaveBeenCalledWith('est-1', 'Achat reçu', expect.stringContaining('Brasseries du Sud'));
+    expect(activityNotifierMock.notify).toHaveBeenCalledWith('est-1', 'user-1', 'Achat reçu', expect.stringContaining('Brasseries du Sud'));
   });
 });
 
@@ -288,6 +288,7 @@ describe('PurchasesService.receive (flux hérité, commandes `pending` existante
     );
     expect(activityNotifierMock.notify).toHaveBeenCalledWith(
       'est-1',
+      'user-1',
       'Achat reçu',
       expect.stringContaining('Brasseries du Sud'),
     );

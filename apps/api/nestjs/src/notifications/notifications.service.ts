@@ -39,16 +39,27 @@ export class NotificationsService {
    * diffusions (`readAt` y est partagé par toute l'organisation, donc ne
    * peut pas servir de marqueur "vu par MOI").
    */
+  /**
+   * `createdByName` : auteur de l'opération ayant déclenché la notification
+   * (qui a vendu, saisi la dépense...), aplati depuis la relation
+   * `createdByUser` pour une réponse simple côté client — traçabilité
+   * demandée par l'utilisateur (2026-09-13). `null` pour une notification
+   * générée automatiquement (alerte de stock bas), qui n'a pas d'auteur humain.
+   */
   async list(establishmentId: string, userId: string) {
     const organizationId = await this.getOrganizationId(establishmentId, userId);
     const [notifications] = await Promise.all([
       this.prisma.notification.findMany({
         where: { organizationId, OR: [{ userId }, { userId: null }] },
         orderBy: { createdAt: 'desc' },
+        include: { createdByUser: { select: { fullName: true } } },
       }),
       this.prisma.userProfile.update({ where: { id: userId }, data: { notificationsViewedAt: new Date() } }),
     ]);
-    return notifications;
+    return notifications.map(({ createdByUser, ...notification }) => ({
+      ...notification,
+      createdByName: createdByUser?.fullName ?? null,
+    }));
   }
 
   /**
@@ -107,7 +118,7 @@ export class NotificationsService {
       }
     }
     return this.prisma.notification.create({
-      data: { organizationId, userId: dto.userId, title: dto.title, body: dto.body },
+      data: { organizationId, userId: dto.userId, createdBy: callerId, title: dto.title, body: dto.body },
     });
   }
 

@@ -82,6 +82,7 @@ export class StockMovementsService {
     ]);
     await this.activityNotifier.notify(
       establishmentId,
+      userId,
       'Mouvement de stock',
       `${MOVEMENT_TYPE_LABELS[dto.type] ?? dto.type} — ${product.name} : ${dto.quantity}${dto.reason ? ` (${dto.reason})` : ''}`,
     );

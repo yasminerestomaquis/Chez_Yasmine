@@ -81,6 +81,7 @@ export class CashService {
     const difference = dto.countedAmount - expectedAmount;
     await this.activityNotifier.notify(
       establishmentId,
+      userId,
       'Clôture de caisse',
       `Montant compté : ${dto.countedAmount.toLocaleString('fr-FR')} FCFA — écart : ${difference.toLocaleString('fr-FR')} FCFA`,
     );

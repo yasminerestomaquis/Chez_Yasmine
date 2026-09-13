@@ -48,7 +48,20 @@ describe('NotificationsService.list / unreadCount', () => {
     expect(prisma.notification.findMany).toHaveBeenCalledWith({
       where: { organizationId: 'org-1', OR: [{ userId: 'user-1' }, { userId: null }] },
       orderBy: { createdAt: 'desc' },
+      include: { createdByUser: { select: { fullName: true } } },
     });
+  });
+
+  it('flattens the author\'s name onto each notification (traceability, 2026-09-13), null when there is none', async () => {
+    (prisma.notification as any).findMany.mockResolvedValue([
+      { id: 'notif-1', title: 'Nouvelle vente', createdByUser: { fullName: 'Awa Koné' } },
+      { id: 'notif-2', title: 'Stock bas : Bière', createdByUser: null },
+    ]);
+    const result = await service.list('est-1', 'user-1');
+    expect(result).toEqual([
+      { id: 'notif-1', title: 'Nouvelle vente', createdByName: 'Awa Koné' },
+      { id: 'notif-2', title: 'Stock bas : Bière', createdByName: null },
+    ]);
   });
 
   it('records that the user just viewed the list (clears the badge from now on)', async () => {
@@ -142,11 +155,11 @@ describe('NotificationsService.broadcast', () => {
     (prisma.userEstablishmentRole as any).findFirst.mockResolvedValue({ establishment: { organizationId: 'org-1' } });
   });
 
-  it('creates an org-wide notification when no userId is given', async () => {
+  it('creates an org-wide notification when no userId is given, crediting the caller as author', async () => {
     (prisma.notification as any).create.mockResolvedValue({ id: 'notif-1' });
     await service.broadcast('est-1', 'caller-1', { title: 'Fermeture demain' });
     expect(prisma.notification.create).toHaveBeenCalledWith({
-      data: { organizationId: 'org-1', userId: undefined, title: 'Fermeture demain', body: undefined },
+      data: { organizationId: 'org-1', userId: undefined, createdBy: 'caller-1', title: 'Fermeture demain', body: undefined },
     });
   });
 

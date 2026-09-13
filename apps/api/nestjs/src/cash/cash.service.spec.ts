@@ -37,6 +37,7 @@ describe('CashService.close', () => {
 
     expect(activityNotifierMock.notify).toHaveBeenCalledWith(
       'est-1',
+      'user-1',
       'Clôture de caisse',
       expect.stringContaining('19'),
     );

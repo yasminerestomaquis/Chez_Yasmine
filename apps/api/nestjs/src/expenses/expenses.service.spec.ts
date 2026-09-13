@@ -112,17 +112,18 @@ describe('ExpensesService.create', () => {
 
   it('defaults periodicity to one_off when not given', async () => {
     (prisma.expense as any).create.mockResolvedValue({ id: 'exp-1' });
-    await service.create('est-1', { label: 'Loyer', amount: 50000 });
+    await service.create('est-1', 'user-1', { label: 'Loyer', amount: 50000 });
     expect(prisma.expense.create).toHaveBeenCalledWith({
       data: expect.objectContaining({ periodicity: 'one_off' }),
     });
   });
 
-  it('notifies the organization of the new expense (visible in Notifications)', async () => {
+  it('notifies the organization of the new expense (visible in Notifications), crediting the author', async () => {
     (prisma.expense as any).create.mockResolvedValue({ id: 'exp-1' });
-    await service.create('est-1', { label: 'Loyer', amount: 50000, category: 'Loyer' });
+    await service.create('est-1', 'user-1', { label: 'Loyer', amount: 50000, category: 'Loyer' });
     expect(activityNotifierMock.notify).toHaveBeenCalledWith(
       'est-1',
+      'user-1',
       'Nouvelle dépense',
       expect.stringContaining('Loyer'),
     );
@@ -130,20 +131,20 @@ describe('ExpensesService.create', () => {
 
   it('does not notify again when replaying an already-recorded expense (idempotent sync retry)', async () => {
     (prisma.expense as any).findFirst.mockResolvedValue({ id: 'exp-1' });
-    await service.create('est-1', { id: 'exp-1', label: 'Loyer', amount: 50000 });
+    await service.create('est-1', 'user-1', { id: 'exp-1', label: 'Loyer', amount: 50000 });
     expect(activityNotifierMock.notify).not.toHaveBeenCalled();
   });
 
   it('rejects a manually-created expense with category "Salaires" (must come from a payroll payment)', async () => {
     await expect(
-      service.create('est-1', { label: 'Salaires équipe', amount: 100000, category: 'Salaires' }),
+      service.create('est-1', 'user-1', { label: 'Salaires équipe', amount: 100000, category: 'Salaires' }),
     ).rejects.toBeInstanceOf(BadRequestException);
     expect(prisma.expense.create).not.toHaveBeenCalled();
   });
 
   it('passes through an explicit periodicity', async () => {
     (prisma.expense as any).create.mockResolvedValue({ id: 'exp-1' });
-    await service.create('est-1', { label: 'Loyer', amount: 50000, periodicity: 'recurring' });
+    await service.create('est-1', 'user-1', { label: 'Loyer', amount: 50000, periodicity: 'recurring' });
     expect(prisma.expense.create).toHaveBeenCalledWith({
       data: expect.objectContaining({ periodicity: 'recurring' }),
     });
@@ -151,14 +152,14 @@ describe('ExpensesService.create', () => {
 
   it('replays an idempotent create instead of inserting a duplicate (offline sync retry)', async () => {
     (prisma.expense as any).findFirst.mockResolvedValue({ id: 'exp-1', label: 'Loyer' });
-    const result = await service.create('est-1', { id: 'exp-1', label: 'Loyer', amount: 50000 });
+    const result = await service.create('est-1', 'user-1', { id: 'exp-1', label: 'Loyer', amount: 50000 });
     expect(result).toEqual({ id: 'exp-1', label: 'Loyer' });
     expect(prisma.expense.create).not.toHaveBeenCalled();
   });
 
   it('passes through an explicit marketNumber', async () => {
     (prisma.expense as any).create.mockResolvedValue({ id: 'exp-1' });
-    await service.create('est-1', { label: 'Achat du jour', amount: 15000, category: 'Marché', marketNumber: 3 });
+    await service.create('est-1', 'user-1', { label: 'Achat du jour', amount: 15000, category: 'Marché', marketNumber: 3 });
     expect(prisma.expense.create).toHaveBeenCalledWith({
       data: expect.objectContaining({ marketNumber: 3 }),
     });

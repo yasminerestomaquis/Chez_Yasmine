@@ -127,6 +127,7 @@ export class PurchasesService {
     }, PURCHASE_TRANSACTION_OPTIONS);
     await this.activityNotifier.notify(
       establishmentId,
+      userId,
       'Achat reçu',
       `${purchase.supplier?.name ?? 'Fournisseur non renseigné'} — ${total.toLocaleString('fr-FR')} FCFA (${lines.length} article(s))`,
     );
@@ -245,6 +246,7 @@ export class PurchasesService {
     }, PURCHASE_TRANSACTION_OPTIONS);
     await this.activityNotifier.notify(
       establishmentId,
+      userId,
       'Achat reçu',
       `${received.supplier?.name ?? 'Fournisseur non renseigné'} — ${received.total.toNumber().toLocaleString('fr-FR')} FCFA (${received.items.length} article(s))`,
     );

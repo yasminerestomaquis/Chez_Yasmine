@@ -1,5 +1,5 @@
-import { Body, Controller, Delete, Get, HttpCode, HttpStatus, Param, Patch, Post, Query, Res, UseGuards } from '@nestjs/common';
-import type { Response } from 'express';
+import { Body, Controller, Delete, Get, HttpCode, HttpStatus, Param, Patch, Post, Query, Req, Res, UseGuards } from '@nestjs/common';
+import type { Request, Response } from 'express';
 import { PermissionsGuard } from '../auth/permissions.guard.js';
 import { RequirePermissions } from '../auth/permissions.decorator.js';
 import { SupabaseJwtGuard } from '../auth/supabase-jwt.guard.js';
@@ -58,8 +58,8 @@ export class ExpensesController {
   }
 
   @Post()
-  create(@Param('establishmentId') establishmentId: string, @Body() dto: CreateExpenseDto) {
-    return this.expenses.create(establishmentId, dto);
+  create(@Req() request: Request, @Param('establishmentId') establishmentId: string, @Body() dto: CreateExpenseDto) {
+    return this.expenses.create(establishmentId, request.user!.sub, dto);
   }
 
   @Patch(':expenseId')

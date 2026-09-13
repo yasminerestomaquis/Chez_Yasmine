@@ -2,6 +2,12 @@
 
 ## [Unreleased]
 
+### Ajouté (2026-09-13) — Traçabilité : chaque notification porte le nom de son auteur
+- Nouvelle colonne `Notification.createdBy`, distincte du destinataire (`userId`) — auteur de l'opération à l'origine de la notification (qui a vendu, saisi la dépense, enregistré la perte, reçu l'achat, effectué le mouvement de stock, clôturé la caisse, payé les salaires, ou diffusé le message).
+- `ActivityNotifierService.notify` prend désormais l'id de l'auteur, transmis par les 7 services métier concernés ; `NotificationsService.broadcast` crédite l'utilisateur qui diffuse. `Dépenses` n'avait jusqu'ici aucun id d'utilisateur disponible côté service — désormais transmis depuis le contrôleur.
+- Affiché dans le module Notifications (« · Par <Nom> »), `null`/absent pour une notification générée automatiquement (alerte de stock bas), qui n'a pas d'auteur humain.
+- 351/351 tests NestJS, `flutter analyze`/`test`/`build web` ✅ (73/73 tests Flutter, 2 nouveaux).
+
 ### Corrigé (2026-09-13) — Le bouton de synchronisation pouvait rester bloqué au-delà de 100 opérations en attente
 - Le serveur plafonne un lot de synchronisation à 100 opérations ; `syncAll()` envoyait toute la file en une seule requête, quelle que soit sa taille — au-delà de 100 opérations en attente (période hors ligne prolongée sur plusieurs modules), le serveur aurait rejeté le lot en bloc et plus aucune synchronisation n'aurait pu progresser, ni automatique ni via le bouton manuel.
 - Corrigé : `SyncQueueService.syncAll()` envoie désormais la file par lots d'au plus 100, chaque lot n'étant retiré de la file locale qu'une fois sa propre réponse reçue — un lot en échec ne fait jamais perdre les lots précédents déjà synchronisés.

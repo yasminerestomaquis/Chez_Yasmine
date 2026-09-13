@@ -6,6 +6,7 @@ class AppNotification {
     this.body,
     this.readAt,
     required this.createdAt,
+    this.createdByName,
   });
 
   final String id;
@@ -14,6 +15,11 @@ class AppNotification {
   final String? body;
   final DateTime? readAt;
   final DateTime createdAt;
+
+  /// Auteur de l'opération à l'origine de la notification (qui a vendu,
+  /// saisi la dépense...) — traçabilité, `null` pour une notification
+  /// générée automatiquement (alerte de stock bas), sans auteur humain.
+  final String? createdByName;
 
   bool get isBroadcast => userId == null;
   bool get isUnread => readAt == null;
@@ -28,5 +34,6 @@ class AppNotification {
             ? null
             : DateTime.parse(json['readAt'] as String),
         createdAt: DateTime.parse(json['createdAt'] as String),
+        createdByName: json['createdByName'] as String?,
       );
 }

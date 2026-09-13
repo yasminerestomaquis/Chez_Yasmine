@@ -67,6 +67,7 @@ describe('LossesService.create', () => {
     });
     expect(activityNotifierMock.notify).toHaveBeenCalledWith(
       'est-1',
+      'user-1',
       'Perte enregistrée',
       expect.stringContaining('Poulet Braisé'),
     );

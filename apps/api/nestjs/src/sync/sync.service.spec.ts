@@ -128,7 +128,11 @@ describe('SyncService.processBatch', () => {
       { id: 'op-6', entityType: 'expense', deviceId: 'device-1', payload: { label: 'Eau', amount: 5000 } },
     ]);
 
-    expect(expenses.create).toHaveBeenCalledWith('est-1', expect.objectContaining({ id: 'op-6', label: 'Eau', amount: 5000 }));
+    expect(expenses.create).toHaveBeenCalledWith(
+      'est-1',
+      'user-1',
+      expect.objectContaining({ id: 'op-6', label: 'Eau', amount: 5000 }),
+    );
     expect(result.status).toBe('SYNCED');
   });
 

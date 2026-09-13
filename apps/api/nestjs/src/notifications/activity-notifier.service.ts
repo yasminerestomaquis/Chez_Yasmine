@@ -21,7 +21,13 @@ export class ActivityNotifierService {
 
   constructor(private readonly prisma: PrismaService) {}
 
-  async notify(establishmentId: string, title: string, body: string): Promise<void> {
+  /**
+   * `userId` : auteur de l'opération ayant déclenché la notification (qui a
+   * vendu, saisi la dépense, enregistré la perte...) — traçabilité demandée
+   * par l'utilisateur (2026-09-13), affichée dans le module Notifications
+   * (voir `NotificationsService.list`).
+   */
+  async notify(establishmentId: string, userId: string, title: string, body: string): Promise<void> {
     const establishment = await this.prisma.establishment.findUnique({
       where: { id: establishmentId },
       select: { organizationId: true },
@@ -34,7 +40,7 @@ export class ActivityNotifierService {
       return;
     }
     await this.prisma.notification.create({
-      data: { organizationId: establishment.organizationId, title, body },
+      data: { organizationId: establishment.organizationId, createdBy: userId, title, body },
     });
   }
 }
