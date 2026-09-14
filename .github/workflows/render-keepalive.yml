@@ -1,0 +1,26 @@
+name: Render Keep-Alive
+
+# Le plan gratuit Render met le service en veille après ~15 minutes sans
+# trafic ; la requête suivante subit alors un "cold start" de 30 à 60s avant
+# de répondre — c'est ce qui rend l'application difficile à afficher pour un
+# utilisateur qui arrive après une pause (constaté par l'utilisateur,
+# 2026-09-14). Un ping toutes les 10 minutes, bien en-deçà du seuil de mise
+# en veille, maintient le service éveillé en continu.
+on:
+  schedule:
+    - cron: '*/10 * * * *'
+  workflow_dispatch: {}
+
+jobs:
+  ping:
+    name: Ping l'API NestJS déployée
+    runs-on: ubuntu-latest
+    steps:
+      - name: Interroger la racine de l'API (aucune authentification requise)
+        run: |
+          code=$(curl -s -o /dev/null -w '%{http_code}' https://chez-yasmine-api.onrender.com/)
+          echo "Réponse API : HTTP $code"
+          if [ "$code" -ge 500 ]; then
+            echo "::error::L'API a répondu avec une erreur serveur ($code)."
+            exit 1
+          fi

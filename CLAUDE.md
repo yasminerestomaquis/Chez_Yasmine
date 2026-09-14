@@ -109,6 +109,12 @@ Validée explicitement par l'utilisateur (2026-09-05) : Supabase Auth est le fou
 3. Secrets exclusivement via les secrets GitHub Actions / variables d'environnement de la plateforme d'hébergement.
 4. Migrations Supabase appliquées avant le déploiement applicatif, jamais après.
 5. `.github/workflows/supabase-keepalive.yml` : requête quotidienne programmée (cron) vers l'API REST Supabase, pour empêcher la mise en pause automatique du projet gratuit après ~7 jours d'inactivité (décision actée 2026-09-14).
+6. `.github/workflows/render-keepalive.yml` : requête programmée toutes les 10 minutes vers l'API NestJS déployée (Render, plan gratuit — mise en veille après ~15 min sans trafic, cold start de 30-60s sinon), pour que l'application reste rapide à afficher (décision actée 2026-09-14).
+
+## Hébergement de production
+
+- API NestJS : Render (`chez-yasmine-api`, plan gratuit, `render.yaml`), déployée en continu depuis `main`. URL : `https://chez-yasmine-api.onrender.com`.
+- PWA Flutter Web : Vercel (`apps/web/flutter/vercel.json`), déployée en continu depuis `main`. URL : `https://chez-yasmine-two.vercel.app`.
 
 ## État des lieux — legacy v1
 

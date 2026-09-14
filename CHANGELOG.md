@@ -2,6 +2,10 @@
 
 ## [Unreleased]
 
+### Corrigé (2026-09-14) — Application difficile à afficher : l'API déployée (Render, plan gratuit) s'endort après 15 min d'inactivité
+- Constaté par l'utilisateur : la page web est parfois difficile à afficher. Cause probable identifiée : l'API NestJS est déployée sur Render en plan gratuit (`render.yaml`), qui met le service en veille après ~15 minutes sans trafic — la requête suivante subit un « cold start » de 30 à 60s avant de répondre, pendant que la PWA (Vercel, elle-même statique et toujours rapide) attend la réponse.
+- Nouveau workflow GitHub Actions (`.github/workflows/render-keepalive.yml`), toutes les 10 minutes, interroge la racine de l'API déployée — maintient le service éveillé en continu.
+
 ### Ajouté (2026-09-14) — Requête programmée pour maintenir le projet Supabase actif
 - Nouveau workflow GitHub Actions (`.github/workflows/supabase-keepalive.yml`), quotidien (cron), interroge l'API REST Supabase (`GET /rest/v1/organizations`) pour éviter la mise en pause automatique du projet gratuit après ~7 jours sans activité.
 - Utilise la clé publique (anon/publishable, déjà en clair dans le dépôt côté Flutter) — aucun nouveau secret nécessaire ; la requête compte comme activité même filtrée par RLS.
