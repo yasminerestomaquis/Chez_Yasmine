@@ -51,6 +51,8 @@ Repli intentionnel si la suggestion échoue (hors ligne, permission manquante) :
 
 Une vente n'est **jamais supprimée**, seulement marquée `voidedAt` (colonne ajoutée par la migration `20260905210122_add_sale_voided_at.sql`) — piste d'audit conservée. Le remboursement : restocke chaque article (mouvement `in`, motif `Remboursement vente <id>`), et si la vente comportait un paiement crédit, réduit le solde du client du montant crédité pour cette vente précise (clampé à 0, plutôt que de faire échouer un remboursement pour un désalignement comptable mineur — différent d'`applyRepayment`, qui reste strict pour un remboursement volontaire initié par le client).
 
+**Correctif (2026-09-14)** : `PosRepository.refund` existait côté Flutter depuis l'origine mais n'était relié à aucun bouton — endpoint testé et fonctionnel, mais injoignable depuis l'application. Découvert lors d'une vérification en conditions réelles (vente test créée pour valider une autre fonctionnalité, sans moyen de l'annuler proprement). Un bouton « Rembourser cette vente » (icône retour, avec confirmation — action irréversible) a été ajouté sur chaque carte de `sold_items_page.dart`, à côté du montant total.
+
 ## Vente à l'unité en plus du lot (décision actée 2026-09-14)
 
 Demande utilisateur explicite (ex. Heineken 33/Despé 33, normalement vendues par lot de 3 à 2 000 FCFA) : permettre aussi la vente d'une seule bouteille, à un prix différent (700 FCFA) — sans en faire un produit à prix variable (le champ `unit` reste un simple texte libre, ex. "3", purement informatif).

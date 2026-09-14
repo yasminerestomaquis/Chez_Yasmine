@@ -99,6 +99,51 @@ class _SoldItemsPageState extends State<SoldItemsPage> {
     }
   }
 
+  /// Annulation complète d'une vente (restitue le stock, efface le crédit
+  /// client le cas échéant) — jusqu'ici le seul point d'entrée était l'API
+  /// (`PosRepository.refund`, `SalesService.refund`), sans bouton dans
+  /// l'application ; ajouté ici à la demande de l'utilisateur (2026-09-14,
+  /// vérification en conditions réelles), même emplacement que les
+  /// corrections de quantité/paiement ci-dessus.
+  Future<void> _refund(SaleResult sale) async {
+    final confirmed = await showDialog<bool>(
+      context: context,
+      builder: (context) => AlertDialog(
+        title: const Text('Rembourser cette vente ?'),
+        content: Text(
+          'La vente de ${_timeFormat.format(sale.createdAt.toLocal())} '
+          '(${formatAmount(sale.total)} FCFA) sera annulée et le stock '
+          'restitué. Cette action est irréversible.',
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.of(context).pop(false),
+            child: const Text('Annuler'),
+          ),
+          FilledButton(
+            onPressed: () => Navigator.of(context).pop(true),
+            child: const Text('Rembourser'),
+          ),
+        ],
+      ),
+    );
+    if (confirmed != true) return;
+    try {
+      await _repository.refund(sale.id);
+      _reload();
+    } on ApiException catch (e) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(
+        context,
+      ).showSnackBar(SnackBar(content: Text(e.message)));
+    } catch (_) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('Erreur réseau — vente non remboursée')),
+      );
+    }
+  }
+
   Future<void> _editPaymentMethod(SaleResult sale, PaymentResult payment) async {
     final method = await showDialog<String>(
       context: context,
@@ -176,9 +221,24 @@ class _SoldItemsPageState extends State<SoldItemsPage> {
                             _timeFormat.format(sale.createdAt.toLocal()),
                             style: const TextStyle(fontWeight: FontWeight.bold),
                           ),
-                          Text(
-                            '${formatAmount(sale.total)} FCFA',
-                            style: const TextStyle(fontWeight: FontWeight.bold),
+                          Row(
+                            mainAxisSize: MainAxisSize.min,
+                            children: [
+                              Text(
+                                '${formatAmount(sale.total)} FCFA',
+                                style: const TextStyle(
+                                  fontWeight: FontWeight.bold,
+                                ),
+                              ),
+                              IconButton(
+                                tooltip: 'Rembourser cette vente',
+                                icon: const Icon(
+                                  Icons.undo_outlined,
+                                  size: 20,
+                                ),
+                                onPressed: () => _refund(sale),
+                              ),
+                            ],
                           ),
                         ],
                       ),
