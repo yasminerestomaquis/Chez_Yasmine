@@ -2,6 +2,12 @@
 
 ## [Unreleased]
 
+### Ajouté (2026-09-14) — Rapports : bouton « Plats vendus », même principe que « Boissons vendues »
+- Nouveau bouton (icône 🍽️) juste à côté de « Boissons vendues » : listing des produits vendus des catégories à prix variable (Plats africains, Poissons, Poulets) pour une date choisie, affiché dans l'application puis exportable en `.xlsx` (`GET .../reports/plats-sold.xlsx`).
+- Strictement symétrique à « Boissons vendues » — mêmes routes de base, mais filtré sur `hasVariablePricing` et colonne « N° marché » (`Sale.marketNumber`) plutôt que « N° commande ».
+- `Sale.marketNumber` n'était pas encore exposé côté Flutter (`SaleResult`) bien que déjà renvoyé par le serveur — ajouté en miroir d'`orderNumber`.
+- 3 nouveaux tests NestJS, `flutter analyze`/`test`/`build web` ✅ (75/75 tests Flutter, sans régression).
+
 ### Corrigé (2026-09-14) — Application difficile à afficher : l'API déployée (Render, plan gratuit) s'endort après 15 min d'inactivité
 - Constaté par l'utilisateur : la page web est parfois difficile à afficher. Cause probable identifiée : l'API NestJS est déployée sur Render en plan gratuit (`render.yaml`), qui met le service en veille après ~15 minutes sans trafic — la requête suivante subit un « cold start » de 30 à 60s avant de répondre, pendant que la PWA (Vercel, elle-même statique et toujours rapide) attend la réponse.
 - Nouveau workflow GitHub Actions (`.github/workflows/render-keepalive.yml`), toutes les 10 minutes, interroge la racine de l'API déployée — maintient le service éveillé en continu.

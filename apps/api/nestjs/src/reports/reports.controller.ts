@@ -4,6 +4,7 @@ import { PermissionsGuard } from '../auth/permissions.guard.js';
 import { RequirePermissions } from '../auth/permissions.decorator.js';
 import { SupabaseJwtGuard } from '../auth/supabase-jwt.guard.js';
 import { BeveragesSoldQueryDto } from './dto/beverages-sold-query.dto.js';
+import { PlatsSoldQueryDto } from './dto/plats-sold-query.dto.js';
 import { ReportQueryDto } from './dto/report-query.dto.js';
 import { ReportsService } from './reports.service.js';
 
@@ -38,6 +39,21 @@ export class ReportsController {
     @Res({ passthrough: true }) res: Response,
   ) {
     const { buffer, filename } = await this.reports.beveragesSoldExcel(establishmentId, query.date);
+    res.set({
+      'Content-Type': 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
+      'Content-Disposition': `attachment; filename="${filename}"`,
+    });
+    return buffer;
+  }
+
+  /** Même principe que beveragesSoldExcel ci-dessus, pour les catégories à prix variable (Poulets/Poissons/Plats africains). */
+  @Get('plats-sold.xlsx')
+  async platsSoldExcel(
+    @Param('establishmentId') establishmentId: string,
+    @Query() query: PlatsSoldQueryDto,
+    @Res({ passthrough: true }) res: Response,
+  ) {
+    const { buffer, filename } = await this.reports.platsSoldExcel(establishmentId, query.date);
     res.set({
       'Content-Type': 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
       'Content-Disposition': `attachment; filename="${filename}"`,

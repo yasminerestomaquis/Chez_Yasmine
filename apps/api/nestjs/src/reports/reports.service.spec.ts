@@ -367,3 +367,69 @@ describe('ReportsService.beveragesSoldExcel', () => {
     expect(sheet.getRow(2).getCell(2).value).toBe('');
   });
 });
+
+describe('ReportsService.platsSoldExcel', () => {
+  let prisma: ReturnType<typeof makePrismaMock>;
+  let service: ReportsService;
+
+  beforeEach(() => {
+    prisma = makePrismaMock();
+    service = new ReportsService(prisma as unknown as PrismaService, makeStockMovementsMock() as unknown as StockMovementsService);
+  });
+
+  it('scopes the query to the chosen day, establishment, and variable-pricing categories', async () => {
+    (prisma.saleItem as any).findMany.mockResolvedValue([]);
+
+    await service.platsSoldExcel('est-1', '2026-09-11');
+
+    expect(prisma.saleItem.findMany).toHaveBeenCalledWith(
+      expect.objectContaining({
+        where: expect.objectContaining({
+          sale: expect.objectContaining({ establishmentId: 'est-1', voidedAt: null }),
+          product: { category: { hasVariablePricing: true } },
+        }),
+      }),
+    );
+  });
+
+  it('builds a workbook with a header row (market number, not order number), one row per sale item, and a bold total row', async () => {
+    (prisma.saleItem as any).findMany.mockResolvedValue([
+      { name: 'Poulet Braisé', quantity: new Decimal(2), unitPrice: new Decimal(3000), sale: { marketNumber: 5, createdAt: new Date() } },
+      { name: 'Poisson Braisé', quantity: new Decimal(1), unitPrice: new Decimal(2500), sale: { marketNumber: 6, createdAt: new Date() } },
+    ]);
+
+    const { buffer, filename } = await service.platsSoldExcel('est-1', '2026-09-11');
+
+    expect(filename).toBe('Plats vendus 11-09-2026.xlsx');
+
+    const workbook = new ExcelJS.Workbook();
+    await workbook.xlsx.load(buffer);
+    const sheet = workbook.getWorksheet('Plats vendus')!;
+    expect(sheet.getRow(1).getCell(1).value).toBe('Nom du produit');
+    expect(sheet.getRow(1).getCell(2).value).toBe('Numéro de marché');
+    expect(sheet.getRow(2).getCell(1).value).toBe('Poulet Braisé');
+    expect(sheet.getRow(2).getCell(2).value).toBe(5);
+    expect(sheet.getRow(2).getCell(3).value).toBe(2);
+    expect(sheet.getRow(2).getCell(4).value).toBe(6000);
+    expect(sheet.getRow(3).getCell(1).value).toBe('Poisson Braisé');
+
+    const totalRow = sheet.getRow(4);
+    expect(totalRow.getCell(1).value).toBe('TOTAL');
+    expect(totalRow.getCell(3).value).toBe(3);
+    expect(totalRow.getCell(4).value).toBe(8500);
+    expect(totalRow.font?.bold).toBe(true);
+  });
+
+  it('leaves the market number blank when a sale has none', async () => {
+    (prisma.saleItem as any).findMany.mockResolvedValue([
+      { name: 'Alloco', quantity: new Decimal(1), unitPrice: new Decimal(1000), sale: { marketNumber: null, createdAt: new Date() } },
+    ]);
+
+    const { buffer } = await service.platsSoldExcel('est-1', '2026-09-11');
+
+    const workbook = new ExcelJS.Workbook();
+    await workbook.xlsx.load(buffer);
+    const sheet = workbook.getWorksheet('Plats vendus')!;
+    expect(sheet.getRow(2).getCell(2).value).toBe('');
+  });
+});

@@ -63,6 +63,7 @@ class SaleResult {
     required this.payments,
     this.voidedAt,
     this.orderNumber,
+    this.marketNumber,
   });
 
   final String id;
@@ -77,6 +78,10 @@ class SaleResult {
   /// Bières/Vins/Sucreries -> N° de la commande d'achat correspondante,
   /// saisi en caisse (voir `docs/api/pos.md`) — nul si non renseigné.
   final int? orderNumber;
+
+  /// Poulets/Poissons/Plats africains -> N° de marché correspondant, même
+  /// principe qu'`orderNumber` — nul si non renseigné.
+  final int? marketNumber;
 
   factory SaleResult.fromJson(Map<String, dynamic> json) => SaleResult(
     id: json['id'] as String,
@@ -94,6 +99,7 @@ class SaleResult {
         ? DateTime.parse(json['voidedAt'] as String)
         : null,
     orderNumber: (json['orderNumber'] as num?)?.toInt(),
+    marketNumber: (json['marketNumber'] as num?)?.toInt(),
   );
 }
 

@@ -329,4 +329,55 @@ export class ReportsService {
     const filename = `Boissons vendues ${pad(day)}-${pad(month)}-${year}.xlsx`;
     return { buffer: Buffer.from(buffer), filename };
   }
+
+  /**
+   * Même principe que `beveragesSoldExcel`, pour les catégories à prix
+   * variable (Poulets/Poissons/Plats africains — `hasVariablePricing`, voir
+   * docs/api/catalog.md) plutôt qu'à prix par casier. Colonne "Numéro de
+   * marché" au lieu de "Numéro de la commande" — c'est `Sale.marketNumber`,
+   * pas `orderNumber`, qui rattache ces catégories à une dépense « Marché »
+   * (voir docs/api/pos.md, « N° de commande / N° de marché »).
+   */
+  async platsSoldExcel(establishmentId: string, dateStr: string): Promise<{ buffer: Buffer; filename: string }> {
+    const [year, month, day] = dateStr.split('-').map(Number);
+    const from = new Date(year, month - 1, day, 0, 0, 0, 0);
+    const to = new Date(year, month - 1, day, 23, 59, 59, 999);
+
+    const items = await this.prisma.saleItem.findMany({
+      where: {
+        sale: { establishmentId, voidedAt: null, createdAt: { gte: from, lte: to } },
+        product: { category: { hasVariablePricing: true } },
+      },
+      include: { sale: { select: { marketNumber: true, createdAt: true } } },
+      orderBy: { sale: { createdAt: 'asc' } },
+    });
+
+    const rows = items.map((item) => {
+      const quantity = item.quantity.toNumber();
+      const total = quantity * item.unitPrice.toNumber();
+      return { name: item.name, marketNumber: item.sale.marketNumber, quantity, total };
+    });
+    const totalQuantity = rows.reduce((sum, r) => sum + r.quantity, 0);
+    const totalAmount = rows.reduce((sum, r) => sum + r.total, 0);
+
+    const workbook = new ExcelJS.Workbook();
+    const sheet = workbook.addWorksheet('Plats vendus');
+    sheet.columns = [
+      { header: 'Nom du produit', key: 'name', width: 30 },
+      { header: 'Numéro de marché', key: 'marketNumber', width: 22 },
+      { header: 'Nombre de produits vendus', key: 'quantity', width: 24 },
+      { header: 'Montant total produit vendu (FCFA)', key: 'total', width: 28 },
+    ];
+    sheet.getRow(1).font = { bold: true };
+    for (const r of rows) {
+      sheet.addRow({ name: r.name, marketNumber: r.marketNumber ?? '', quantity: r.quantity, total: r.total });
+    }
+    const totalRow = sheet.addRow({ name: 'TOTAL', marketNumber: '', quantity: totalQuantity, total: totalAmount });
+    totalRow.font = { bold: true };
+
+    const buffer = (await workbook.xlsx.writeBuffer()) as ExcelJS.Buffer;
+    const pad = (n: number) => String(n).padStart(2, '0');
+    const filename = `Plats vendus ${pad(day)}-${pad(month)}-${year}.xlsx`;
+    return { buffer: Buffer.from(buffer), filename };
+  }
 }

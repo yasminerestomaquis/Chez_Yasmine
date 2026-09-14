@@ -59,4 +59,12 @@ class ReportsRepository {
   ) {
     return _api.getBytes('$_base/beverages-sold.xlsx', query: {'date': date});
   }
+
+  /// Même principe qu'[exportBeveragesSoldExcel], pour les catégories à prix
+  /// variable (Poulets/Poissons/Plats africains).
+  Future<({List<int> bytes, String? filename})> exportPlatsSoldExcel(
+    String date,
+  ) {
+    return _api.getBytes('$_base/plats-sold.xlsx', query: {'date': date});
+  }
 }

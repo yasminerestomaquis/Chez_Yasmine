@@ -469,6 +469,155 @@ class _ReportsPageState extends State<ReportsPage> {
     }
   }
 
+  /// Même principe que [_showBeveragesSoldListing], pour les catégories à
+  /// prix variable (Poulets/Poissons/Plats africains, `hasVariablePricing`)
+  /// — N° de marché plutôt que N° de commande (voir docs/api/pos.md).
+  Future<void> _showPlatsSoldListing() async {
+    final picked = await showDatePicker(
+      context: context,
+      initialDate: DateTime.now(),
+      firstDate: DateTime(2020),
+      lastDate: DateTime(2100),
+      helpText: 'Date des ventes à afficher',
+    );
+    if (picked == null) return;
+
+    try {
+      final day = _isoDateFormat.format(picked);
+      final (products, sales) = await (
+        _catalog.listProducts(),
+        _pos.listForDay(day),
+      ).wait;
+
+      final variableProductIds = products
+          .where((p) => p.hasVariablePricing)
+          .map((p) => p.id)
+          .toSet();
+
+      final rows =
+          <({String name, int? marketNumber, double quantity, double total})>[];
+      for (final sale in sales) {
+        if (sale.voidedAt != null) continue;
+        for (final item in sale.items) {
+          if (!variableProductIds.contains(item.productId)) continue;
+          rows.add((
+            name: item.name,
+            marketNumber: sale.marketNumber,
+            quantity: item.quantity,
+            total: item.quantity * item.unitPrice,
+          ));
+        }
+      }
+      final totalQuantity = rows.fold<double>(0, (sum, r) => sum + r.quantity);
+      final totalAmount = rows.fold<double>(0, (sum, r) => sum + r.total);
+
+      if (!mounted) return;
+      final exportRequested = await showDialog<bool>(
+        context: context,
+        builder: (context) => AlertDialog(
+          title: Text('Plats vendus — ${_orderDateFormat.format(picked)}'),
+          content: SizedBox(
+            width: double.maxFinite,
+            child: SingleChildScrollView(
+              child: rows.isEmpty
+                  ? const Padding(
+                      padding: EdgeInsets.symmetric(vertical: 16),
+                      child: Text(
+                        'Aucune vente Plats africains/Poissons/Poulets ce jour-là.',
+                      ),
+                    )
+                  : DataTable(
+                      columns: const [
+                        DataColumn(label: Text('Produit')),
+                        DataColumn(label: Text('N° marché')),
+                        DataColumn(label: Text('Qté'), numeric: true),
+                        DataColumn(
+                          label: Text('Montant (FCFA)'),
+                          numeric: true,
+                        ),
+                      ],
+                      rows: [
+                        for (final r in rows)
+                          DataRow(
+                            cells: [
+                              DataCell(Text(r.name)),
+                              DataCell(
+                                Text(r.marketNumber?.toString() ?? '—'),
+                              ),
+                              DataCell(Text(r.quantity.toStringAsFixed(0))),
+                              DataCell(Text(formatAmount(r.total))),
+                            ],
+                          ),
+                        DataRow(
+                          cells: [
+                            const DataCell(
+                              Text(
+                                'TOTAL',
+                                style: TextStyle(fontWeight: FontWeight.bold),
+                              ),
+                            ),
+                            const DataCell(Text('')),
+                            DataCell(
+                              Text(
+                                totalQuantity.toStringAsFixed(0),
+                                style: const TextStyle(
+                                  fontWeight: FontWeight.bold,
+                                ),
+                              ),
+                            ),
+                            DataCell(
+                              Text(
+                                formatAmount(totalAmount),
+                                style: const TextStyle(
+                                  fontWeight: FontWeight.bold,
+                                ),
+                              ),
+                            ),
+                          ],
+                        ),
+                      ],
+                    ),
+            ),
+          ),
+          actions: [
+            TextButton(
+              onPressed: () => Navigator.of(context).pop(false),
+              child: const Text('Fermer'),
+            ),
+            if (rows.isNotEmpty)
+              FilledButton.icon(
+                onPressed: () => Navigator.of(context).pop(true),
+                icon: const Icon(Icons.file_download_outlined),
+                label: const Text('Exporter en Excel'),
+              ),
+          ],
+        ),
+      );
+      if (exportRequested == true) {
+        await _downloadPlatsSoldExcel(day, picked);
+      }
+    } on ApiException catch (e) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(context)
+          .showSnackBar(SnackBar(content: Text(e.message)));
+    }
+  }
+
+  Future<void> _downloadPlatsSoldExcel(String day, DateTime picked) async {
+    try {
+      final result = await _repository.exportPlatsSoldExcel(day);
+      downloadBytes(
+        result.bytes,
+        result.filename ??
+            'Plats vendus ${DateFormat('dd-MM-yyyy').format(picked)}.xlsx',
+      );
+    } on ApiException catch (e) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(context)
+          .showSnackBar(SnackBar(content: Text(e.message)));
+    }
+  }
+
   ({String text, bool positive})? _pctChange(double current, double? previous) {
     if (previous == null || previous == 0) return null;
     final pct = (current - previous) / previous * 100;
@@ -816,6 +965,11 @@ class _ReportsPageState extends State<ReportsPage> {
             tooltip: 'Boissons vendues',
             icon: const Icon(Icons.local_bar_outlined),
             onPressed: _showBeveragesSoldListing,
+          ),
+          IconButton(
+            tooltip: 'Plats vendus',
+            icon: const Icon(Icons.restaurant_outlined),
+            onPressed: _showPlatsSoldListing,
           ),
           PopupMenuButton<String>(
             tooltip: 'Exporter',
