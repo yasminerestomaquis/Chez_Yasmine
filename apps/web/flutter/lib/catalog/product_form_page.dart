@@ -41,6 +41,7 @@ class _ProductFormPageState extends State<ProductFormPage> {
   late final TextEditingController _unitController;
   late final TextEditingController _purchasePriceController;
   late final TextEditingController _salePriceController;
+  late final TextEditingController _unitSalePriceController;
   late final TextEditingController _bottlesPerCaseController;
   late final TextEditingController _purchasePricePerCaseController;
   late final TextEditingController _vatRateController;
@@ -66,6 +67,7 @@ class _ProductFormPageState extends State<ProductFormPage> {
     _unitController = TextEditingController(text: p?.unit ?? '');
     _purchasePriceController = TextEditingController(text: p?.purchasePrice?.toString() ?? '');
     _salePriceController = TextEditingController(text: p?.salePrice?.toString() ?? '');
+    _unitSalePriceController = TextEditingController(text: p?.unitSalePrice?.toString() ?? '');
     _bottlesPerCaseController = TextEditingController(text: p?.bottlesPerCase?.toString() ?? '');
     _purchasePricePerCaseController = TextEditingController(text: p?.purchasePricePerCase?.toString() ?? '');
     _vatRateController = TextEditingController(text: p?.vatRate?.toString() ?? '');
@@ -103,6 +105,7 @@ class _ProductFormPageState extends State<ProductFormPage> {
     _unitController.dispose();
     _purchasePriceController.dispose();
     _salePriceController.dispose();
+    _unitSalePriceController.dispose();
     _bottlesPerCaseController.dispose();
     _purchasePricePerCaseController.dispose();
     _vatRateController.dispose();
@@ -186,6 +189,8 @@ class _ProductFormPageState extends State<ProductFormPage> {
         if (!_isVariablePricing && _parseNumber(_purchasePriceController.text) != null)
           'purchasePrice': _parseNumber(_purchasePriceController.text),
         if (!_isVariablePricing) 'salePrice': _parseNumber(_salePriceController.text),
+        if (!_isVariablePricing && _isCasePricing && _parseNumber(_unitSalePriceController.text) != null)
+          'unitSalePrice': _parseNumber(_unitSalePriceController.text),
         if (_parseNumber(_vatRateController.text) != null) 'vatRate': _parseNumber(_vatRateController.text),
         if (_parseNumber(_minStockController.text) != null) 'minStock': _parseNumber(_minStockController.text),
         if (!_isEditing) 'stockQuantity': _parseNumber(_initialStockController.text) ?? 0,
@@ -308,6 +313,20 @@ class _ProductFormPageState extends State<ProductFormPage> {
                   ),
                 ),
               ]),
+            if (_isCasePricing && !_isVariablePricing) ...[
+              const SizedBox(height: 12),
+              TextFormField(
+                controller: _unitSalePriceController,
+                keyboardType: const TextInputType.numberWithOptions(decimal: true),
+                decoration: const InputDecoration(
+                  labelText: "Prix de vente à l'unité (optionnel)",
+                  helperText:
+                      'Si le prix de vente ci-dessus correspond à un lot (ex. 3 unités à 2 000 FCFA), '
+                      'permet de proposer aussi la vente à l\'unité en caisse (ex. 700 FCFA).',
+                  helperMaxLines: 3,
+                ),
+              ),
+            ],
             const SizedBox(height: 12),
             Row(children: [
               Expanded(

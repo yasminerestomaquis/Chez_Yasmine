@@ -17,6 +17,8 @@ function makePrismaMock() {
     },
     stockMovement: { create: vi.fn() },
     sale: { create: vi.fn(), findFirst: vi.fn(), findMany: vi.fn(), update: vi.fn() },
+    saleItem: { update: vi.fn() },
+    payment: { updateMany: vi.fn() },
     customer: { findFirst: vi.fn(), update: vi.fn(), findUniqueOrThrow: vi.fn() },
     credit: { create: vi.fn() },
     order: { findFirst: vi.fn(), update: vi.fn(), count: vi.fn() },
@@ -29,7 +31,13 @@ function makePrismaMock() {
 }
 
 const product = (
-  over: Partial<{ id: string; name: string; salePrice: number | null; stockQuantity: number }> = {},
+  over: Partial<{
+    id: string;
+    name: string;
+    salePrice: number | null;
+    unitSalePrice: number | null;
+    stockQuantity: number;
+  }> = {},
 ) => ({
   id: over.id ?? 'p1',
   establishmentId: 'est-1',
@@ -37,6 +45,9 @@ const product = (
   // salePrice: null simule une catégorie à prix variable (ex. Poulets,
   // Poissons, Plats africains) — voir docs/api/catalog.md.
   salePrice: over.salePrice === null ? null : new Decimal(over.salePrice ?? 1000),
+  // unitSalePrice: prix de vente alternatif à l'unité (ex. Heineken 33/Despé
+  // 33, normalement vendues par lot de 3) — voir SaleItemDto.sellAsUnit.
+  unitSalePrice: over.unitSalePrice == null ? null : new Decimal(over.unitSalePrice),
   stockQuantity: new Decimal(over.stockQuantity ?? 20),
 });
 
@@ -127,7 +138,36 @@ describe('SalesService.create', () => {
       expect.objectContaining({ data: expect.objectContaining({ subtotal: 3000, discount: 0, total: 3000 }) }),
     );
     expect(prisma.credit.create).not.toHaveBeenCalled();
-    expect(activityNotifierMock.notify).toHaveBeenCalledWith('est-1', 'user-1', 'Nouvelle vente', expect.stringContaining('3'));
+    expect(activityNotifierMock.notify).toHaveBeenCalledWith(
+      'est-1',
+      'user-1',
+      'Nouvelle vente',
+      `Bière 65cl — ${(3000).toLocaleString('fr-FR')} FCFA`,
+    );
+  });
+
+  it('notifies with every distinct product name sold, deduplicated (2026-09-14)', async () => {
+    (prisma.product as any).findMany.mockResolvedValue([
+      product({ id: 'p1', name: 'Heineken 33', stockQuantity: 20 }),
+      product({ id: 'p2', name: 'Poulet Braisé', stockQuantity: 20 }),
+    ]);
+    (prisma.sale as any).create.mockResolvedValue({ id: 'sale-1', items: [], payments: [] });
+
+    await service.create('est-1', 'user-1', {
+      items: [
+        { productId: 'p1', quantity: 2 },
+        { productId: 'p1', quantity: 1 }, // même produit, deuxième ligne — ne doit apparaître qu'une fois
+        { productId: 'p2', quantity: 1 },
+      ],
+      payments: [{ method: 'cash', amount: 4000 }],
+    } as any);
+
+    expect(activityNotifierMock.notify).toHaveBeenCalledWith(
+      'est-1',
+      'user-1',
+      'Nouvelle vente',
+      expect.stringContaining('Heineken 33, Poulet Braisé'),
+    );
   });
 
   describe('two lines of the same product (variable-pricing sold at two different prices the same day)', () => {
@@ -222,6 +262,63 @@ describe('SalesService.create', () => {
 
       await service.create('est-1', 'user-1', {
         items: [{ productId: 'p1', quantity: 1, unitPrice: 1 }], // tentative de prix cassé, ignorée
+        payments: [{ method: 'cash', amount: 1000 }],
+      } as any);
+
+      expect(prisma.sale.create).toHaveBeenCalledWith(
+        expect.objectContaining({
+          data: expect.objectContaining({
+            items: { create: [expect.objectContaining({ unitPrice: 1000 })] },
+          }),
+        }),
+      );
+    });
+  });
+
+  describe('sellAsUnit (ex. Heineken 33/Despé 33, vendues par lot de 3 à 2 000 FCFA ou à l\'unité à 700 FCFA)', () => {
+    it('uses unitSalePrice when sellAsUnit is true and the product has one', async () => {
+      (prisma.product as any).findMany.mockResolvedValue([product({ salePrice: 2000, unitSalePrice: 700 })]);
+      (prisma.sale as any).create.mockResolvedValue({ id: 'sale-1', items: [], payments: [] });
+
+      await service.create('est-1', 'user-1', {
+        items: [{ productId: 'p1', quantity: 1, sellAsUnit: true }],
+        payments: [{ method: 'cash', amount: 700 }],
+      } as any);
+
+      expect(prisma.sale.create).toHaveBeenCalledWith(
+        expect.objectContaining({
+          data: expect.objectContaining({
+            total: 700,
+            items: { create: [expect.objectContaining({ unitPrice: 700 })] },
+          }),
+        }),
+      );
+    });
+
+    it('uses the normal salePrice when sellAsUnit is absent, even if the product has a unitSalePrice', async () => {
+      (prisma.product as any).findMany.mockResolvedValue([product({ salePrice: 2000, unitSalePrice: 700 })]);
+      (prisma.sale as any).create.mockResolvedValue({ id: 'sale-1', items: [], payments: [] });
+
+      await service.create('est-1', 'user-1', {
+        items: [{ productId: 'p1', quantity: 1 }],
+        payments: [{ method: 'cash', amount: 2000 }],
+      } as any);
+
+      expect(prisma.sale.create).toHaveBeenCalledWith(
+        expect.objectContaining({
+          data: expect.objectContaining({
+            items: { create: [expect.objectContaining({ unitPrice: 2000 })] },
+          }),
+        }),
+      );
+    });
+
+    it('ignores sellAsUnit when the product has no unitSalePrice configured (falls back to salePrice)', async () => {
+      (prisma.product as any).findMany.mockResolvedValue([product({ salePrice: 1000, unitSalePrice: null })]);
+      (prisma.sale as any).create.mockResolvedValue({ id: 'sale-1', items: [], payments: [] });
+
+      await service.create('est-1', 'user-1', {
+        items: [{ productId: 'p1', quantity: 1, sellAsUnit: true }],
         payments: [{ method: 'cash', amount: 1000 }],
       } as any);
 
@@ -439,5 +536,158 @@ describe('SalesService.refund', () => {
     await service.refund('est-1', 'user-1', 'sale-1');
 
     expect(prisma.customer.update).toHaveBeenCalledWith({ where: { id: 'cust-1' }, data: { creditBalance: 3000 } });
+  });
+});
+
+describe('SalesService.updateItemQuantity', () => {
+  let prisma: ReturnType<typeof makePrismaMock>;
+  let service: SalesService;
+
+  beforeEach(() => {
+    prisma = makePrismaMock();
+    service = new SalesService(prisma as unknown as PrismaService, activityNotifierMock);
+  });
+
+  it('throws NotFoundException for a sale outside the establishment', async () => {
+    (prisma.sale as any).findFirst.mockResolvedValue(null);
+    await expect(service.updateItemQuantity('est-1', 'user-1', 'sale-x', 'item-1', 5)).rejects.toBeInstanceOf(
+      NotFoundException,
+    );
+  });
+
+  it('rejects correcting an already-voided sale', async () => {
+    (prisma.sale as any).findFirst.mockResolvedValue({ id: 'sale-1', voidedAt: new Date(), items: [] });
+    await expect(service.updateItemQuantity('est-1', 'user-1', 'sale-1', 'item-1', 5)).rejects.toBeInstanceOf(
+      ConflictException,
+    );
+  });
+
+  it('throws NotFoundException for an item that does not belong to the sale', async () => {
+    (prisma.sale as any).findFirst.mockResolvedValue({ id: 'sale-1', voidedAt: null, items: [] });
+    await expect(service.updateItemQuantity('est-1', 'user-1', 'sale-1', 'item-x', 5)).rejects.toBeInstanceOf(
+      NotFoundException,
+    );
+  });
+
+  it('increasing the quantity decrements the additional stock (type "out") and increases subtotal/total', async () => {
+    (prisma.sale as any).findFirst.mockResolvedValue({
+      id: 'sale-1',
+      voidedAt: null,
+      items: [{ id: 'item-1', productId: 'p1', quantity: new Decimal(2), unitPrice: new Decimal(1000) }],
+    });
+    (prisma.sale as any).update.mockResolvedValue({ id: 'sale-1' });
+
+    await service.updateItemQuantity('est-1', 'user-1', 'sale-1', 'item-1', 5);
+
+    expect(prisma.product.updateMany).toHaveBeenCalledWith({
+      where: { id: 'p1', stockQuantity: { gte: 3 } },
+      data: { stockQuantity: { decrement: 3 } },
+    });
+    expect(prisma.stockMovement.create).toHaveBeenCalledWith({
+      data: { productId: 'p1', type: 'out', quantity: 3, reason: 'Correction vente sale-1', createdBy: 'user-1' },
+    });
+    expect(prisma.saleItem.update).toHaveBeenCalledWith({ where: { id: 'item-1' }, data: { quantity: 5 } });
+    expect(prisma.sale.update).toHaveBeenCalledWith(
+      expect.objectContaining({
+        where: { id: 'sale-1' },
+        data: { subtotal: { increment: 3000 }, total: { increment: 3000 } },
+      }),
+    );
+  });
+
+  it('decreasing the quantity restocks the difference (type "in") and decreases subtotal/total', async () => {
+    (prisma.sale as any).findFirst.mockResolvedValue({
+      id: 'sale-1',
+      voidedAt: null,
+      items: [{ id: 'item-1', productId: 'p1', quantity: new Decimal(5), unitPrice: new Decimal(1000) }],
+    });
+    (prisma.sale as any).update.mockResolvedValue({ id: 'sale-1' });
+
+    await service.updateItemQuantity('est-1', 'user-1', 'sale-1', 'item-1', 2);
+
+    expect(prisma.product.update).toHaveBeenCalledWith({ where: { id: 'p1' }, data: { stockQuantity: { increment: 3 } } });
+    expect(prisma.stockMovement.create).toHaveBeenCalledWith({
+      data: { productId: 'p1', type: 'in', quantity: 3, reason: 'Correction vente sale-1', createdBy: 'user-1' },
+    });
+    expect(prisma.sale.update).toHaveBeenCalledWith(
+      expect.objectContaining({ data: { subtotal: { increment: -3000 }, total: { increment: -3000 } } }),
+    );
+  });
+
+  it('rejects an increase the stock can no longer cover (concurrent depletion) and never touches the sale', async () => {
+    (prisma.sale as any).findFirst.mockResolvedValue({
+      id: 'sale-1',
+      voidedAt: null,
+      items: [{ id: 'item-1', productId: 'p1', quantity: new Decimal(2), unitPrice: new Decimal(1000) }],
+    });
+    (prisma.product as any).updateMany.mockResolvedValueOnce({ count: 0 });
+
+    await expect(service.updateItemQuantity('est-1', 'user-1', 'sale-1', 'item-1', 5)).rejects.toBeInstanceOf(
+      ConflictException,
+    );
+    expect(prisma.saleItem.update).not.toHaveBeenCalled();
+    expect(prisma.sale.update).not.toHaveBeenCalled();
+  });
+
+  it('leaves stock and the transaction untouched when the quantity is unchanged', async () => {
+    (prisma.sale as any).findFirst.mockResolvedValue({
+      id: 'sale-1',
+      voidedAt: null,
+      items: [{ id: 'item-1', productId: 'p1', quantity: new Decimal(3), unitPrice: new Decimal(1000) }],
+    });
+    (prisma.sale as any).update.mockResolvedValue({ id: 'sale-1' });
+
+    await service.updateItemQuantity('est-1', 'user-1', 'sale-1', 'item-1', 3);
+
+    expect(prisma.product.updateMany).not.toHaveBeenCalled();
+    expect(prisma.product.update).not.toHaveBeenCalled();
+    expect(prisma.stockMovement.create).not.toHaveBeenCalled();
+  });
+});
+
+describe('SalesService.updatePaymentMethod', () => {
+  let prisma: ReturnType<typeof makePrismaMock>;
+  let service: SalesService;
+
+  beforeEach(() => {
+    prisma = makePrismaMock();
+    service = new SalesService(prisma as unknown as PrismaService, activityNotifierMock);
+  });
+
+  it('throws NotFoundException for a sale outside the establishment', async () => {
+    (prisma.sale as any).findFirst.mockResolvedValue(null);
+    await expect(service.updatePaymentMethod('est-1', 'sale-x', 'pay-1', 'mobile_money')).rejects.toBeInstanceOf(
+      NotFoundException,
+    );
+  });
+
+  it('rejects correcting an already-voided sale', async () => {
+    (prisma.sale as any).findFirst.mockResolvedValue({ id: 'sale-1', voidedAt: new Date() });
+    await expect(service.updatePaymentMethod('est-1', 'sale-1', 'pay-1', 'mobile_money')).rejects.toBeInstanceOf(
+      ConflictException,
+    );
+  });
+
+  it('throws NotFoundException for a payment that does not belong to the sale', async () => {
+    (prisma.sale as any).findFirst.mockResolvedValue({ id: 'sale-1', voidedAt: null });
+    (prisma.payment as any).updateMany.mockResolvedValue({ count: 0 });
+    await expect(service.updatePaymentMethod('est-1', 'sale-1', 'pay-x', 'mobile_money')).rejects.toBeInstanceOf(
+      NotFoundException,
+    );
+  });
+
+  it('updates the method, leaving the amount untouched', async () => {
+    (prisma.sale as any).findFirst
+      .mockResolvedValueOnce({ id: 'sale-1', voidedAt: null })
+      .mockResolvedValueOnce({ id: 'sale-1', payments: [{ id: 'pay-1', method: 'mobile_money', amount: 1000 }] });
+    (prisma.payment as any).updateMany.mockResolvedValue({ count: 1 });
+
+    const result = await service.updatePaymentMethod('est-1', 'sale-1', 'pay-1', 'mobile_money');
+
+    expect(prisma.payment.updateMany).toHaveBeenCalledWith({
+      where: { id: 'pay-1', saleId: 'sale-1' },
+      data: { method: 'mobile_money' },
+    });
+    expect(result).toEqual({ id: 'sale-1', payments: [{ id: 'pay-1', method: 'mobile_money', amount: 1000 }] });
   });
 });

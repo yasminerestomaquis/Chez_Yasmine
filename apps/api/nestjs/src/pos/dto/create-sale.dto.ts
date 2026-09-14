@@ -1,5 +1,5 @@
 import { Type } from 'class-transformer';
-import { ArrayMinSize, IsArray, IsIn, IsInt, IsNumber, IsOptional, IsString, IsUUID, Min, ValidateNested } from 'class-validator';
+import { ArrayMinSize, IsArray, IsBoolean, IsIn, IsInt, IsNumber, IsOptional, IsString, IsUUID, Min, ValidateNested } from 'class-validator';
 
 export class SaleItemDto {
   @IsUUID()
@@ -21,6 +21,20 @@ export class SaleItemDto {
   @IsNumber()
   @Min(0)
   unitPrice?: number;
+
+  /**
+   * Demande de vendre à l'unité (`Product.unitSalePrice`) plutôt qu'au tarif
+   * normal (`Product.salePrice`) — ex. Heineken 33/Despé 33, normalement
+   * vendues par lot de 3 à 2 000 FCFA, aussi disponibles à l'unité à 700
+   * FCFA (voir docs/api/pos.md). Un simple booléen plutôt qu'un prix : le
+   * client indique laquelle des DEUX tarifications déjà connues du serveur
+   * s'applique, jamais un montant — même principe de défense en profondeur
+   * que pour `unitPrice` ci-dessus. Ignoré (traité comme absent) si le
+   * produit n'a pas de `unitSalePrice`.
+   */
+  @IsOptional()
+  @IsBoolean()
+  sellAsUnit?: boolean;
 }
 
 export class SalePaymentDto {

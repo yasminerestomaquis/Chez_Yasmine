@@ -1,4 +1,4 @@
-import { ArrayMinSize, IsArray, IsInt, IsNumber, IsOptional, IsUUID, Min } from 'class-validator';
+import { ArrayMinSize, IsArray, IsBoolean, IsInt, IsNumber, IsOptional, IsUUID, Min } from 'class-validator';
 
 export class OpenTableDto {
   @IsOptional()
@@ -20,6 +20,11 @@ export class AddOrderItemDto {
   @IsNumber()
   @Min(0.01)
   unitPrice?: number;
+
+  /** Demande de vendre à l'unité (`Product.unitSalePrice`) plutôt qu'au tarif normal — même principe que `CreateSaleDto.items[].sellAsUnit` en Caisse, voir OrdersService.addItem. */
+  @IsOptional()
+  @IsBoolean()
+  sellAsUnit?: boolean;
 }
 
 export class UpdateOrderItemDto {

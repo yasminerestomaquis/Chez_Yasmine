@@ -30,5 +30,8 @@ void main() {
     // Pas de backend en test : listOpenOrdersForTable échoue, le corps
     // affiche le message d'erreur plutôt qu'un panier/une grille.
     expect(find.byIcon(Icons.add_box_outlined), findsOneWidget);
+    // Bouton "Produits vendus" (2026-09-14) — présent dans l'AppBar quel
+    // que soit l'état du corps.
+    expect(find.byIcon(Icons.receipt_long_outlined), findsOneWidget);
   });
 }

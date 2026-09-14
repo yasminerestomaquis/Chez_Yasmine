@@ -56,9 +56,17 @@ export class SalesService {
     // Un produit à prix fixe ignore tout unitPrice envoyé par le client (le
     // serveur reste seul juge du prix) ; un produit à prix variable (aucun
     // salePrice en catalogue) exige que le caissier l'ait saisi en caisse.
+    // `sellAsUnit` ne fait pas exception à cette règle : le client indique
+    // seulement laquelle des deux tarifications déjà connues du serveur
+    // s'applique (jamais un montant) — voir SaleItemDto.sellAsUnit.
     const unitPriceByItemIndex = dto.items.map((item) => {
       const product = productById.get(item.productId)!;
-      if (product.salePrice != null) return product.salePrice.toNumber();
+      if (product.salePrice != null) {
+        if (item.sellAsUnit && product.unitSalePrice != null) {
+          return product.unitSalePrice.toNumber();
+        }
+        return product.salePrice.toNumber();
+      }
       if (item.unitPrice == null) {
         throw new BadRequestException(`Prix de vente requis pour ${product.name} (catégorie à prix variable)`);
       }
@@ -185,7 +193,16 @@ export class SalesService {
 
       return sale;
     });
-    await this.activityNotifier.notify(establishmentId, userId, 'Nouvelle vente', `${totals.total.toLocaleString('fr-FR')} FCFA`);
+    // Noms des produits vendus (dédupliqués, dans l'ordre d'apparition) —
+    // demande utilisateur du 2026-09-14 : savoir quoi s'est vendu, pas
+    // seulement le montant, d'un simple coup d'œil sur la notification.
+    const productNames = [...new Set(dto.items.map((item) => productById.get(item.productId)!.name))];
+    await this.activityNotifier.notify(
+      establishmentId,
+      userId,
+      'Nouvelle vente',
+      `${productNames.join(', ')} — ${totals.total.toLocaleString('fr-FR')} FCFA`,
+    );
     return sale;
   }
 
@@ -279,5 +296,92 @@ export class SalesService {
 
       return tx.sale.update({ where: { id: saleId }, data: { voidedAt: new Date() }, include: { items: true, payments: true } });
     });
+  }
+
+  /**
+   * Corrige la quantité d'une ligne d'une vente déjà enregistrée (ex. erreur
+   * de saisie du caissier) — demande utilisateur du 2026-09-14, listing des
+   * ventes accessible depuis Caisse/Addition (voir docs/api/pos.md).
+   *
+   * Le stock est ajusté par la **différence** (`delta`), jamais via un
+   * mouvement `adjustment` : ce type fixe le stock à une valeur absolue
+   * plutôt que de le corriger relativement (voir `stock-math.ts`), ce qui
+   * écraserait tout mouvement survenu depuis la vente d'origine. `delta > 0`
+   * (quantité augmentée) décrémente le stock restant comme une vente
+   * normale (`out`, refusé si le stock ne suffit plus) ; `delta < 0`
+   * restocke la différence (`in`), même logique que `refund` ci-dessus mais
+   * partielle.
+   *
+   * `subtotal`/`total` sont incrémentés du même montant — préserve la remise
+   * déjà appliquée (stockée comme un montant figé, pas une règle
+   * recalculable) sans la toucher. Les paiements déjà enregistrés ne sont
+   * jamais modifiés ici (voir `updatePaymentMethod`) : un écart entre le
+   * nouveau total et la somme des paiements reste possible après une
+   * correction de quantité, documenté plutôt que corrigé automatiquement —
+   * l'utilisateur n'a demandé que deux corrections indépendantes (quantité
+   * OU mode de paiement), jamais une réconciliation des montants.
+   */
+  async updateItemQuantity(establishmentId: string, userId: string, saleId: string, itemId: string, quantity: number) {
+    const sale = await this.prisma.sale.findFirst({
+      where: { id: saleId, establishmentId },
+      include: { items: true },
+    });
+    if (!sale) {
+      throw new NotFoundException('Vente introuvable pour cet établissement');
+    }
+    if (sale.voidedAt) {
+      throw new ConflictException('Cette vente a déjà été remboursée');
+    }
+    const item = sale.items.find((i) => i.id === itemId);
+    if (!item) {
+      throw new NotFoundException('Article introuvable pour cette vente');
+    }
+
+    const oldQuantity = item.quantity.toNumber();
+    const delta = quantity - oldQuantity;
+    const totalDelta = delta * item.unitPrice.toNumber();
+
+    return this.prisma.$transaction(async (tx) => {
+      if (delta > 0) {
+        const { count } = await tx.product.updateMany({
+          where: { id: item.productId, stockQuantity: { gte: delta } },
+          data: { stockQuantity: { decrement: delta } },
+        });
+        if (count === 0) {
+          throw new ConflictException('Stock insuffisant pour cette correction');
+        }
+        await tx.stockMovement.create({
+          data: { productId: item.productId, type: 'out', quantity: delta, reason: `Correction vente ${saleId}`, createdBy: userId },
+        });
+      } else if (delta < 0) {
+        await tx.product.update({ where: { id: item.productId }, data: { stockQuantity: { increment: -delta } } });
+        await tx.stockMovement.create({
+          data: { productId: item.productId, type: 'in', quantity: -delta, reason: `Correction vente ${saleId}`, createdBy: userId },
+        });
+      }
+
+      await tx.saleItem.update({ where: { id: itemId }, data: { quantity } });
+      return tx.sale.update({
+        where: { id: saleId },
+        data: { subtotal: { increment: totalDelta }, total: { increment: totalDelta } },
+        include: { items: true, payments: true },
+      });
+    });
+  }
+
+  /** Corrige le mode de paiement (Espèces/Mobile Money) d'une ligne déjà enregistrée — le montant ne change jamais ici, voir UpdateSalePaymentDto. */
+  async updatePaymentMethod(establishmentId: string, saleId: string, paymentId: string, method: 'cash' | 'mobile_money') {
+    const sale = await this.prisma.sale.findFirst({ where: { id: saleId, establishmentId } });
+    if (!sale) {
+      throw new NotFoundException('Vente introuvable pour cet établissement');
+    }
+    if (sale.voidedAt) {
+      throw new ConflictException('Cette vente a déjà été remboursée');
+    }
+    const { count } = await this.prisma.payment.updateMany({ where: { id: paymentId, saleId }, data: { method } });
+    if (count === 0) {
+      throw new NotFoundException('Paiement introuvable pour cette vente');
+    }
+    return this.prisma.sale.findFirst({ where: { id: saleId }, include: { items: true, payments: true } });
   }
 }

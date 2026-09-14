@@ -144,7 +144,7 @@ describe('OrdersService.addItem', () => {
     await service.addItem('est-1', 'order-1', { productId: 'p1', quantity: 2 });
 
     expect(prisma.orderItem.create).toHaveBeenCalledWith({
-      data: { orderId: 'order-1', productId: 'p1', quantity: 2, unitPrice: new Decimal(1500) },
+      data: { orderId: 'order-1', productId: 'p1', quantity: 2, unitPrice: new Decimal(1500), sellAsUnit: false },
     });
   });
 
@@ -164,7 +164,7 @@ describe('OrdersService.addItem', () => {
       where: { orderId: 'order-1', productId: 'p1', unitPrice: 2000 },
     });
     expect(prisma.orderItem.create).toHaveBeenCalledWith({
-      data: { orderId: 'order-1', productId: 'p1', quantity: 1, unitPrice: 2000 },
+      data: { orderId: 'order-1', productId: 'p1', quantity: 1, unitPrice: 2000, sellAsUnit: false },
     });
   });
 
@@ -187,6 +187,36 @@ describe('OrdersService.addItem', () => {
 
     expect(prisma.orderItem.update).toHaveBeenCalledWith({ where: { id: 'item-1' }, data: { quantity: 3 } });
     expect(prisma.orderItem.create).not.toHaveBeenCalled();
+  });
+
+  describe('sellAsUnit (ex. Heineken 33/Despé 33, vendues par lot ou à l\'unité)', () => {
+    it('uses unitSalePrice and stores sellAsUnit when requested and the product has one', async () => {
+      (prisma.order as any).findFirst.mockResolvedValue({ id: 'order-1', status: 'open' });
+      (prisma.product as any).findFirst.mockResolvedValue({
+        id: 'p1',
+        salePrice: new Decimal(2000),
+        unitSalePrice: new Decimal(700),
+      });
+      (prisma.orderItem as any).findFirst.mockResolvedValue(null);
+
+      await service.addItem('est-1', 'order-1', { productId: 'p1', quantity: 1, sellAsUnit: true });
+
+      expect(prisma.orderItem.create).toHaveBeenCalledWith({
+        data: { orderId: 'order-1', productId: 'p1', quantity: 1, unitPrice: new Decimal(700), sellAsUnit: true },
+      });
+    });
+
+    it('falls back to salePrice when the product has no unitSalePrice, even if sellAsUnit is requested', async () => {
+      (prisma.order as any).findFirst.mockResolvedValue({ id: 'order-1', status: 'open' });
+      (prisma.product as any).findFirst.mockResolvedValue({ id: 'p1', salePrice: new Decimal(1500), unitSalePrice: null });
+      (prisma.orderItem as any).findFirst.mockResolvedValue(null);
+
+      await service.addItem('est-1', 'order-1', { productId: 'p1', quantity: 1, sellAsUnit: true });
+
+      expect(prisma.orderItem.create).toHaveBeenCalledWith({
+        data: { orderId: 'order-1', productId: 'p1', quantity: 1, unitPrice: new Decimal(1500), sellAsUnit: false },
+      });
+    });
   });
 });
 

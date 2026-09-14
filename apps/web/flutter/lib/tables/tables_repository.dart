@@ -95,6 +95,7 @@ class TablesRepository {
     required String productId,
     required double quantity,
     double? unitPrice,
+    bool sellAsUnit = false,
   }) {
     return _api.post(
       '$_base/orders/$orderId/items',
@@ -102,6 +103,7 @@ class TablesRepository {
         'productId': productId,
         'quantity': quantity,
         'unitPrice': ?unitPrice,
+        if (sellAsUnit) 'sellAsUnit': true,
       },
     );
   }

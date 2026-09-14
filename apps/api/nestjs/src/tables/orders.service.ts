@@ -117,6 +117,11 @@ export class OrdersService {
    * prix catalogue prévaut toujours, relu à chaque ajout). Un produit à prix
    * variable (Poulets, Poissons, Plats africains — `product.salePrice` nul)
    * exige `dto.unitPrice`, même règle que `SalesService.create` en Caisse.
+   * `dto.sellAsUnit` : même principe que `CreateSaleDto.items[].sellAsUnit`
+   * en Caisse — utilise `product.unitSalePrice` au lieu de `product.salePrice`
+   * quand le produit en a un (ex. Heineken 33/Despé 33). Mémorisé sur la
+   * ligne (`OrderItem.sellAsUnit`) pour que le checkout de l'addition
+   * applique la même tarification à la vente finale.
    *
    * Fusion par ligne : si l'addition a déjà une ligne pour ce même produit AU
    * MÊME PRIX, sa quantité est incrémentée plutôt que de créer une nouvelle
@@ -137,8 +142,14 @@ export class OrdersService {
     // provient déjà de dto.unitPrice — évite de casser l'égalité stricte
     // attendue par les tests existants sur le type exact écrit en base.
     let unitPrice: number | Prisma.Decimal;
+    let sellAsUnit = false;
     if (product.salePrice != null) {
-      unitPrice = product.salePrice;
+      if (dto.sellAsUnit && product.unitSalePrice != null) {
+        unitPrice = product.unitSalePrice;
+        sellAsUnit = true;
+      } else {
+        unitPrice = product.salePrice;
+      }
     } else {
       if (dto.unitPrice == null) {
         throw new BadRequestException(`Prix de vente requis pour ${product.name} (catégorie à prix variable)`);
@@ -156,7 +167,7 @@ export class OrdersService {
       });
     }
     return this.prisma.orderItem.create({
-      data: { orderId: order.id, productId: product.id, quantity: dto.quantity, unitPrice },
+      data: { orderId: order.id, productId: product.id, quantity: dto.quantity, unitPrice, sellAsUnit },
     });
   }
 

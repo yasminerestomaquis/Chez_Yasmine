@@ -5,6 +5,7 @@ import '../api/api_client.dart';
 import '../catalog/catalog_cache.dart';
 import '../catalog/catalog_repository.dart';
 import '../catalog/models.dart';
+import '../common/formatting.dart';
 import '../sync/device_id.dart';
 import '../sync/pending_operation.dart';
 import '../sync/sync_queue_service.dart';
@@ -14,6 +15,7 @@ import 'pos_models.dart';
 import 'pos_repository.dart';
 import 'product_grid.dart';
 import 'receipt_page.dart';
+import 'sold_items_page.dart';
 
 /// Largeur en dessous de laquelle le panier passe en panneau inférieur
 /// (bottom sheet + barre flottante) plutôt qu'en colonne latérale fixe —
@@ -82,16 +84,54 @@ class _PosPageState extends State<PosPage> {
       );
       return;
     }
+    // Vente à l'unité en plus du tarif normal (ex. Heineken 33/Despé 33,
+    // vendues par lot à un prix, aussi disponibles à l'unité à un prix
+    // différent — `product.unitSalePrice`, voir docs/api/pos.md).
+    var sellAsUnit = false;
+    if (product.unitSalePrice != null) {
+      final choice = await _promptPackOrUnit(product);
+      if (choice == null) return;
+      sellAsUnit = choice;
+    }
     setState(() {
       final existing = _cart
-          .where((l) => l.product.id == product.id)
+          .where((l) => l.product.id == product.id && l.sellAsUnit == sellAsUnit)
           .firstOrNull;
       if (existing != null) {
         existing.quantity++;
       } else {
-        _cart.add(CartLine(product: product, quantity: 1));
+        _cart.add(CartLine(product: product, quantity: 1, sellAsUnit: sellAsUnit));
       }
     });
+  }
+
+  /// `null` : dialogue annulé. `true` : vente à l'unité (`unitSalePrice`).
+  /// `false` : tarif normal (`salePrice`).
+  Future<bool?> _promptPackOrUnit(Product product) {
+    return showDialog<bool>(
+      context: context,
+      builder: (context) => AlertDialog(
+        title: Text(product.name),
+        content: const Text('Comment vendre ce produit ?'),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.of(context).pop(),
+            child: const Text('Annuler'),
+          ),
+          OutlinedButton(
+            onPressed: () => Navigator.of(context).pop(false),
+            child: Text(
+              '${product.unit?.trim().isNotEmpty == true ? 'Lot (${product.unit})' : 'Lot'} — '
+              '${formatAmount(product.salePrice!)} FCFA',
+            ),
+          ),
+          FilledButton(
+            onPressed: () => Navigator.of(context).pop(true),
+            child: Text('Unité — ${formatAmount(product.unitSalePrice!)} FCFA'),
+          ),
+        ],
+      ),
+    );
   }
 
   Future<double?> _promptManualPrice(Product product) async {
@@ -173,6 +213,7 @@ class _PosPageState extends State<PosPage> {
             'productId': l.product.id,
             'quantity': l.quantity,
             if (l.manualUnitPrice != null) 'unitPrice': l.manualUnitPrice,
+            if (l.sellAsUnit) 'sellAsUnit': true,
           },
         )
         .toList();
@@ -281,7 +322,21 @@ class _PosPageState extends State<PosPage> {
   @override
   Widget build(BuildContext context) {
     return Scaffold(
-      appBar: AppBar(title: const Text('Caisse')),
+      appBar: AppBar(
+        title: const Text('Caisse'),
+        actions: [
+          IconButton(
+            tooltip: 'Produits vendus',
+            icon: const Icon(Icons.receipt_long_outlined),
+            onPressed: () => Navigator.of(context).push(
+              MaterialPageRoute(
+                builder: (_) =>
+                    SoldItemsPage(establishmentId: widget.establishmentId),
+              ),
+            ),
+          ),
+        ],
+      ),
       body: Column(
         children: [
           Expanded(

@@ -77,6 +77,7 @@ class OrderItemDetail {
     required this.unitPrice,
     this.hasCasePricing = false,
     this.hasVariablePricing = false,
+    this.sellAsUnit = false,
   });
 
   final String id;
@@ -91,6 +92,11 @@ class OrderItemDetail {
   final bool hasCasePricing;
   final bool hasVariablePricing;
 
+  /// Vendu à l'unité plutôt qu'au tarif normal (`unitPrice` reflète déjà le
+  /// bon prix) — voir `OrdersService.addItem`. Nécessaire pour que le
+  /// checkout applique la même tarification à la vente finale.
+  final bool sellAsUnit;
+
   factory OrderItemDetail.fromJson(Map<String, dynamic> json) {
     final product = json['product'] as Map<String, dynamic>?;
     final category = product?['category'] as Map<String, dynamic>?;
@@ -102,6 +108,7 @@ class OrderItemDetail {
       unitPrice: (json['unitPrice'] as num).toDouble(),
       hasCasePricing: category?['hasCasePricing'] as bool? ?? false,
       hasVariablePricing: category?['hasVariablePricing'] as bool? ?? false,
+      sellAsUnit: json['sellAsUnit'] as bool? ?? false,
     );
   }
 }

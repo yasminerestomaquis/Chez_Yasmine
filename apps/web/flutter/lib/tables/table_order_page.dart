@@ -4,11 +4,13 @@ import 'package:uuid/uuid.dart';
 import '../api/api_client.dart';
 import '../catalog/catalog_repository.dart';
 import '../catalog/models.dart';
+import '../common/formatting.dart';
 import '../pos/cart_panel.dart';
 import '../pos/payment_dialog.dart';
 import '../pos/pos_repository.dart';
 import '../pos/product_grid.dart';
 import '../pos/receipt_page.dart';
+import '../pos/sold_items_page.dart';
 import '../sync/device_id.dart';
 import '../sync/pending_operation.dart';
 import '../sync/sync_queue_service.dart';
@@ -154,6 +156,36 @@ class _TableOrderPageState extends State<TableOrderPage> {
     );
   }
 
+  /// `null` : dialogue annulé. `true` : vente à l'unité (`unitSalePrice`).
+  /// `false` : tarif normal (`salePrice`). Même dialogue qu'en Caisse
+  /// (`PosPage._promptPackOrUnit`).
+  Future<bool?> _promptPackOrUnit(Product product) {
+    return showDialog<bool>(
+      context: context,
+      builder: (context) => AlertDialog(
+        title: Text(product.name),
+        content: const Text('Comment vendre ce produit ?'),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.of(context).pop(),
+            child: const Text('Annuler'),
+          ),
+          OutlinedButton(
+            onPressed: () => Navigator.of(context).pop(false),
+            child: Text(
+              '${product.unit?.trim().isNotEmpty == true ? 'Lot (${product.unit})' : 'Lot'} — '
+              '${formatAmount(product.salePrice!)} FCFA',
+            ),
+          ),
+          FilledButton(
+            onPressed: () => Navigator.of(context).pop(true),
+            child: Text('Unité — ${formatAmount(product.unitSalePrice!)} FCFA'),
+          ),
+        ],
+      ),
+    );
+  }
+
   Future<void> _addProduct(OrderDetail order, Product product) async {
     // Ignore les taps pendant qu'une mutation est déjà en cours : sans ça,
     // un double-tap sur une tuile pendant l'aller-retour réseau envoie deux
@@ -167,6 +199,14 @@ class _TableOrderPageState extends State<TableOrderPage> {
       unitPrice = await _promptManualPrice(product);
       if (unitPrice == null) return;
     }
+    // Vente à l'unité en plus du tarif normal (ex. Heineken 33/Despé 33) —
+    // même mécanisme qu'en Caisse (`pos_page.dart`).
+    var sellAsUnit = false;
+    if (product.unitSalePrice != null) {
+      final choice = await _promptPackOrUnit(product);
+      if (choice == null) return;
+      sellAsUnit = choice;
+    }
     setState(() => _isBusy = true);
     try {
       await widget.repository.addItem(
@@ -174,6 +214,7 @@ class _TableOrderPageState extends State<TableOrderPage> {
         productId: product.id,
         quantity: 1,
         unitPrice: unitPrice,
+        sellAsUnit: sellAsUnit,
       );
       _reloadOrders();
     } on ApiException catch (e) {
@@ -257,6 +298,7 @@ class _TableOrderPageState extends State<TableOrderPage> {
             'productId': i.productId,
             'quantity': i.quantity,
             'unitPrice': i.unitPrice,
+            if (i.sellAsUnit) 'sellAsUnit': true,
           },
         )
         .toList();
@@ -332,6 +374,16 @@ class _TableOrderPageState extends State<TableOrderPage> {
       appBar: AppBar(
         title: const Text('Addition'),
         actions: [
+          IconButton(
+            tooltip: 'Produits vendus',
+            icon: const Icon(Icons.receipt_long_outlined),
+            onPressed: () => Navigator.of(context).push(
+              MaterialPageRoute(
+                builder: (_) =>
+                    SoldItemsPage(establishmentId: widget.establishmentId),
+              ),
+            ),
+          ),
           IconButton(
             tooltip: 'Nouvelle addition',
             icon: const Icon(Icons.add_box_outlined),

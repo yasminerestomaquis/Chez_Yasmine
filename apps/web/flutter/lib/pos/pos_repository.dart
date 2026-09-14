@@ -70,4 +70,33 @@ class PosRepository {
         .map((e) => SaleResult.fromJson(e as Map<String, dynamic>))
         .toList();
   }
+
+  /// Corrige le nombre de produits vendus d'une ligne — voir docs/api/pos.md
+  /// (« Correction d'une vente déjà enregistrée »). Le stock est réajusté
+  /// par la différence côté serveur, jamais une valeur absolue.
+  Future<SaleResult> updateItemQuantity(
+    String saleId,
+    String itemId,
+    double quantity,
+  ) async {
+    final json = await _api.patch(
+      '/establishments/$establishmentId/sales/$saleId/items/$itemId',
+      body: {'quantity': quantity},
+    ) as Map<String, dynamic>;
+    return SaleResult.fromJson(json);
+  }
+
+  /// Corrige le mode de paiement (Espèces/Mobile Money) d'une ligne déjà
+  /// enregistrée — le montant ne change jamais ici.
+  Future<SaleResult> updatePaymentMethod(
+    String saleId,
+    String paymentId,
+    String method,
+  ) async {
+    final json = await _api.patch(
+      '/establishments/$establishmentId/sales/$saleId/payments/$paymentId',
+      body: {'method': method},
+    ) as Map<String, dynamic>;
+    return SaleResult.fromJson(json);
+  }
 }

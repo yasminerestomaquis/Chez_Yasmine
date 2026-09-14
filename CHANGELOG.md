@@ -2,6 +2,21 @@
 
 ## [Unreleased]
 
+### Ajouté (2026-09-14) — Vente à l'unité en plus du lot (Heineken 33/Despé 33)
+- Nouveau champ optionnel `Product.unitSalePrice` : pour un produit normalement vendu par lot (ex. 3 bouteilles à 2 000 FCFA), permet aussi la vente d'une seule bouteille à un prix différent (ex. 700 FCFA), configuré dans le formulaire produit.
+- En Caisse et dans l'Addition, un choix (« Lot » / « Unité ») apparaît dès qu'un produit a ce prix configuré. Le serveur reste seul juge du prix réel — le client ne fait qu'indiquer laquelle des deux tarifications déjà connues s'applique, jamais un montant.
+- Heineken 33 et Despé 33 configurés en production (700 FCFA à l'unité).
+- 7 nouveaux tests NestJS, `flutter analyze`/`test`/`build web` ✅ (75/75, sans régression) — voir aussi les deux entrées suivantes pour le décompte final (377 tests NestJS, 76 tests Flutter au total après toutes les modifications ci-dessous).
+
+### Ajouté (2026-09-14) — Correction d'une vente déjà enregistrée (quantité, mode de paiement)
+- Nouveau bouton (icône ticket) en haut à droite de la Caisse et de l'écran Addition : listing des ventes du jour, avec correction possible du nombre de produits vendus ou du mode de paiement (Espèces/Mobile Money), indépendamment l'un de l'autre.
+- Le stock est réajusté par la différence (jamais par une valeur absolue) quand la quantité change ; les paiements ne sont jamais touchés par une correction de quantité (et inversement).
+- Réservé au rôle pouvant déjà rembourser une vente (`pos.refund`) — une correction sur une vente déjà enregistrée est tout aussi sensible.
+- 377/377 tests NestJS (11 nouveaux), `flutter analyze`/`test`/`build web` ✅ (76/76, 1 nouveau).
+
+### Ajouté (2026-09-14) — Notifications : « Nouvelle vente » inclut désormais le nom des produits vendus
+- Le corps de la notification n'était qu'un montant — liste maintenant aussi les produits vendus, dédupliqués (ex. « Heineken 33, Poulet Braisé — 3 000 FCFA »).
+
 ### Corrigé (2026-09-14) — Les exports Excel « Boissons vendues » et « Plats vendus » ne s'ouvraient pas
 - Constaté par l'utilisateur : Excel refusait d'ouvrir les deux fichiers `.xlsx` téléchargés (« format ou extension non valide »).
 - Cause : l'intercepteur global `DecimalTransformInterceptor` (conversion des `Decimal` Prisma en nombres JS) s'appliquait aussi aux réponses binaires — un `Buffer` étant un objet JS, il était parcouru octet par octet et remplacé par un objet JSON `{"0":137,"1":80,...}` au lieu du fichier réel. Bug présent depuis la création de l'intercepteur, jamais détecté faute d'avoir déjà téléchargé et ouvert un de ces fichiers en conditions authentifiées.

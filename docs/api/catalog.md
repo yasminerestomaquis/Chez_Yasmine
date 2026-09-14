@@ -57,6 +57,8 @@ Le Catalogue affiche désormais une grille de sous-modules — un par catégorie
 
 Le champ **Prix d'achat** (`Product.purchasePrice`) reste affiché pour ces catégories, seulement relabellisé **« Prix d'achat par bouteille »** dans toute l'UI — mais le calcul du bénéfice (`docs/api/reports.md`) utilise `purchasePricePerCase / bottlesPerCase` à la place pour ces catégories, jamais `purchasePrice` (décision explicite de l'utilisateur). Ces deux champs sont ensuite repris (jamais ressaisis) par le module Achats à chaque commande — voir `docs/api/purchasing.md`.
 
+Ces mêmes catégories peuvent aussi porter un **Prix de vente à l'unité** optionnel (`Product.unitSalePrice`, migration `20260914215024_add_product_unit_sale_price.sql`, décision actée 2026-09-14) : le prix de vente normal (`salePrice`) représente alors un lot (ex. 3 bouteilles à 2 000 FCFA), et ce champ permet aussi la vente d'une seule bouteille à un prix différent (ex. 700 FCFA) — le caissier choisit entre les deux en Caisse/Addition, voir `docs/api/pos.md`.
+
 ## Isolation multi-tenant côté NestJS
 
 Prisma se connecte directement à Postgres via `DATABASE_URL` (rôle propriétaire de la base) — **il contourne RLS**, contrairement à un appel PostgREST anon/authenticated. `PermissionsGuard` vérifie l'appartenance à l'établissement, mais chaque requête Prisma des services `CategoriesService`/`ProductsService`/`ProductImagesService` filtre *explicitement* par `establishmentId` — ce n'est jamais automatique à cette couche. `ProductsService` vérifie en plus qu'un `categoryId`/`supplierId` fourni appartient bien au même établissement avant de l'associer à un produit (protection contre le rattachement croisé entre établissements).

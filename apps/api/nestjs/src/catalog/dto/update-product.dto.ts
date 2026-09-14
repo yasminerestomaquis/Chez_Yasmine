@@ -45,6 +45,12 @@ export class UpdateProductDto {
   @Min(0)
   salePrice?: number;
 
+  /** Prix de vente alternatif pour une seule unité, quand salePrice représente un lot (catégories à prix par casier uniquement). */
+  @IsOptional()
+  @IsNumber()
+  @Min(0)
+  unitSalePrice?: number;
+
   @IsOptional()
   @IsInt()
   @Min(1)

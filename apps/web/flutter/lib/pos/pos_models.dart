@@ -6,6 +6,7 @@ class CartLine {
     required this.product,
     required this.quantity,
     this.manualUnitPrice,
+    this.sellAsUnit = false,
   });
 
   final Product product;
@@ -15,24 +16,38 @@ class CartLine {
   /// nul, ex. Poulets/Poissons/Plats africains) — voir `PosPage._addToCart`.
   final double? manualUnitPrice;
 
-  double get unitPrice => manualUnitPrice ?? product.salePrice ?? 0;
+  /// Vente à l'unité plutôt qu'au tarif normal (ex. Heineken 33/Despé 33,
+  /// vendues par lot de 3 à 2 000 FCFA, aussi disponibles à l'unité à 700
+  /// FCFA — `product.unitSalePrice`) — voir `PosPage._addToCart`. Le serveur
+  /// reste seul juge du prix réel : seul ce choix est transmis, jamais un
+  /// montant (`CreateSaleDto.items[].sellAsUnit`).
+  final bool sellAsUnit;
+
+  double get unitPrice =>
+      manualUnitPrice ??
+      (sellAsUnit ? product.unitSalePrice : null) ??
+      product.salePrice ??
+      0;
   double get lineTotal => unitPrice * quantity;
 }
 
 class SaleItemResult {
   SaleItemResult({
+    required this.id,
     required this.productId,
     required this.name,
     required this.quantity,
     required this.unitPrice,
   });
 
+  final String id;
   final String productId;
   final String name;
   final double quantity;
   final double unitPrice;
 
   factory SaleItemResult.fromJson(Map<String, dynamic> json) => SaleItemResult(
+    id: json['id'] as String,
     productId: json['productId'] as String,
     name: json['name'] as String,
     quantity: (json['quantity'] as num).toDouble(),
@@ -41,12 +56,14 @@ class SaleItemResult {
 }
 
 class PaymentResult {
-  PaymentResult({required this.method, required this.amount});
+  PaymentResult({required this.id, required this.method, required this.amount});
 
+  final String id;
   final String method;
   final double amount;
 
   factory PaymentResult.fromJson(Map<String, dynamic> json) => PaymentResult(
+    id: json['id'] as String,
     method: json['method'] as String,
     amount: (json['amount'] as num).toDouble(),
   );

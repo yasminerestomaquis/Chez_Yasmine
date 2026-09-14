@@ -50,6 +50,7 @@ export class ProductsService {
         // dépense "Marché" (voir docs/api/catalog.md).
         purchasePrice: hasVariablePricing ? null : dto.purchasePrice,
         salePrice: hasVariablePricing ? null : dto.salePrice,
+        unitSalePrice: hasVariablePricing ? null : dto.unitSalePrice,
         bottlesPerCase: dto.bottlesPerCase,
         purchasePricePerCase: dto.purchasePricePerCase,
         vatRate: dto.vatRate,
@@ -73,6 +74,7 @@ export class ProductsService {
     if (hasVariablePricing) {
       data.purchasePrice = null;
       data.salePrice = null;
+      data.unitSalePrice = null;
     } else {
       const nextSalePrice = dto.salePrice !== undefined ? dto.salePrice : existing.salePrice?.toNumber();
       if (nextSalePrice == null) {

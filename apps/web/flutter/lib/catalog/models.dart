@@ -45,6 +45,7 @@ class Product {
     required this.status,
     required this.stockQuantity,
     this.salePrice,
+    this.unitSalePrice,
     this.categoryId,
     this.category,
     this.description,
@@ -72,6 +73,10 @@ class Product {
   /// Nul quand `category.hasVariablePricing` est vrai — le prix se saisit
   /// alors en caisse à chaque vente plutôt que d'être fixé dans le catalogue.
   final double? salePrice;
+  /// Prix de vente alternatif pour une seule unité, quand `salePrice`
+  /// représente un lot (ex. "3 unités à 2 000 FCFA" -> 700 l'unité). Nul :
+  /// pas de vente à l'unité proposée en caisse pour ce produit.
+  final double? unitSalePrice;
   /// Catalogue, catégories à prix par casier uniquement (hasCasePricing).
   final int? bottlesPerCase;
   final double? purchasePricePerCase;
@@ -95,6 +100,7 @@ class Product {
         unit: json['unit'] as String?,
         purchasePrice: (json['purchasePrice'] as num?)?.toDouble(),
         salePrice: (json['salePrice'] as num?)?.toDouble(),
+        unitSalePrice: (json['unitSalePrice'] as num?)?.toDouble(),
         bottlesPerCase: (json['bottlesPerCase'] as num?)?.toInt(),
         purchasePricePerCase: (json['purchasePricePerCase'] as num?)?.toDouble(),
         vatRate: (json['vatRate'] as num?)?.toDouble(),

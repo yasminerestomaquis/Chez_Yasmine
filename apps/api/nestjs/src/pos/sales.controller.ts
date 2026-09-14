@@ -1,9 +1,11 @@
-import { Body, Controller, Get, Param, Post, Query, Req, UseGuards } from '@nestjs/common';
+import { Body, Controller, Get, Param, Patch, Post, Query, Req, UseGuards } from '@nestjs/common';
 import type { Request } from 'express';
 import { PermissionsGuard } from '../auth/permissions.guard.js';
 import { RequirePermissions } from '../auth/permissions.decorator.js';
 import { SupabaseJwtGuard } from '../auth/supabase-jwt.guard.js';
 import { CreateSaleDto } from './dto/create-sale.dto.js';
+import { UpdateSaleItemDto } from './dto/update-sale-item.dto.js';
+import { UpdateSalePaymentDto } from './dto/update-sale-payment.dto.js';
 import { SalesService } from './sales.service.js';
 
 @Controller('establishments/:establishmentId/sales')
@@ -45,5 +47,30 @@ export class SalesController {
   @RequirePermissions('pos.refund')
   refund(@Req() request: Request, @Param('establishmentId') establishmentId: string, @Param('saleId') saleId: string) {
     return this.sales.refund(establishmentId, request.user!.sub, saleId);
+  }
+
+  /** Corrige le nombre de produits vendus d'une ligne — voir SalesService.updateItemQuantity. Même permission que refund : une correction sur une vente déjà enregistrée est tout aussi sensible. */
+  @Patch(':saleId/items/:itemId')
+  @RequirePermissions('pos.refund')
+  updateItemQuantity(
+    @Req() request: Request,
+    @Param('establishmentId') establishmentId: string,
+    @Param('saleId') saleId: string,
+    @Param('itemId') itemId: string,
+    @Body() dto: UpdateSaleItemDto,
+  ) {
+    return this.sales.updateItemQuantity(establishmentId, request.user!.sub, saleId, itemId, dto.quantity);
+  }
+
+  /** Corrige le mode de paiement (Espèces/Mobile Money) d'une ligne — voir SalesService.updatePaymentMethod. */
+  @Patch(':saleId/payments/:paymentId')
+  @RequirePermissions('pos.refund')
+  updatePaymentMethod(
+    @Param('establishmentId') establishmentId: string,
+    @Param('saleId') saleId: string,
+    @Param('paymentId') paymentId: string,
+    @Body() dto: UpdateSalePaymentDto,
+  ) {
+    return this.sales.updatePaymentMethod(establishmentId, saleId, paymentId, dto.method);
   }
 }

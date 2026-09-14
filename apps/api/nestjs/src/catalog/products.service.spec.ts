@@ -59,6 +59,14 @@ describe('ProductsService', () => {
     expect(prisma.product.create).not.toHaveBeenCalled();
   });
 
+  it('create() passes unitSalePrice through for a fixed-price category (ex. vente à l\'unité en plus du lot)', async () => {
+    prisma.product.create.mockResolvedValue({ id: 'prod-1' });
+    await service.create('est-1', { name: 'Heineken 33', salePrice: 2000, unitSalePrice: 700 });
+    expect(prisma.product.create).toHaveBeenCalledWith({
+      data: expect.objectContaining({ salePrice: 2000, unitSalePrice: 700 }),
+    });
+  });
+
   describe('variable-pricing categories (ex. Poulets, Poissons, Plats africains)', () => {
     it('create() allows a missing salePrice', async () => {
       prisma.category.findFirst.mockResolvedValue({ id: 'cat-poulets', hasVariablePricing: true });
@@ -95,6 +103,19 @@ describe('ProductsService', () => {
       expect(prisma.product.updateMany).toHaveBeenCalledWith({
         where: { id: 'prod-1', establishmentId: 'est-1' },
         data: expect.objectContaining({ purchasePrice: null, salePrice: null }),
+      });
+    });
+
+    it('update() also forces unitSalePrice to null when the category has variable pricing', async () => {
+      prisma.product.findFirst.mockResolvedValue({ id: 'prod-1', categoryId: 'cat-poulets', salePrice: null });
+      prisma.category.findFirst.mockResolvedValue({ id: 'cat-poulets', hasVariablePricing: true });
+      prisma.product.updateMany.mockResolvedValue({ count: 1 });
+
+      await service.update('est-1', 'prod-1', { unitSalePrice: 700 });
+
+      expect(prisma.product.updateMany).toHaveBeenCalledWith({
+        where: { id: 'prod-1', establishmentId: 'est-1' },
+        data: expect.objectContaining({ unitSalePrice: null }),
       });
     });
   });
