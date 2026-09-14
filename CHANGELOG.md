@@ -2,6 +2,12 @@
 
 ## [Unreleased]
 
+### Corrigé (2026-09-14) — Les exports Excel « Boissons vendues » et « Plats vendus » ne s'ouvraient pas
+- Constaté par l'utilisateur : Excel refusait d'ouvrir les deux fichiers `.xlsx` téléchargés (« format ou extension non valide »).
+- Cause : l'intercepteur global `DecimalTransformInterceptor` (conversion des `Decimal` Prisma en nombres JS) s'appliquait aussi aux réponses binaires — un `Buffer` étant un objet JS, il était parcouru octet par octet et remplacé par un objet JSON `{"0":137,"1":80,...}` au lieu du fichier réel. Bug présent depuis la création de l'intercepteur, jamais détecté faute d'avoir déjà téléchargé et ouvert un de ces fichiers en conditions authentifiées.
+- Corrigé par un garde-fou explicite (`Buffer.isBuffer`) avant la conversion générique — affecte tout endpoint binaire présent ou futur, pas seulement ces deux exports.
+- 358/358 tests NestJS (1 nouveau, construit autour de la signature ZIP réelle d'un `.xlsx`).
+
 ### Ajouté (2026-09-14) — Rapports : bouton « Plats vendus », même principe que « Boissons vendues »
 - Nouveau bouton (icône 🍽️) juste à côté de « Boissons vendues » : listing des produits vendus des catégories à prix variable (Plats africains, Poissons, Poulets) pour une date choisie, affiché dans l'application puis exportable en `.xlsx` (`GET .../reports/plats-sold.xlsx`).
 - Strictement symétrique à « Boissons vendues » — mêmes routes de base, mais filtré sur `hasVariablePricing` et colonne « N° marché » (`Sale.marketNumber`) plutôt que « N° commande ».

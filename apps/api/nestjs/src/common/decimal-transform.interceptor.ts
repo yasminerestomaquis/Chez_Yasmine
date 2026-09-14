@@ -33,6 +33,17 @@ export function transformDecimals(value: unknown): unknown {
   if (value instanceof Date) {
     return value;
   }
+  // Un Buffer (ex. le classeur Excel binaire renvoyé par
+  // ReportsService.beveragesSoldExcel/platsSoldExcel) est un objet — sans ce
+  // garde-fou, la branche générique ci-dessous le walkait comme un objet
+  // quelconque (`Object.entries` sur un Uint8Array renvoie une entrée par
+  // octet, ex. ['0', 137]), le remplaçant par un objet JSON `{"0":137,...}`
+  // au lieu du fichier binaire — le fichier téléchargé gardait le bon nom/
+  // la bonne extension mais un contenu invalide (« format ou extension non
+  // valide » à l'ouverture, constaté par l'utilisateur, 2026-09-14).
+  if (Buffer.isBuffer(value)) {
+    return value;
+  }
   if (Array.isArray(value)) {
     return value.map(transformDecimals);
   }

@@ -33,6 +33,14 @@ describe('transformDecimals', () => {
     const input = { createdAt: date, label: 'Loyer', note: null, count: 4 };
     expect(transformDecimals(input)).toEqual({ createdAt: date, label: 'Loyer', note: null, count: 4 });
   });
+
+  it('leaves a Buffer untouched instead of walking it byte-by-byte into a {"0":137,...} object (regression 2026-09-14: broke the Excel exports)', () => {
+    const buffer = Buffer.from([0x50, 0x4b, 0x03, 0x04]); // signature ZIP, début réel d'un fichier .xlsx
+    const result = transformDecimals(buffer);
+    expect(Buffer.isBuffer(result)).toBe(true);
+    expect(result).toBe(buffer);
+    expect((result as Buffer).equals(buffer)).toBe(true);
+  });
 });
 
 describe('DecimalTransformInterceptor', () => {
