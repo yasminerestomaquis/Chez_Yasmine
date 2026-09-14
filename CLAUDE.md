@@ -108,6 +108,7 @@ Validée explicitement par l'utilisateur (2026-09-05) : Supabase Auth est le fou
 2. Sur la branche de production : tests → build API → build Flutter Web (PWA) → déploiement.
 3. Secrets exclusivement via les secrets GitHub Actions / variables d'environnement de la plateforme d'hébergement.
 4. Migrations Supabase appliquées avant le déploiement applicatif, jamais après.
+5. `.github/workflows/supabase-keepalive.yml` : requête quotidienne programmée (cron) vers l'API REST Supabase, pour empêcher la mise en pause automatique du projet gratuit après ~7 jours d'inactivité (décision actée 2026-09-14).
 
 ## État des lieux — legacy v1
 

@@ -2,6 +2,10 @@
 
 ## [Unreleased]
 
+### Ajouté (2026-09-14) — Requête programmée pour maintenir le projet Supabase actif
+- Nouveau workflow GitHub Actions (`.github/workflows/supabase-keepalive.yml`), quotidien (cron), interroge l'API REST Supabase (`GET /rest/v1/organizations`) pour éviter la mise en pause automatique du projet gratuit après ~7 jours sans activité.
+- Utilise la clé publique (anon/publishable, déjà en clair dans le dépôt côté Flutter) — aucun nouveau secret nécessaire ; la requête compte comme activité même filtrée par RLS.
+
 ### Ajouté (2026-09-14) — Accueil : filtre de date sur les cartes de statistiques
 - L'étiquette « Date », jusqu'ici un texte figé sur aujourd'hui, devient un menu déroulant (aujourd'hui + les 6 jours précédents) — les cartes « Total ventes », « Commandes », « Recettes boissons/plats » et le détail par mode de paiement reflètent désormais la date choisie.
 - Aucune nouvelle route : les endpoints de rapports acceptaient déjà un intervalle `from`/`to`, non exposé jusqu'ici pour la ventilation par catégorie côté Flutter.

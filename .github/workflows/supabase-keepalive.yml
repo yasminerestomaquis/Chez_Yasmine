@@ -1,0 +1,34 @@
+name: Supabase Keep-Alive
+
+# Un projet Supabase gratuit est mis en pause après ~7 jours sans activité
+# (aucune requête API/base). Cette requête programmée, quotidienne (donc très
+# en-deçà de ce délai), interroge la base réelle via PostgREST pour maintenir
+# le projet actif — indépendant du déploiement de l'API NestJS elle-même
+# (voir docs/api/reports.md pour le contexte "pas d'instance de production
+# accessible pour l'instant" au moment de l'écriture de ce workflow).
+on:
+  schedule:
+    - cron: '17 6 * * *' # tous les jours à 06:17 UTC — heure arbitraire, hors des pics habituels de la CI
+  workflow_dispatch: {}
+
+jobs:
+  ping:
+    name: Ping Supabase
+    runs-on: ubuntu-latest
+    steps:
+      - name: Interroger l'API REST Supabase
+        run: |
+          # Clé publique (anon/publishable) — volontairement non secrète,
+          # protégée par RLS, déjà en clair dans le dépôt
+          # (apps/web/flutter/lib/config/supabase_config.dart). Une réponse
+          # même filtrée par RLS (200 avec un tableau vide) compte comme
+          # activité auprès de Supabase : la requête a bien atteint le projet.
+          code=$(curl -s -o /dev/null -w '%{http_code}' \
+            "https://tsebsulvhgttdwtgqfoj.supabase.co/rest/v1/organizations?select=id&limit=1" \
+            -H "apikey: sb_publishable_VNCmuf3FemDWAhwIG65I0A_7fwhmcQX" \
+            -H "Authorization: Bearer sb_publishable_VNCmuf3FemDWAhwIG65I0A_7fwhmcQX")
+          echo "Réponse Supabase : HTTP $code"
+          if [ "$code" -ge 500 ]; then
+            echo "::error::Le projet Supabase a répondu avec une erreur serveur ($code)."
+            exit 1
+          fi
