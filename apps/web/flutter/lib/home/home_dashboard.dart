@@ -129,6 +129,37 @@ class _HomeDashboardState extends State<HomeDashboard> {
     ApiClient(),
     widget.establishmentId,
   );
+
+  /// Aujourd'hui, tronqué à la date (sans heure) — base commune du filtre de
+  /// date et de la date sélectionnée par défaut.
+  DateTime get _todayDate {
+    final now = DateTime.now();
+    return DateTime(now.year, now.month, now.day);
+  }
+
+  /// Filtre "Date" de l'accueil (décision utilisateur du 2026-09-14) :
+  /// aujourd'hui et les 6 jours précédents, le plus récent en premier. Les
+  /// cartes de statistiques ci-dessous (ventes, recettes boissons/plats,
+  /// détail par mode de paiement) reflètent la date choisie ici, jamais
+  /// figées sur "aujourd'hui".
+  List<DateTime> get _dateOptions =>
+      List.generate(7, (i) => _todayDate.subtract(Duration(days: i)));
+
+  late DateTime _selectedDate = _todayDate;
+
+  bool get _isToday => _selectedDate == _todayDate;
+
+  /// "aujourd'hui" pour la date du jour, sinon `du <jour> <j> <mois>` (ex.
+  /// "du lundi 8 septembre") — recompose les libellés des cartes ("Ventes
+  /// aujourd'hui" -> "Ventes du lundi 8 septembre") pour qu'ils restent
+  /// exacts quelle que soit la date choisie dans le filtre.
+  String get _periodPhrase {
+    if (_isToday) return "aujourd'hui";
+    final weekday = _frenchWeekdays[_selectedDate.weekday - 1];
+    final month = _frenchMonths[_selectedDate.month - 1];
+    return 'du $weekday ${_selectedDate.day} $month';
+  }
+
   late Future<_DashboardData> _future = _load();
 
   @override
@@ -248,8 +279,27 @@ class _HomeDashboardState extends State<HomeDashboard> {
   /// hors ligne est un compromis largement préférable à bloquer la
   /// navigation.
   Future<_DashboardData> _load() async {
-    final summaryFuture = _reports.getSummary();
-    final breakdownFuture = _reports.getPaymentCategoryBreakdown();
+    // Bornes UTC explicites du jour choisi (00:00:00.000 -> 23:59:59.999) :
+    // ReportsService.resolveRange fait `new Date(from)`/`new Date(to)` côté
+    // serveur sans ajouter de fin de journée — envoyer la même date pour
+    // from et to donnerait un intervalle de largeur nulle (aucune vente ne
+    // tombe pile à minuit) et ne renverrait jamais rien.
+    final from = DateTime.utc(
+      _selectedDate.year,
+      _selectedDate.month,
+      _selectedDate.day,
+    );
+    final to = from
+        .add(const Duration(days: 1))
+        .subtract(const Duration(milliseconds: 1));
+    final fromIso = from.toIso8601String();
+    final toIso = to.toIso8601String();
+
+    final summaryFuture = _reports.getSummary(from: fromIso, to: toIso);
+    final breakdownFuture = _reports.getPaymentCategoryBreakdown(
+      from: fromIso,
+      to: toIso,
+    );
     final unreadFuture = _notifications.unreadCount();
 
     // Les 3 futures sont attendues ici quoi qu'il arrive : un retour anticipé
@@ -284,7 +334,15 @@ class _HomeDashboardState extends State<HomeDashboard> {
 
   Future<void> _reload() async {
     final next = _load();
-    setState(() => _future = next);
+    // Accolades nécessaires : `() => _future = next` renvoie la valeur de
+    // l'affectation (le Future lui-même) comme résultat de la closure —
+    // `setState` rejette alors un callback qui "retourne un Future"
+    // (assertion levée en debug/test, silencieuse en release). Révélé par
+    // le nouveau test du filtre de date (2026-09-14), qui est le premier à
+    // exercer `_reload()` dans `flutter test`.
+    setState(() {
+      _future = next;
+    });
     await next;
   }
 
@@ -502,9 +560,9 @@ class _HomeDashboardState extends State<HomeDashboard> {
                   ),
                 ),
                 const SizedBox(width: 10),
-                const Text(
-                  "Total ventes Aujourd'hui",
-                  style: TextStyle(
+                Text(
+                  'Total ventes $_periodPhrase',
+                  style: const TextStyle(
                     color: AppColors.textSecondary,
                     fontSize: 12,
                   ),
@@ -881,9 +939,45 @@ class _HomeDashboardState extends State<HomeDashboard> {
                     ],
                   ),
                   const SizedBox(height: 2),
-                  Text(
-                    _frenchDate(DateTime.now()),
-                    style: const TextStyle(color: AppColors.textSecondary),
+                  Row(
+                    children: [
+                      const Icon(
+                        Icons.calendar_today_outlined,
+                        size: 14,
+                        color: AppColors.textSecondary,
+                      ),
+                      const SizedBox(width: 6),
+                      DropdownButton<DateTime>(
+                        value: _selectedDate,
+                        isDense: true,
+                        underline: const SizedBox.shrink(),
+                        icon: const Icon(
+                          Icons.expand_more,
+                          size: 18,
+                          color: AppColors.textSecondary,
+                        ),
+                        style: const TextStyle(
+                          color: AppColors.textSecondary,
+                          fontSize: 14,
+                        ),
+                        items: [
+                          for (final date in _dateOptions)
+                            DropdownMenuItem(
+                              value: date,
+                              child: Text(
+                                date == _todayDate
+                                    ? "Aujourd'hui"
+                                    : _frenchDate(date),
+                              ),
+                            ),
+                        ],
+                        onChanged: (date) {
+                          if (date == null) return;
+                          setState(() => _selectedDate = date);
+                          _reload();
+                        },
+                      ),
+                    ],
                   ),
                   const SizedBox(height: 18),
                   if (breakdown != null && !_isServeur) ...[
@@ -904,7 +998,7 @@ class _HomeDashboardState extends State<HomeDashboard> {
                       children: [
                         _statCard(
                           icon: Icons.receipt_long_outlined,
-                          label: "Commandes aujourd'hui",
+                          label: 'Commandes $_periodPhrase',
                           value: '${summary.salesCount}',
                           color: AppColors.orange,
                         ),
@@ -921,9 +1015,11 @@ class _HomeDashboardState extends State<HomeDashboard> {
                     const SizedBox(height: 20),
                   ],
                   if (breakdown != null) ...[
-                    const Text(
-                      'RECETTES DU JOUR',
-                      style: TextStyle(
+                    Text(
+                      _isToday
+                          ? 'RECETTES DU JOUR'
+                          : 'RECETTES ${_periodPhrase.toUpperCase()}',
+                      style: const TextStyle(
                         fontWeight: FontWeight.bold,
                         fontSize: 13,
                         color: AppColors.textSecondary,
@@ -943,7 +1039,7 @@ class _HomeDashboardState extends State<HomeDashboard> {
                       children: [
                         _statCard(
                           icon: Icons.sports_bar_outlined,
-                          label: 'Recettes boissons aujourd\'hui',
+                          label: 'Recettes boissons $_periodPhrase',
                           value: '${formatAmount(breakdown.boissonsRevenue)} F',
                           color: AppColors.green,
                           iconAssets: const ['assets/malta.jpg'],
@@ -951,7 +1047,7 @@ class _HomeDashboardState extends State<HomeDashboard> {
                         if (!_isServeur)
                           _statCard(
                             icon: Icons.restaurant_outlined,
-                            label: 'Recettes plats aujourd\'hui',
+                            label: 'Recettes plats $_periodPhrase',
                             value: '${formatAmount(breakdown.platsRevenue)} F',
                             color: AppColors.orange,
                             iconAssets: const ['assets/kedjenou_poulet.jpg'],

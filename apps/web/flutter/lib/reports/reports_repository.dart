@@ -34,12 +34,21 @@ class ReportsRepository {
     return _api.getText('$_base/summary.csv', query: {'period': period});
   }
 
+  /// [period] est ignoré si [from]/[to] sont fournis — même convention que
+  /// [getSummary] (utilisé par `HomeDashboard` pour filtrer sur un jour
+  /// précis choisi par l'utilisateur, décision du 2026-09-14).
   Future<PaymentCategoryBreakdown> getPaymentCategoryBreakdown({
-    String period = 'day',
+    String? period,
+    String? from,
+    String? to,
   }) async {
     final json = await _api.get(
       '$_base/payment-category-breakdown',
-      query: {'period': period},
+      query: {
+        if (from == null && to == null) 'period': period ?? 'day',
+        'from': ?from,
+        'to': ?to,
+      },
     ) as Map<String, dynamic>;
     return PaymentCategoryBreakdown.fromJson(json);
   }

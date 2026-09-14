@@ -2,6 +2,12 @@
 
 ## [Unreleased]
 
+### Ajouté (2026-09-14) — Accueil : filtre de date sur les cartes de statistiques
+- L'étiquette « Date », jusqu'ici un texte figé sur aujourd'hui, devient un menu déroulant (aujourd'hui + les 6 jours précédents) — les cartes « Total ventes », « Commandes », « Recettes boissons/plats » et le détail par mode de paiement reflètent désormais la date choisie.
+- Aucune nouvelle route : les endpoints de rapports acceptaient déjà un intervalle `from`/`to`, non exposé jusqu'ici pour la ventilation par catégorie côté Flutter.
+- Bug latent corrigé au passage (révélé par les nouveaux tests du filtre) : `HomeDashboard._reload()` passait un `Future` en résultat de son callback `setState`, provoquant un crash en debug/test (invisible en production/release).
+- 75/75 tests Flutter (2 nouveaux), `flutter analyze`/`build web` ✅.
+
 ### Ajouté (2026-09-13) — Notifications : suppression au cas par cas, réservée au Super Administrateur
 - En complément d'« Effacer tout », `DELETE /establishments/:id/notifications/:notificationId` (`notifications.manage`, même permission déjà réservée au Super Administrateur) permet de supprimer une notification précise, ciblée ou diffusée, au choix de l'utilisateur.
 - Côté Flutter, un bouton (icône corbeille) apparaît en fin de chaque ligne de la liste, visible uniquement pour le rôle Super Administrateur, avec confirmation obligatoire avant suppression.
