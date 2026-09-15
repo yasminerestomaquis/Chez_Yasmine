@@ -58,14 +58,20 @@ join permissions p on p.code = 'notifications.manage'
 where r.is_system and r.name = 'Super Administrateur'
 on conflict do nothing;
 
--- Gérant : tout sauf la gestion des rôles et des utilisateurs (décision
--- utilisateur du 2026-09-13 — le module Utilisateurs reste réservé à
--- Super Administrateur/Administrateur/Propriétaire).
+-- Gérant : tout sauf la gestion des rôles, des utilisateurs et du catalogue
+-- (décision utilisateur du 2026-09-13 pour les deux premiers — le module
+-- Utilisateurs reste réservé à Super Administrateur/Administrateur/
+-- Propriétaire ; décision utilisateur du 2026-09-15 pour le catalogue —
+-- `products.view` volontairement PAS exclue : le Gérant garde le droit de
+-- consulter le catalogue, notamment parce qu'Achats en dépend pour choisir
+-- un produit à commander (voir purchase_order_detail_page.dart) — seule la
+-- création/modification/suppression de produits/catégories/photos lui est
+-- retirée, voir docs/api/catalog.md).
 insert into role_permissions (role_id, permission_id)
 select r.id, p.id
 from roles r
 cross join permissions p
-where r.is_system and r.name = 'Gérant' and p.code not in ('roles.manage', 'users.manage')
+where r.is_system and r.name = 'Gérant' and p.code not in ('roles.manage', 'users.manage', 'products.manage')
 on conflict do nothing;
 
 -- Caissier : caisse, remboursement, clients (encours crédit), rapports.

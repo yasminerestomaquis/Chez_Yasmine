@@ -86,6 +86,14 @@ Constaté par l'utilisateur en Caisse : l'affichage des photos produits semblait
 
 Corrigé : `getImageUrl` mémorise désormais la `Future<String>` par `(productId, imageId, variant)`, aussi longtemps que vit l'instance de `CatalogRepository` (typiquement toute la durée de vie de l'écran Caisse/Table/Catalogue). Sûr par construction : l'URL signée reste valable 1h côté serveur (`SIGNED_URL_TTL_SECONDS`), et la clé de cache est liée à l'identité de l'image elle-même — un changement d'image principale (`setPrimaryImage`) ne touche jamais l'URL déjà mise en cache d'une image existante, et une nouvelle image porte de toute façon un nouvel id. Un échec (coupure réseau) n'est jamais mis en cache, pour que l'appel suivant réessaie normalement une fois la connexion revenue.
 
+## Gestion retirée au rôle Gérant (décision actée 2026-09-15)
+
+Le Gérant avait `products.manage` par construction (règle générique « tout sauf `roles.manage`/`users.manage` », voir `supabase/seed/001_roles_permissions.sql`) — retiré sur demande explicite de l'utilisateur (« Retire l'accès au Catalogue au rôle Gérant »). `products.view` reste volontairement accordée : le Catalogue est encore consultable, et surtout **Achats en dépend** pour choisir un produit à commander (`PurchaseOrderDetailPage._load` appelle `CatalogRepository.listProducts`) — la retirer aurait aussi cassé Achats pour ce rôle, pas seulement le Catalogue (clarifié avec l'utilisateur avant d'agir).
+
+Un seul niveau ici, contrairement à Utilisateurs (`docs/api/users.md`) : la tuile Catalogue de l'accueil reste visible pour le Gérant (règle par défaut de l'application — jamais de masquage client selon la permission, un refus serveur suffit), qui peut donc toujours l'ouvrir en lecture ; toute tentative de création/modification/suppression de produit, catégorie ou photo renvoie désormais 403.
+
+Rejoué en production (idempotent) : la ligne `role_permissions` existante (Gérant, `products.manage`) a été supprimée explicitement — un seed additif (`on conflict do nothing`) ne peut jamais l'effacer lui-même. Vérifié en base de production : le Gérant ne porte plus que `products.view` pour ce module.
+
 ## Vérifications effectuées
 
 - Pipeline image (`sharp`) : **testé en conditions réelles** — vraies images générées et traitées en mémoire, 7 tests passants (validation, génération de variantes, non-agrandissement).

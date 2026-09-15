@@ -2,6 +2,13 @@
 
 ## [Unreleased]
 
+### Corrigé (2026-09-15) — Le rôle Gérant n'a plus accès à la gestion du Catalogue
+- `products.manage` (créer/modifier/supprimer produits, catégories, photos) retiré du Gérant, sur demande explicite de l'utilisateur. `products.view` volontairement conservée : Achats en dépend pour choisir un produit à commander — la retirer aurait aussi cassé ce module, pas seulement le Catalogue (clarifié avec l'utilisateur avant d'agir). La tuile Catalogue reste visible et consultable, seules les actions d'édition renvoient désormais 403. Voir `docs/api/catalog.md`.
+
+### Corrigé (2026-09-14) — Le bouton « Rembourser » n'était relié à aucune route
+- `PosRepository.refund` existait côté Flutter depuis l'origine mais n'était appelé nulle part — endpoint testé et fonctionnel côté serveur, injoignable depuis l'application. Découvert lors d'une vérification en conditions réelles.
+- Bouton « Rembourser cette vente » (icône retour, confirmation obligatoire) ajouté sur chaque carte de `sold_items_page.dart`, à côté du montant total.
+
 ### Ajouté (2026-09-14) — Vente à l'unité en plus du lot (Heineken 33/Despé 33)
 - Nouveau champ optionnel `Product.unitSalePrice` : pour un produit normalement vendu par lot (ex. 3 bouteilles à 2 000 FCFA), permet aussi la vente d'une seule bouteille à un prix différent (ex. 700 FCFA), configuré dans le formulaire produit.
 - En Caisse et dans l'Addition, un choix (« Lot » / « Unité ») apparaît dès qu'un produit a ce prix configuré. Le serveur reste seul juge du prix réel — le client ne fait qu'indiquer laquelle des deux tarifications déjà connues s'applique, jamais un montant.
