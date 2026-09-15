@@ -90,9 +90,19 @@ Corrigé : `getImageUrl` mémorise désormais la `Future<String>` par `(productI
 
 Le Gérant avait `products.manage` par construction (règle générique « tout sauf `roles.manage`/`users.manage` », voir `supabase/seed/001_roles_permissions.sql`) — retiré sur demande explicite de l'utilisateur (« Retire l'accès au Catalogue au rôle Gérant »). `products.view` reste volontairement accordée : le Catalogue est encore consultable, et surtout **Achats en dépend** pour choisir un produit à commander (`PurchaseOrderDetailPage._load` appelle `CatalogRepository.listProducts`) — la retirer aurait aussi cassé Achats pour ce rôle, pas seulement le Catalogue (clarifié avec l'utilisateur avant d'agir).
 
-Un seul niveau ici, contrairement à Utilisateurs (`docs/api/users.md`) : la tuile Catalogue de l'accueil reste visible pour le Gérant (règle par défaut de l'application — jamais de masquage client selon la permission, un refus serveur suffit), qui peut donc toujours l'ouvrir en lecture ; toute tentative de création/modification/suppression de produit, catégorie ou photo renvoie désormais 403.
-
 Rejoué en production (idempotent) : la ligne `role_permissions` existante (Gérant, `products.manage`) a été supprimée explicitement — un seed additif (`on conflict do nothing`) ne peut jamais l'effacer lui-même. Vérifié en base de production : le Gérant ne porte plus que `products.view` pour ce module.
+
+## Catalogue en lecture seule côté client pour les rôles sans `products.manage` (décision actée 2026-09-15)
+
+Constaté par l'utilisateur : le Gérant (et plus largement tout rôle sans `products.manage` — Serveur, Caissier) voyait dans le Catalogue les mêmes boutons créer/modifier/supprimer qu'un rôle pouvant réellement les utiliser, cliquables bien qu'ils échouent en 403 côté serveur. Contrairement à la règle par défaut de l'application (jamais de masquage client selon la permission, un refus serveur suffisant — voir `docs/api/users.md`), le Catalogue fait ici une seconde exception délibérée, comme Utilisateurs avant lui : `CatalogPage._canManage` (comparaison par nom de rôle, faute de code de permission exposé côté client — même limitation que `HomeDashboard._isGerant`/`_isServeur`) vérifie l'appartenance à `{Super Administrateur, Administrateur, Propriétaire, Magasinier}` — les seuls rôles portant réellement `products.manage` en base.
+
+Quand `_canManage` est faux :
+- Les icônes « Gérer les catégories »/« Nouvelle catégorie » de l'AppBar et le bouton flottant d'ajout de produit disparaissent.
+- Le bouton supprimer de chaque carte produit disparaît (`_ProductCard.onDelete` devient `null`).
+- Ouvrir un produit (`ProductFormPage(readOnly: true)`) affiche son nom en titre plutôt que « Modifier le produit », désactive tous les champs et le sélecteur de catégorie, masque les 4 boutons du sélecteur photo et le bouton d'enregistrement — consultation complète des informations du produit, sans aucune action d'écriture possible.
+- Les catégories/produits restent listés normalement (grille, badges, prix) — seule la couche de gestion disparaît.
+
+Défense en profondeur seulement : le serveur continue de rejeter (403) toute tentative malgré tout, ce masquage n'est qu'une amélioration d'expérience pour ne pas montrer une action vouée à l'échec.
 
 ## Vérifications effectuées
 

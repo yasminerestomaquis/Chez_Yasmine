@@ -3,7 +3,10 @@
 ## [Unreleased]
 
 ### Corrigé (2026-09-15) — Le rôle Gérant n'a plus accès à la gestion du Catalogue
-- `products.manage` (créer/modifier/supprimer produits, catégories, photos) retiré du Gérant, sur demande explicite de l'utilisateur. `products.view` volontairement conservée : Achats en dépend pour choisir un produit à commander — la retirer aurait aussi cassé ce module, pas seulement le Catalogue (clarifié avec l'utilisateur avant d'agir). La tuile Catalogue reste visible et consultable, seules les actions d'édition renvoient désormais 403. Voir `docs/api/catalog.md`.
+- `products.manage` (créer/modifier/supprimer produits, catégories, photos) retiré du Gérant, sur demande explicite de l'utilisateur. `products.view` volontairement conservée : Achats en dépend pour choisir un produit à commander — la retirer aurait aussi cassé ce module, pas seulement le Catalogue (clarifié avec l'utilisateur avant d'agir). Voir `docs/api/catalog.md`.
+- Serveur vérifié à la même occasion : n'a jamais eu `products.manage`, garde `products.view` (nécessaire à la prise de commande en salle) — aucun changement pour ce rôle.
+- Constaté ensuite par l'utilisateur : les boutons créer/modifier/supprimer restaient visibles et cliquables dans le Catalogue pour ces rôles (échec en 403 seulement au clic). Corrigé : le Catalogue est désormais en lecture seule côté client (icônes de gestion masquées, bouton supprimer masqué, formulaire produit ouvert en consultation — champs désactivés, aucun bouton d'enregistrement) pour tout rôle sans `products.manage` (Gérant, Serveur, Caissier), à l'identique pour les deux rôles cités.
+- 78/78 tests Flutter ✅ (2 nouveaux, `product_form_page_test.dart`).
 
 ### Corrigé (2026-09-14) — Le bouton « Rembourser » n'était relié à aucune route
 - `PosRepository.refund` existait côté Flutter depuis l'origine mais n'était appelé nulle part — endpoint testé et fonctionnel côté serveur, injoignable depuis l'application. Découvert lors d'une vérification en conditions réelles.

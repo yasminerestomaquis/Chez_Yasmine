@@ -24,7 +24,12 @@ void main() {
   // The form is a long ListView — a tall test viewport avoids relying on
   // scrolling to reach fields further down, since ListView only builds
   // what's visible.
-  Future<void> pumpForm(WidgetTester tester, {Product? existing, String? initialCategoryId}) async {
+  Future<void> pumpForm(
+    WidgetTester tester, {
+    Product? existing,
+    String? initialCategoryId,
+    bool readOnly = false,
+  }) async {
     tester.view.physicalSize = const Size(800, 3000);
     tester.view.devicePixelRatio = 1;
     addTearDown(tester.view.resetPhysicalSize);
@@ -36,6 +41,7 @@ void main() {
           categories: categories,
           existing: existing,
           initialCategoryId: initialCategoryId,
+          readOnly: readOnly,
         ),
       ),
     );
@@ -117,5 +123,37 @@ void main() {
     // "Prix d'achat par bouteille" reste affiché — seule la catégorie à prix
     // variable (Poulets) masque le prix, pas la catégorie à prix par casier.
     expect(find.text("Prix d'achat par bouteille"), findsOneWidget);
+  });
+
+  group('readOnly (rôle sans products.manage — Gérant/Serveur/Caissier, 2026-09-15)', () {
+    testWidgets('hides the photo-picker actions and the submit button, shows the product name as title', (tester) async {
+      final product = Product(id: 'prod-1', name: 'Bière 65cl', salePrice: 1000, status: 'active', stockQuantity: 12);
+      await pumpForm(tester, existing: product, readOnly: true);
+
+      expect(find.text('Bière 65cl'), findsWidgets); // titre de l'AppBar + valeur du champ Nom
+      expect(find.text('Modifier le produit'), findsNothing);
+      expect(find.text('Prendre une photo'), findsNothing);
+      expect(find.text('Choisir dans la galerie'), findsNothing);
+      expect(find.text('Importer un fichier'), findsNothing);
+      expect(find.text('Image générique'), findsNothing);
+      expect(find.text('Enregistrer'), findsNothing);
+      expect(find.text('Créer le produit'), findsNothing);
+    });
+
+    testWidgets('every text field is read-only and the category dropdown is disabled', (tester) async {
+      final product = Product(id: 'prod-1', name: 'Bière 65cl', salePrice: 1000, status: 'active', stockQuantity: 12);
+      await pumpForm(tester, existing: product, readOnly: true);
+
+      // TextFormField ne stocke pas `readOnly` lui-même — c'est le TextField
+      // interne (construit par son FormField builder) qui le porte réellement.
+      final fields = tester.widgetList<TextField>(find.byType(TextField));
+      expect(fields, isNotEmpty);
+      for (final field in fields) {
+        expect(field.readOnly, isTrue);
+      }
+
+      final dropdown = tester.widget<DropdownButtonFormField<String>>(find.byType(DropdownButtonFormField<String>));
+      expect(dropdown.onChanged, isNull);
+    });
   });
 }

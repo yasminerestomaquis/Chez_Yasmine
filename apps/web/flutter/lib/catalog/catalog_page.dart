@@ -7,9 +7,10 @@ import 'models.dart';
 import 'product_form_page.dart';
 
 class CatalogPage extends StatefulWidget {
-  const CatalogPage({super.key, required this.establishmentId});
+  const CatalogPage({super.key, required this.establishmentId, required this.roleName});
 
   final String establishmentId;
+  final String roleName;
 
   @override
   State<CatalogPage> createState() => _CatalogPageState();
@@ -17,6 +18,17 @@ class CatalogPage extends StatefulWidget {
 
 class _CatalogPageState extends State<CatalogPage> {
   late final CatalogRepository _repository = CatalogRepository(ApiClient(), widget.establishmentId);
+
+  /// Rôles portant `products.manage` (voir supabase/seed/001_roles_permissions.sql)
+  /// — tous les autres n'ont que `products.view` (ou rien), demande utilisateur
+  /// du 2026-09-15 : jusqu'ici le Catalogue ne masquait aucune action selon le
+  /// rôle (convention par défaut de l'application, un refus serveur 403
+  /// suffisant ailleurs — voir docs/api/users.md) mais ça laissait un Gérant/
+  /// Serveur/Caissier voir des boutons créer/modifier/supprimer parfaitement
+  /// cliquables pour une action qu'ils ne peuvent pas réellement effectuer.
+  /// Exception délibérée à cette convention, comme pour Utilisateurs.
+  static const _manageRoles = {'Super Administrateur', 'Administrateur', 'Propriétaire', 'Magasinier'};
+  bool get _canManage => _manageRoles.contains(widget.roleName);
   late Future<void> _future;
   List<Category> _categories = [];
   List<Product> _products = [];
@@ -147,6 +159,7 @@ class _CatalogPageState extends State<CatalogPage> {
           categories: categories,
           existing: existing,
           initialCategoryId: initialCategoryId,
+          readOnly: !_canManage,
         ),
       ),
     );
@@ -264,10 +277,12 @@ class _CatalogPageState extends State<CatalogPage> {
       appBar: AppBar(
         leading: _inCategoryView ? BackButton(onPressed: _backToCategories) : null,
         title: Text(_selectedCategory?.name ?? (_showUncategorized ? 'Sans catégorie' : 'Catalogue')),
-        actions: [
-          IconButton(onPressed: _manageCategories, icon: const Icon(Icons.category_outlined), tooltip: 'Gérer les catégories'),
-          IconButton(onPressed: _addCategory, icon: const Icon(Icons.add), tooltip: 'Nouvelle catégorie'),
-        ],
+        actions: _canManage
+            ? [
+                IconButton(onPressed: _manageCategories, icon: const Icon(Icons.category_outlined), tooltip: 'Gérer les catégories'),
+                IconButton(onPressed: _addCategory, icon: const Icon(Icons.add), tooltip: 'Nouvelle catégorie'),
+              ]
+            : null,
       ),
       body: FutureBuilder<void>(
         future: _future,
@@ -295,7 +310,7 @@ class _CatalogPageState extends State<CatalogPage> {
           }
 
           if (_products.isEmpty && _categories.isEmpty) {
-            return const Center(child: Text('Aucun produit — ajoutez-en un avec le bouton +'));
+            return Center(child: Text(_canManage ? 'Aucun produit — ajoutez-en un avec le bouton +' : 'Aucun produit.'));
           }
 
           if (!_inCategoryView) {
@@ -307,16 +322,20 @@ class _CatalogPageState extends State<CatalogPage> {
               : _products.where((p) => p.categoryId == null).toList();
 
           if (products.isEmpty) {
-            return const Center(child: Text('Aucun produit dans cette catégorie — ajoutez-en un avec le bouton +'));
+            return Center(
+              child: Text(_canManage ? 'Aucun produit dans cette catégorie — ajoutez-en un avec le bouton +' : 'Aucun produit dans cette catégorie.'),
+            );
           }
 
           return _buildProductGrid(products);
         },
       ),
-      floatingActionButton: FloatingActionButton(
-        onPressed: () => _openProductForm(categories: _categories, initialCategoryId: _selectedCategory?.id),
-        child: const Icon(Icons.add),
-      ),
+      floatingActionButton: _canManage
+          ? FloatingActionButton(
+              onPressed: () => _openProductForm(categories: _categories, initialCategoryId: _selectedCategory?.id),
+              child: const Icon(Icons.add),
+            )
+          : null,
     );
   }
 
@@ -358,7 +377,7 @@ class _CatalogPageState extends State<CatalogPage> {
           product: product,
           repository: _repository,
           onTap: () => _openProductForm(categories: _categories, existing: product),
-          onDelete: () => _deleteProduct(product),
+          onDelete: _canManage ? () => _deleteProduct(product) : null,
         );
       },
     );
@@ -414,7 +433,7 @@ class _ProductCard extends StatelessWidget {
   final Product product;
   final CatalogRepository repository;
   final VoidCallback onTap;
-  final VoidCallback onDelete;
+  final VoidCallback? onDelete;
 
   @override
   Widget build(BuildContext context) {
@@ -443,16 +462,17 @@ class _ProductCard extends StatelessWidget {
                             );
                           },
                         ),
-                  Positioned(
-                    top: 2,
-                    right: 2,
-                    child: IconButton(
-                      tooltip: 'Supprimer',
-                      icon: const Icon(Icons.delete_outline),
-                      style: IconButton.styleFrom(backgroundColor: Colors.white70),
-                      onPressed: onDelete,
+                  if (onDelete != null)
+                    Positioned(
+                      top: 2,
+                      right: 2,
+                      child: IconButton(
+                        tooltip: 'Supprimer',
+                        icon: const Icon(Icons.delete_outline),
+                        style: IconButton.styleFrom(backgroundColor: Colors.white70),
+                        onPressed: onDelete,
+                      ),
                     ),
-                  ),
                 ],
               ),
             ),

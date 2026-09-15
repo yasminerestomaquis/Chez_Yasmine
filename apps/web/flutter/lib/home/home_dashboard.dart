@@ -219,7 +219,7 @@ class _HomeDashboardState extends State<HomeDashboard> {
     _ModuleEntry(
       Icons.storefront_outlined,
       'Catalogue',
-      (_) => CatalogPage(establishmentId: widget.establishmentId),
+      (_) => CatalogPage(establishmentId: widget.establishmentId, roleName: widget.roleName),
     ),
   ];
   late final List<_ModuleEntry> _pilotage = [

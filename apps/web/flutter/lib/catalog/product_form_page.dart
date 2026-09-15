@@ -19,6 +19,7 @@ class ProductFormPage extends StatefulWidget {
     required this.categories,
     this.existing,
     this.initialCategoryId,
+    this.readOnly = false,
   });
 
   final CatalogRepository repository;
@@ -27,6 +28,12 @@ class ProductFormPage extends StatefulWidget {
   /// Pré-remplit la catégorie quand le formulaire s'ouvre depuis le
   /// sous-module d'une catégorie du Catalogue.
   final String? initialCategoryId;
+
+  /// Rôle sans `products.manage` (ex. Gérant, Serveur, Caissier — voir
+  /// `CatalogPage._canManage`) : consultation seule, champs désactivés,
+  /// sélecteur photo et bouton d'enregistrement masqués. Demande utilisateur
+  /// du 2026-09-15.
+  final bool readOnly;
 
   @override
   State<ProductFormPage> createState() => _ProductFormPageState();
@@ -217,7 +224,9 @@ class _ProductFormPageState extends State<ProductFormPage> {
   @override
   Widget build(BuildContext context) {
     return Scaffold(
-      appBar: AppBar(title: Text(_isEditing ? 'Modifier le produit' : 'Nouveau produit')),
+      appBar: AppBar(
+        title: Text(widget.readOnly ? (widget.existing?.name ?? 'Produit') : (_isEditing ? 'Modifier le produit' : 'Nouveau produit')),
+      ),
       body: Form(
         key: _formKey,
         child: ListView(
@@ -229,10 +238,12 @@ class _ProductFormPageState extends State<ProductFormPage> {
               onGallery: _pickFromGallery,
               onFile: _pickFromFile,
               onGeneric: _useGenericImage,
+              readOnly: widget.readOnly,
             ),
             const SizedBox(height: 16),
             TextFormField(
               controller: _nameController,
+              readOnly: widget.readOnly,
               decoration: const InputDecoration(labelText: 'Nom *'),
               validator: (v) => (v == null || v.trim().isEmpty) ? 'Requis' : null,
             ),
@@ -243,16 +254,22 @@ class _ProductFormPageState extends State<ProductFormPage> {
               items: widget.categories
                   .map((c) => DropdownMenuItem(value: c.id, child: Text(c.name)))
                   .toList(),
-              onChanged: (value) => setState(() => _categoryId = value),
+              onChanged: widget.readOnly ? null : (value) => setState(() => _categoryId = value),
             ),
             const SizedBox(height: 12),
-            TextFormField(controller: _descriptionController, decoration: const InputDecoration(labelText: 'Description'), maxLines: 2),
+            TextFormField(
+              controller: _descriptionController,
+              readOnly: widget.readOnly,
+              decoration: const InputDecoration(labelText: 'Description'),
+              maxLines: 2,
+            ),
             const SizedBox(height: 12),
             if (_isCasePricing)
               Row(children: [
                 Expanded(
                   child: TextFormField(
                     controller: _bottlesPerCaseController,
+                    readOnly: widget.readOnly,
                     keyboardType: TextInputType.number,
                     decoration: const InputDecoration(labelText: 'Nbre de bouteilles par casier'),
                   ),
@@ -261,6 +278,7 @@ class _ProductFormPageState extends State<ProductFormPage> {
                 Expanded(
                   child: TextFormField(
                     controller: _purchasePricePerCaseController,
+                    readOnly: widget.readOnly,
                     keyboardType: const TextInputType.numberWithOptions(decimal: true),
                     decoration: const InputDecoration(labelText: "Prix d'achat par casier"),
                   ),
@@ -268,12 +286,28 @@ class _ProductFormPageState extends State<ProductFormPage> {
               ])
             else
               Row(children: [
-                Expanded(child: TextFormField(controller: _referenceController, decoration: const InputDecoration(labelText: 'Référence'))),
+                Expanded(
+                  child: TextFormField(
+                    controller: _referenceController,
+                    readOnly: widget.readOnly,
+                    decoration: const InputDecoration(labelText: 'Référence'),
+                  ),
+                ),
                 const SizedBox(width: 12),
-                Expanded(child: TextFormField(controller: _barcodeController, decoration: const InputDecoration(labelText: 'Code-barres'))),
+                Expanded(
+                  child: TextFormField(
+                    controller: _barcodeController,
+                    readOnly: widget.readOnly,
+                    decoration: const InputDecoration(labelText: 'Code-barres'),
+                  ),
+                ),
               ]),
             const SizedBox(height: 12),
-            TextFormField(controller: _unitController, decoration: const InputDecoration(labelText: 'Unité (ex : bouteille, portion)')),
+            TextFormField(
+              controller: _unitController,
+              readOnly: widget.readOnly,
+              decoration: const InputDecoration(labelText: 'Unité (ex : bouteille, portion)'),
+            ),
             const SizedBox(height: 12),
             if (_isVariablePricing)
               const Card(
@@ -299,6 +333,7 @@ class _ProductFormPageState extends State<ProductFormPage> {
                 Expanded(
                   child: TextFormField(
                     controller: _purchasePriceController,
+                    readOnly: widget.readOnly,
                     keyboardType: const TextInputType.numberWithOptions(decimal: true),
                     decoration: const InputDecoration(labelText: "Prix d'achat par bouteille"),
                   ),
@@ -307,6 +342,7 @@ class _ProductFormPageState extends State<ProductFormPage> {
                 Expanded(
                   child: TextFormField(
                     controller: _salePriceController,
+                    readOnly: widget.readOnly,
                     keyboardType: const TextInputType.numberWithOptions(decimal: true),
                     decoration: const InputDecoration(labelText: 'Prix de vente (FCFA) *'),
                     validator: (v) => _parseNumber(v ?? '') == null ? 'Requis' : null,
@@ -317,6 +353,7 @@ class _ProductFormPageState extends State<ProductFormPage> {
               const SizedBox(height: 12),
               TextFormField(
                 controller: _unitSalePriceController,
+                readOnly: widget.readOnly,
                 keyboardType: const TextInputType.numberWithOptions(decimal: true),
                 decoration: const InputDecoration(
                   labelText: "Prix de vente à l'unité (optionnel)",
@@ -332,6 +369,7 @@ class _ProductFormPageState extends State<ProductFormPage> {
               Expanded(
                 child: TextFormField(
                   controller: _vatRateController,
+                  readOnly: widget.readOnly,
                   keyboardType: const TextInputType.numberWithOptions(decimal: true),
                   decoration: const InputDecoration(labelText: 'TVA (%)'),
                 ),
@@ -340,6 +378,7 @@ class _ProductFormPageState extends State<ProductFormPage> {
               Expanded(
                 child: TextFormField(
                   controller: _minStockController,
+                  readOnly: widget.readOnly,
                   keyboardType: const TextInputType.numberWithOptions(decimal: true),
                   decoration: const InputDecoration(labelText: 'Stock minimum'),
                 ),
@@ -349,17 +388,20 @@ class _ProductFormPageState extends State<ProductFormPage> {
               const SizedBox(height: 12),
               TextFormField(
                 controller: _initialStockController,
+                readOnly: widget.readOnly,
                 keyboardType: const TextInputType.numberWithOptions(decimal: true),
                 decoration: const InputDecoration(labelText: 'Stock initial'),
               ),
             ],
-            const SizedBox(height: 24),
-            FilledButton(
-              onPressed: _isSubmitting ? null : _submit,
-              child: _isSubmitting
-                  ? const SizedBox(height: 18, width: 18, child: CircularProgressIndicator(strokeWidth: 2))
-                  : Text(_isEditing ? 'Enregistrer' : 'Créer le produit'),
-            ),
+            if (!widget.readOnly) ...[
+              const SizedBox(height: 24),
+              FilledButton(
+                onPressed: _isSubmitting ? null : _submit,
+                child: _isSubmitting
+                    ? const SizedBox(height: 18, width: 18, child: CircularProgressIndicator(strokeWidth: 2))
+                    : Text(_isEditing ? 'Enregistrer' : 'Créer le produit'),
+              ),
+            ],
           ],
         ),
       ),
@@ -374,6 +416,7 @@ class _PhotoPicker extends StatelessWidget {
     required this.onGallery,
     required this.onFile,
     required this.onGeneric,
+    this.readOnly = false,
   });
 
   final Uint8List? bytes;
@@ -381,6 +424,7 @@ class _PhotoPicker extends StatelessWidget {
   final VoidCallback onGallery;
   final VoidCallback onFile;
   final VoidCallback onGeneric;
+  final bool readOnly;
 
   @override
   Widget build(BuildContext context) {
@@ -398,18 +442,20 @@ class _PhotoPicker extends StatelessWidget {
               ? Image.memory(bytes!, fit: BoxFit.contain)
               : const Icon(Icons.image_outlined, size: 48),
         ),
-        const SizedBox(height: 12),
-        Wrap(
-          spacing: 8,
-          runSpacing: 8,
-          alignment: WrapAlignment.center,
-          children: [
-            OutlinedButton.icon(onPressed: onCamera, icon: const Icon(Icons.photo_camera_outlined), label: const Text('Prendre une photo')),
-            OutlinedButton.icon(onPressed: onGallery, icon: const Icon(Icons.photo_library_outlined), label: const Text('Choisir dans la galerie')),
-            OutlinedButton.icon(onPressed: onFile, icon: const Icon(Icons.folder_open_outlined), label: const Text('Importer un fichier')),
-            OutlinedButton.icon(onPressed: onGeneric, icon: const Icon(Icons.image_outlined), label: const Text("Image générique")),
-          ],
-        ),
+        if (!readOnly) ...[
+          const SizedBox(height: 12),
+          Wrap(
+            spacing: 8,
+            runSpacing: 8,
+            alignment: WrapAlignment.center,
+            children: [
+              OutlinedButton.icon(onPressed: onCamera, icon: const Icon(Icons.photo_camera_outlined), label: const Text('Prendre une photo')),
+              OutlinedButton.icon(onPressed: onGallery, icon: const Icon(Icons.photo_library_outlined), label: const Text('Choisir dans la galerie')),
+              OutlinedButton.icon(onPressed: onFile, icon: const Icon(Icons.folder_open_outlined), label: const Text('Importer un fichier')),
+              OutlinedButton.icon(onPressed: onGeneric, icon: const Icon(Icons.image_outlined), label: const Text("Image générique")),
+            ],
+          ),
+        ],
       ],
     );
   }
