@@ -2,6 +2,10 @@
 
 ## [Unreleased]
 
+### Ajouté (2026-09-15) — Accès au module Pertes accordé au rôle Serveur
+- `losses.manage` accordé au Serveur, sur demande explicite de l'utilisateur — accès complet (pas de variante lecture seule possible, `LossesController` n'a qu'une seule permission pour `GET`/`POST`). Voir `docs/api/accounting.md`.
+- Rejoué en production (additif) : vérifié en base, le Serveur porte désormais `losses.manage`.
+
 ### Modifié (2026-09-15) — « Produits vendus » remplacé par « Plats vendus »/« Boissons vendues » en Caisse et Addition
 - Le bouton unique « Produits vendus » (listing non filtré des ventes du jour) est retiré des deux écrans, remplacé par deux boutons dédiés : **Plats vendus** (Plats africains/Poissons/Poulets) et **Boissons vendues** (Bières/Vins/Sucreries) — même découpage par catégorie que les exports Excel déjà existants dans Rapports.
 - Chaque bouton ouvre un listing avec une date choisie (calendrier, jour courant par défaut) et le **total en gras** des montants du groupe affiché en tête de liste, au-dessus des ventes correspondantes.

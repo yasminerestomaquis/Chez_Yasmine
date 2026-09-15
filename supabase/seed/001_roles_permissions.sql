@@ -98,10 +98,14 @@ on conflict do nothing;
 -- (sans "Valeur du stock", masquée côté client — voir lib/stock/stock_page.dart)
 -- — jamais `purchases.manage`/`stock.manage`, qui resteraient réservés à
 -- Magasinier/Gérant/administration.
+-- `losses.manage` (2026-09-15, demande utilisateur) : accès complet au
+-- module Pertes — contrairement à products/stock/purchases, il n'existe pas
+-- de `losses.view` séparée (voir `LossesController`, une seule permission
+-- gate à la fois la consultation et l'enregistrement d'une perte).
 insert into role_permissions (role_id, permission_id)
 select r.id, p.id
 from roles r
-join permissions p on p.code in ('pos.sell', 'tables.manage', 'products.view', 'reports.view', 'purchases.view', 'stock.view')
+join permissions p on p.code in ('pos.sell', 'tables.manage', 'products.view', 'reports.view', 'purchases.view', 'stock.view', 'losses.manage')
 where r.is_system and r.name = 'Serveur'
 on conflict do nothing;
 
