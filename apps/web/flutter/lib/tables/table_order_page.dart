@@ -6,11 +6,11 @@ import '../catalog/catalog_repository.dart';
 import '../catalog/models.dart';
 import '../common/formatting.dart';
 import '../pos/cart_panel.dart';
+import '../pos/category_sold_items_page.dart';
 import '../pos/payment_dialog.dart';
 import '../pos/pos_repository.dart';
 import '../pos/product_grid.dart';
 import '../pos/receipt_page.dart';
-import '../pos/sold_items_page.dart';
 import '../sync/device_id.dart';
 import '../sync/pending_operation.dart';
 import '../sync/sync_queue_service.dart';
@@ -375,12 +375,24 @@ class _TableOrderPageState extends State<TableOrderPage> {
         title: const Text('Addition'),
         actions: [
           IconButton(
-            tooltip: 'Produits vendus',
-            icon: const Icon(Icons.receipt_long_outlined),
+            tooltip: 'Boissons vendues',
+            icon: const Icon(Icons.local_bar_outlined),
             onPressed: () => Navigator.of(context).push(
               MaterialPageRoute(
-                builder: (_) =>
-                    SoldItemsPage(establishmentId: widget.establishmentId),
+                builder: (_) => CategorySoldItemsPage.boissons(
+                  establishmentId: widget.establishmentId,
+                ),
+              ),
+            ),
+          ),
+          IconButton(
+            tooltip: 'Plats vendus',
+            icon: const Icon(Icons.restaurant_outlined),
+            onPressed: () => Navigator.of(context).push(
+              MaterialPageRoute(
+                builder: (_) => CategorySoldItemsPage.plats(
+                  establishmentId: widget.establishmentId,
+                ),
               ),
             ),
           ),

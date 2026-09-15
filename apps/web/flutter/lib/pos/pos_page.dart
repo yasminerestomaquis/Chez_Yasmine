@@ -11,11 +11,11 @@ import '../sync/pending_operation.dart';
 import '../sync/sync_queue_service.dart';
 import 'cart_panel.dart';
 import 'payment_dialog.dart';
+import 'category_sold_items_page.dart';
 import 'pos_models.dart';
 import 'pos_repository.dart';
 import 'product_grid.dart';
 import 'receipt_page.dart';
-import 'sold_items_page.dart';
 
 /// Largeur en dessous de laquelle le panier passe en panneau inférieur
 /// (bottom sheet + barre flottante) plutôt qu'en colonne latérale fixe —
@@ -326,12 +326,24 @@ class _PosPageState extends State<PosPage> {
         title: const Text('Caisse'),
         actions: [
           IconButton(
-            tooltip: 'Produits vendus',
-            icon: const Icon(Icons.receipt_long_outlined),
+            tooltip: 'Boissons vendues',
+            icon: const Icon(Icons.local_bar_outlined),
             onPressed: () => Navigator.of(context).push(
               MaterialPageRoute(
-                builder: (_) =>
-                    SoldItemsPage(establishmentId: widget.establishmentId),
+                builder: (_) => CategorySoldItemsPage.boissons(
+                  establishmentId: widget.establishmentId,
+                ),
+              ),
+            ),
+          ),
+          IconButton(
+            tooltip: 'Plats vendus',
+            icon: const Icon(Icons.restaurant_outlined),
+            onPressed: () => Navigator.of(context).push(
+              MaterialPageRoute(
+                builder: (_) => CategorySoldItemsPage.plats(
+                  establishmentId: widget.establishmentId,
+                ),
               ),
             ),
           ),

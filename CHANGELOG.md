@@ -2,6 +2,13 @@
 
 ## [Unreleased]
 
+### Modifié (2026-09-15) — « Produits vendus » remplacé par « Plats vendus »/« Boissons vendues » en Caisse et Addition
+- Le bouton unique « Produits vendus » (listing non filtré des ventes du jour) est retiré des deux écrans, remplacé par deux boutons dédiés : **Plats vendus** (Plats africains/Poissons/Poulets) et **Boissons vendues** (Bières/Vins/Sucreries) — même découpage par catégorie que les exports Excel déjà existants dans Rapports.
+- Chaque bouton ouvre un listing avec une date choisie (calendrier, jour courant par défaut) et le **total en gras** des montants du groupe affiché en tête de liste, au-dessus des ventes correspondantes.
+- La capacité de corriger une vente déjà enregistrée (quantité, mode de paiement, remboursement complet) est reprise à l'identique dans les deux nouveaux listings, sur demande explicite de l'utilisateur — rien n'est perdu dans le remplacement.
+- Voir `docs/api/pos.md`.
+- 82/82 tests Flutter ✅ (5 nouveaux : filtrage/total testés en logique pure, 2 tests d'état d'erreur widget — 1 ancien test remplacé, `sold_items_page_test.dart` supprimé).
+
 ### Corrigé (2026-09-15) — Le rôle Gérant n'a plus accès à la gestion du Catalogue
 - `products.manage` (créer/modifier/supprimer produits, catégories, photos) retiré du Gérant, sur demande explicite de l'utilisateur. `products.view` volontairement conservée : Achats en dépend pour choisir un produit à commander — la retirer aurait aussi cassé ce module, pas seulement le Catalogue (clarifié avec l'utilisateur avant d'agir). Voir `docs/api/catalog.md`.
 - Serveur vérifié à la même occasion : n'a jamais eu `products.manage`, garde `products.view` (nécessaire à la prise de commande en salle) — aucun changement pour ce rôle.
