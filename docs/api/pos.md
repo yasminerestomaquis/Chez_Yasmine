@@ -82,6 +82,8 @@ Toujours `GET .../sales?day=` (route déjà existante, aucun nouvel endpoint) �
 
 **Le paiement à crédit n'est pas encore exposé dans l'UI** : l'activer correctement nécessite un sélecteur de client, qui est le sujet de la Phase 11 (Clients/Crédits). L'exposer maintenant avec un champ « ID client » en texte libre aurait été une UI trompeuse ; le backend le supporte déjà (`payments: [{ method: 'credit', ... }]`), seule l'interface manque.
 
+**Contour rouge sur une vignette en rupture de stock (décision actée 2026-09-16)** : `PosProductTile` (`lib/pos/product_grid.dart`, partagé par Caisse et l'écran Addition via `ProductGrid`) affiche un contour rouge (`AppColors.alert`, même couleur que l'état « Rupture » du module Stock) dès que `product.stockQuantity <= 0` — simple repère visuel, aucun blocage : le produit reste cliquable et ajoutable au panier comme avant, sur demande explicite de l'utilisateur (« indiquer », pas « empêcher »). S'applique uniformément à toutes les catégories, y compris à prix variable (Plats africains/Poissons/Poulets) — `stockQuantity` est un champ générique du produit, indépendant de la tarification.
+
 ## Vérifications effectuées
 
 - `pos-math.ts`/`credit-math.ts` : **testés en conditions réelles** (fonctions pures, sans mock) — 19 tests (totaux de panier, remises, validation de paiement, plafond de crédit, remboursement).

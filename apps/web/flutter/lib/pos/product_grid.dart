@@ -182,9 +182,20 @@ class PosProductTile extends StatelessWidget {
     final primaryImage =
         product.images.where((i) => i.isPrimary).firstOrNull ??
         product.images.firstOrNull;
+    // Rupture de stock : contour rouge sur la vignette (demande utilisateur
+    // du 2026-09-16) — repère visuel uniquement, la vente reste possible
+    // (aucun blocage ni message ajouté ici), même seuil que "Rupture" dans
+    // le module Stock (lib/stock/stock_page.dart).
+    final outOfStock = product.stockQuantity <= 0;
 
     return Card(
       clipBehavior: Clip.antiAlias,
+      shape: outOfStock
+          ? const RoundedRectangleBorder(
+              borderRadius: BorderRadius.all(Radius.circular(14)),
+              side: BorderSide(color: AppColors.alert, width: 2),
+            )
+          : null,
       child: InkWell(
         onTap: onTap,
         child: Stack(

@@ -2,6 +2,11 @@
 
 ## [Unreleased]
 
+### Ajouté (2026-09-16) — Contour rouge sur les produits en rupture de stock (Caisse, Addition)
+- Chaque vignette produit affiche désormais un contour rouge dès que son stock est épuisé (`stockQuantity <= 0`) — même couleur que l'état « Rupture » du module Stock. Simple repère visuel : le produit reste cliquable et ajoutable au panier, aucun blocage ajouté.
+- Un seul point de modification (`PosProductTile`, `lib/pos/product_grid.dart`) couvre à la fois la Caisse et l'écran Addition, qui partagent déjà ce composant.
+- Voir `docs/api/pos.md`. 3 nouveaux tests.
+
 ### Ajouté (2026-09-15) — Accès au module Pertes accordé au rôle Serveur
 - `losses.manage` accordé au Serveur, sur demande explicite de l'utilisateur — accès complet (pas de variante lecture seule possible, `LossesController` n'a qu'une seule permission pour `GET`/`POST`). Voir `docs/api/accounting.md`.
 - Rejoué en production (additif) : vérifié en base, le Serveur porte désormais `losses.manage`.
