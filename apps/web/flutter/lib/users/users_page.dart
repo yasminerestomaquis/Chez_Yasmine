@@ -5,6 +5,7 @@ import 'package:supabase_flutter/supabase_flutter.dart';
 import '../api/api_client.dart';
 import '../common/formatting.dart';
 import '../theme/app_theme.dart';
+import 'permissions_dashboard_page.dart';
 import 'user_models.dart';
 import 'users_repository.dart';
 
@@ -25,9 +26,14 @@ class _InviteFormResult {
 }
 
 class UsersPage extends StatefulWidget {
-  const UsersPage({super.key, required this.establishmentId});
+  const UsersPage({
+    super.key,
+    required this.establishmentId,
+    required this.roleName,
+  });
 
   final String establishmentId;
+  final String roleName;
 
   @override
   State<UsersPage> createState() => _UsersPageState();
@@ -38,6 +44,11 @@ class _UsersPageState extends State<UsersPage> {
     ApiClient(),
     widget.establishmentId,
   );
+
+  /// Le tableau de bord "Gestion des permissions" (`roles.manage`) n'est
+  /// accordé qu'au Super Administrateur — voir docs/api/users.md. Même
+  /// principe que "Effacer toutes les notifications" (`notifications_page.dart`).
+  bool get _isSuperAdmin => widget.roleName == 'Super Administrateur';
   late Future<(List<TeamMember>, List<RoleOption>)> _future = _load();
 
   Future<(List<TeamMember>, List<RoleOption>)> _load() async {
@@ -284,7 +295,23 @@ class _UsersPageState extends State<UsersPage> {
   @override
   Widget build(BuildContext context) {
     return Scaffold(
-      appBar: AppBar(title: const Text('Utilisateurs')),
+      appBar: AppBar(
+        title: const Text('Utilisateurs'),
+        actions: [
+          if (_isSuperAdmin)
+            IconButton(
+              tooltip: 'Gestion des permissions',
+              icon: const Icon(Icons.admin_panel_settings_outlined),
+              onPressed: () => Navigator.of(context).push(
+                MaterialPageRoute(
+                  builder: (_) => PermissionsDashboardPage(
+                    establishmentId: widget.establishmentId,
+                  ),
+                ),
+              ),
+            ),
+        ],
+      ),
       body: FutureBuilder<(List<TeamMember>, List<RoleOption>)>(
         future: _future,
         builder: (context, snapshot) {

@@ -14,6 +14,7 @@ import { PosModule } from './pos/pos.module.js';
 import { PrismaModule } from './prisma/prisma.module.js';
 import { PurchasingModule } from './purchasing/purchasing.module.js';
 import { ReportsModule } from './reports/reports.module.js';
+import { RolesModule } from './roles/roles.module.js';
 import { StockModule } from './stock/stock.module.js';
 import { SyncModule } from './sync/sync.module.js';
 import { TablesModule } from './tables/tables.module.js';
@@ -38,6 +39,7 @@ import { UsersModule } from './users/users.module.js';
     NotificationsModule,
     ChartsModule,
     UsersModule,
+    RolesModule,
   ],
   controllers: [AppController],
   providers: [AppService],

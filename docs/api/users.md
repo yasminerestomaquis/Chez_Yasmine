@@ -111,10 +111,49 @@ Le Gérant avait `users.manage` par construction (règle générique « tout sau
 
 Vérifié en base de production : seuls Super Administrateur/Administrateur/Propriétaire portent encore `users.manage`.
 
+## Tableau de bord "Gestion des permissions" (décision utilisateur du 2026-09-16)
+
+Demande utilisateur : un tableau de bord dans le module Utilisateurs permettant de cocher/décocher, pour chaque rôle, les permissions accordées, groupées par module/sous-module, avec code couleur vert (accordé)/rouge (refusé), visible du seul Super Administrateur.
+
+### Un module distinct, pas des méthodes ajoutées à `UsersController`
+
+`apps/api/nestjs/src/roles/` (`RolesController`/`RolesService`/`RolesModule`, enregistré dans `AppModule`) — module séparé de `users/`, cohérent avec le reste de la base (un module par domaine métier : `catalog`, `stock`, `pos`...). Gérer QUI a accès à l'établissement (`users.manage`, `UsersController`) n'est pas la même permission que décider CE QUE chaque rôle peut faire (`roles.manage`, `RolesController`) — deux domaines, deux gardes `@RequirePermissions` distinctes, même si `PermissionsGuard.getAllAndOverride` aurait techniquement permis de les mélanger dans un seul contrôleur via des surcharges par méthode.
+
+```
+GET    /establishments/:establishmentId/roles-permissions                     matrice complète { permissions[], roles[] }
+PUT    /establishments/:establishmentId/roles/:roleId/permissions/:code       accorde (204, idempotent)
+DELETE /establishments/:establishmentId/roles/:roleId/permissions/:code       retire (204)
+```
+
+Toutes trois protégées par `SupabaseJwtGuard` + `PermissionsGuard` + `@RequirePermissions('roles.manage')` (niveau contrôleur). `listMatrix` renvoie `permissions: [{ code, description }]` (triées par code) et `roles: [{ id, name, isSystem, permissionCodes: string[] }]` (rôles système + propres à l'organisation de l'établissement, même portée que `UsersService.listAvailableRoles` — les rôles de cette installation sont tous globaux, `organization_id` NULL, jamais clonés par organisation : éditer un rôle ici l'affecte partout).
+
+### `roles.manage` restreinte au seul Super Administrateur
+
+Jusqu'ici accordée à Super Administrateur/Administrateur/Propriétaire par la règle générique « accès complet » du seed (`supabase/seed/001_roles_permissions.sql`). Retirée à Administrateur/Propriétaire pour satisfaire l'exigence explicite « ne sera visible que par le Super Administrateur » — même schéma que `notifications.manage` (décision du 2026-09-13, permission exclue de la règle générique et accordée par un INSERT séparé, dédié au seul Super Administrateur). Rejoué en production (le seed additif `on conflict do nothing` ne pouvant pas révoquer un octroi déjà en place) : les deux lignes `role_permissions` (Administrateur, Propriétaire × `roles.manage`) supprimées explicitement via SQL, confirmé 2 lignes supprimées.
+
+### Garde-fous contre le verrouillage
+
+Première fonctionnalité de la base qui édite directement des **définitions** de rôle (pas seulement l'affectation d'un rôle à un membre, comme `UsersService`) — un risque de verrouillage inédit : retirer une permission à un rôle peut couper l'accès à `roles.manage` lui-même, sans qu'aucun membre ne puisse plus jamais le redonner.
+
+`RolesService.revoke` refuse deux situations, avant toute suppression :
+- **Retirer `roles.manage` au rôle "Super Administrateur"** précisément (`ConflictException`, message dédié — le cas réel le plus probable, puisque c'est l'unique rôle qui y a accès).
+- **Retirer `users.manage` ou `roles.manage`** à un rôle si, une fois fait, plus aucun membre réellement affecté (`UserEstablishmentRole`, n'importe où dans l'application) ne porterait encore cette permission (`assertKeepsAtLeastOneHolder`, généralisation de `UsersService.assertKeepsAtLeastOneUserManager` — même principe, étendu de « au moins un membre » à « au moins un membre, pour ces deux permissions »).
+
+Retirer une permission à un rôle non concerné (ni `users.manage` ni `roles.manage`) ne déclenche aucune de ces vérifications — seules ces deux permissions donnent accès à un mécanisme de correction (inviter/gérer des membres, éditer les rôles), les autres n'ont pas ce risque de verrouillage circulaire.
+
+### Regroupement par module — dérivé du préfixe de `permission.code`, pas une colonne
+
+Aucune migration Prisma : le regroupement affiché (Catalogue, Stock, Caisse...) est calculé côté Flutter à partir du préfixe de `permission.code` (`products.manage` → Catalogue) via une fonction pure testable, la description existante de la permission servant de libellé de ligne — évite une colonne dédiée pour une donnée de présentation entièrement dérivable de la convention de nommage déjà en place.
+
+### `grant`/`revoke` idempotents
+
+`grant` utilise `prisma.rolePermission.createMany({ data: [...], skipDuplicates: true })` (équivalent `ON CONFLICT DO NOTHING`) plutôt qu'une vérification d'existence puis création — cocher une case déjà cochée ne renvoie pas d'erreur. `revoke` (`deleteMany`) est par nature idempotent (décocher une case déjà décochée ne fait rien).
+
 ## Vérifications effectuées
 
 - `UsersService` : 26 tests (Prisma + `AuthorizationService` + `SupabaseAdminService` mockés) — `invite`/`generateInviteLink` : rôle introuvable, rôle d'une autre organisation, protection anti-élévation, invitation réussie (métadonnées correctes transmises), e-mail déjà enregistré (`ConflictException`), autre erreur Supabase (`BadRequestException`) ; `removeMember`/`updateMember` : membre introuvable, auto-retrait/auto-modification de rôle refusés (mais pas l'auto-modification du nom), protection anti-élévation sur le rôle actuel et le nouveau rôle (jamais appliquée à un changement de nom seul), dernier gestionnaire d'utilisateurs protégé, rôle et nom modifiables indépendamment ou ensemble ; `generateRecoveryLink` : membre introuvable, protection anti-élévation, lien généré pour le bon utilisateur, erreur Supabase traduite ; **`list`** (2 tests, 2026-09-13) : e-mail + `isOnline` ajoutés à chaque membre selon `lastSeenAt`, un seul appel Admin par utilisateur unique même avec plusieurs affectations.
 - `SupabaseJwtGuard` : 3 tests supplémentaires (2026-09-13) — `lastSeenAt` écrit pour l'utilisateur authentifié, throttlé en dessous d'une minute pour le même utilisateur, authentification jamais mise en échec même si l'écriture rejette.
+- `RolesService` (2026-09-16, 9 tests) : `listMatrix` (forme de la réponse, portée établissement/organisation) ; `grant` (idempotent, rôle/permission introuvables) ; `revoke` — blocage dédié Super Administrateur × `roles.manage`, garde-fou dernier porteur pour `users.manage`/`roles.manage` (refusé si 0 porteur restant, autorisé si ≥ 1), suppression directe pour une permission ordinaire (aucune vérification de dernier porteur), rôle introuvable.
 - **`generateRecoveryLink` appliquée en conditions réelles** (2026-09-09, sur `missakey1@gmail.com`, après correction de son affectation vers l'établissement réel en rôle Gérant) — voir « Corriger une affectation existante » ci-dessous pour le contexte complet de cet incident.
 - `flutter analyze`/`flutter test`/`flutter build web` ✅.
 - **Vérifié en conditions réelles** (2026-09-09, compte de démonstration jetable, jamais le compte réel de l'utilisateur) : `POST .../users/invite` atteint bien l'API Supabase (clé `service_role` correctement configurée sur Render) — bloqué uniquement par le quota d'e-mail gratuit de Supabase (`email rate limit exceeded`), confirmant que la seule limite restante est celle documentée ci-dessus, pas un défaut de l'implémentation. Le déclencheur `handle_new_user` a été vérifié directement en base (simulation d'une ligne `auth.users` avec les métadonnées d'invitation) : l'utilisateur simulé a bien été rattaché à l'établissement existant avec le rôle choisi, **sans créer de nouvelle organisation**. Toutes les données de test ont été supprimées après vérification.

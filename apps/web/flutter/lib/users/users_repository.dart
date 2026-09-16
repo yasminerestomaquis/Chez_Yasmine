@@ -1,7 +1,9 @@
 import '../api/api_client.dart';
 import 'user_models.dart';
 
-/// Correspond à apps/api/nestjs/src/users/users.controller.ts.
+/// Correspond à apps/api/nestjs/src/users/users.controller.ts et
+/// apps/api/nestjs/src/roles/roles.controller.ts (tableau de bord "Gestion
+/// des permissions", `roles.manage` — voir docs/api/users.md).
 class UsersRepository {
   UsersRepository(this._api, this.establishmentId);
 
@@ -9,6 +11,17 @@ class UsersRepository {
   final String establishmentId;
 
   String get _base => '/establishments/$establishmentId';
+
+  Future<PermissionsMatrix> getPermissionsMatrix() async {
+    final json = await _api.get('$_base/roles-permissions');
+    return PermissionsMatrix.fromJson(json as Map<String, dynamic>);
+  }
+
+  Future<void> grantPermission(String roleId, String code) =>
+      _api.put('$_base/roles/$roleId/permissions/$code');
+
+  Future<void> revokePermission(String roleId, String code) =>
+      _api.delete('$_base/roles/$roleId/permissions/$code');
 
   Future<List<TeamMember>> listTeam() async {
     final json = await _api.get('$_base/users') as List<dynamic>;

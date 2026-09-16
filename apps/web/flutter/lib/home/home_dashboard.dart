@@ -259,7 +259,10 @@ class _HomeDashboardState extends State<HomeDashboard> {
       _ModuleEntry(
         Icons.manage_accounts_outlined,
         'Utilisateurs',
-        (_) => UsersPage(establishmentId: widget.establishmentId),
+        (_) => UsersPage(
+          establishmentId: widget.establishmentId,
+          roleName: widget.roleName,
+        ),
       ),
   ];
 

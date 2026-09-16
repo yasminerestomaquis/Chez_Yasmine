@@ -2,6 +2,13 @@
 
 ## [Unreleased]
 
+### Ajouté (2026-09-16) — Tableau de bord « Gestion des permissions » (module Utilisateurs), réservé au Super Administrateur
+- Nouvelle page dans le module Utilisateurs : matrice rôle × permission, groupée par module/sous-module (dérivé du préfixe de `permission.code`, ex. `products.manage` → Catalogue), cases à cocher vert (accordée)/rouge (refusée) pour accorder/retirer chaque permission à chaque rôle, avec retour visuel immédiat et défilement double axe (en-tête de rôles et colonne des permissions restent figés).
+- Nouveau module backend `apps/api/nestjs/src/roles/` (`RolesController`/`RolesService`), 3 routes protégées par `roles.manage` : `GET .../roles-permissions`, `PUT`/`DELETE .../roles/:roleId/permissions/:code` (idempotents).
+- `roles.manage` retirée à Administrateur/Propriétaire (rejoué en production) — réservée au seul Super Administrateur, sur demande explicite de l'utilisateur, même schéma que `notifications.manage` (2026-09-13). Le bouton d'accès dans `UsersPage` est masqué pour tout autre rôle.
+- Garde-fous contre le verrouillage : impossible de retirer `roles.manage` au Super Administrateur, et impossible de retirer `users.manage`/`roles.manage` à un rôle si plus aucun membre n'en resterait porteur ailleurs dans l'application.
+- Voir `docs/api/users.md`, section « Tableau de bord "Gestion des permissions" ». 9 nouveaux tests NestJS (`RolesService`), 14 nouveaux tests Flutter (regroupement par module en logique pure, modèles, gating de l'AppBar, état d'erreur du tableau de bord sans backend).
+
 ### Ajouté (2026-09-16) — Le rôle Serveur peut corriger une vente (quantité, mode de paiement)
 - Nouvelle permission `pos.correct`, séparée de `pos.refund` : corriger une ligne de vente (quantité vendue) ou son mode de paiement (Espèces/Mobile Money) n'exige plus le droit d'annuler une vente entière.
 - Accordée à tous les rôles qui portaient déjà `pos.refund` (rien ne leur est retiré) **et désormais au Serveur**, qui reste volontairement sans `pos.refund` — il peut corriger une vente déjà enregistrée en Caisse et dans l'écran Addition, mais toujours pas l'annuler entièrement.

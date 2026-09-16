@@ -37,4 +37,30 @@ void main() {
       },
     );
   });
+
+  group('PermissionsMatrix.fromJson', () {
+    test('parses permissions and roles with their granted codes', () {
+      final matrix = PermissionsMatrix.fromJson({
+        'permissions': [
+          {'code': 'pos.sell', 'description': 'Encaisser'},
+          {'code': 'pos.refund', 'description': 'Rembourser'},
+        ],
+        'roles': [
+          {
+            'id': 'role-1',
+            'name': 'Caissier',
+            'isSystem': true,
+            'permissionCodes': ['pos.sell'],
+          },
+        ],
+      });
+
+      expect(matrix.permissions, hasLength(2));
+      expect(matrix.permissions.first.code, 'pos.sell');
+      expect(matrix.permissions.first.description, 'Encaisser');
+      expect(matrix.roles.single.name, 'Caissier');
+      expect(matrix.roles.single.isSystem, true);
+      expect(matrix.roles.single.permissionCodes, {'pos.sell'});
+    });
+  });
 }

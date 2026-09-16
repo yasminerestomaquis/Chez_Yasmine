@@ -88,6 +88,15 @@ class ApiClient {
     return _decode(response);
   }
 
+  Future<dynamic> put(String path, {Object? body}) async {
+    final response = await http.put(
+      _uri(path),
+      headers: {..._authHeaders, 'Content-Type': 'application/json'},
+      body: body == null ? null : jsonEncode(body),
+    );
+    return _decode(response);
+  }
+
   Future<dynamic> delete(String path) async {
     final response = await http.delete(_uri(path), headers: _authHeaders);
     return _decode(response);

@@ -56,3 +56,66 @@ class TeamMember {
     );
   }
 }
+
+/// Une permission de l'application (ex. `products.manage`), pour le tableau
+/// de bord "Gestion des permissions" — voir docs/api/users.md.
+class PermissionInfo {
+  PermissionInfo({required this.code, required this.description});
+
+  final String code;
+
+  /// Sert de libellé de ligne dans la matrice — toujours renseignée côté
+  /// seed (`supabase/seed/001_roles_permissions.sql`).
+  final String? description;
+
+  factory PermissionInfo.fromJson(Map<String, dynamic> json) =>
+      PermissionInfo(
+        code: json['code'] as String,
+        description: json['description'] as String?,
+      );
+}
+
+/// Un rôle et l'ensemble des codes de permission qu'il porte actuellement —
+/// une colonne de la matrice.
+class RoleMatrixEntry {
+  RoleMatrixEntry({
+    required this.id,
+    required this.name,
+    required this.isSystem,
+    required this.permissionCodes,
+  });
+
+  final String id;
+  final String name;
+  final bool isSystem;
+  final Set<String> permissionCodes;
+
+  factory RoleMatrixEntry.fromJson(Map<String, dynamic> json) =>
+      RoleMatrixEntry(
+        id: json['id'] as String,
+        name: json['name'] as String,
+        isSystem: json['isSystem'] as bool,
+        permissionCodes: (json['permissionCodes'] as List<dynamic>)
+            .cast<String>()
+            .toSet(),
+      );
+}
+
+/// Réponse de `GET .../roles-permissions` — matrice rôle × permission
+/// complète, telle qu'accordée actuellement.
+class PermissionsMatrix {
+  PermissionsMatrix({required this.permissions, required this.roles});
+
+  final List<PermissionInfo> permissions;
+  final List<RoleMatrixEntry> roles;
+
+  factory PermissionsMatrix.fromJson(Map<String, dynamic> json) =>
+      PermissionsMatrix(
+        permissions: (json['permissions'] as List<dynamic>)
+            .map((e) => PermissionInfo.fromJson(e as Map<String, dynamic>))
+            .toList(),
+        roles: (json['roles'] as List<dynamic>)
+            .map((e) => RoleMatrixEntry.fromJson(e as Map<String, dynamic>))
+            .toList(),
+      );
+}

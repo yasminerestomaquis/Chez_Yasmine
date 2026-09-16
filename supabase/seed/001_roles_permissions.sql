@@ -39,15 +39,19 @@ insert into roles (organization_id, name, is_system) values
 on conflict (name) where organization_id is null do nothing;
 
 -- Rôles à accès complet (plateforme / propriétaire) : toutes les permissions
--- sauf notifications.manage (décision utilisateur du 2026-09-13 : réservée
--- au seul Super Administrateur, jamais à Administrateur/Propriétaire malgré
--- leur accès par ailleurs complet — voir la grille dédiée plus bas).
+-- sauf notifications.manage et roles.manage (décision utilisateur du
+-- 2026-09-13 pour la première : réservée au seul Super Administrateur,
+-- jamais à Administrateur/Propriétaire malgré leur accès par ailleurs
+-- complet ; décision utilisateur du 2026-09-16 pour la seconde — le tableau
+-- de bord "Gestion des permissions" (lib/users/permissions_dashboard_page.dart)
+-- ne doit être visible que par le Super Administrateur — voir les deux
+-- grilles dédiées plus bas).
 insert into role_permissions (role_id, permission_id)
 select r.id, p.id
 from roles r
 cross join permissions p
 where r.is_system and r.name in ('Super Administrateur', 'Administrateur', 'Propriétaire')
-  and p.code <> 'notifications.manage'
+  and p.code not in ('notifications.manage', 'roles.manage')
 on conflict do nothing;
 
 -- notifications.manage : Super Administrateur uniquement (bouton "Effacer
@@ -56,6 +60,15 @@ insert into role_permissions (role_id, permission_id)
 select r.id, p.id
 from roles r
 join permissions p on p.code = 'notifications.manage'
+where r.is_system and r.name = 'Super Administrateur'
+on conflict do nothing;
+
+-- roles.manage : Super Administrateur uniquement (décision utilisateur du
+-- 2026-09-16 — voir docs/api/users.md, section "Gestion des permissions").
+insert into role_permissions (role_id, permission_id)
+select r.id, p.id
+from roles r
+join permissions p on p.code = 'roles.manage'
 where r.is_system and r.name = 'Super Administrateur'
 on conflict do nothing;
 
