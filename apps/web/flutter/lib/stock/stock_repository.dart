@@ -17,6 +17,15 @@ class StockRepository {
         .toList();
   }
 
+  Future<List<StockMovementTotals>> listMovementTotals() async {
+    final json = await _api.get(
+      '/establishments/$establishmentId/stock/movement-totals',
+    ) as List<dynamic>;
+    return json
+        .map((e) => StockMovementTotals.fromJson(e as Map<String, dynamic>))
+        .toList();
+  }
+
   Future<List<StockMovement>> listMovements(String productId) async {
     final json = await _api.get(
       '/establishments/$establishmentId/products/$productId/stock-movements',

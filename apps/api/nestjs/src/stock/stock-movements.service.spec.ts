@@ -10,7 +10,7 @@ const activityNotifierMock = { notify: vi.fn() } as unknown as ActivityNotifierS
 function makePrismaMock() {
   return {
     product: { findFirst: vi.fn(), update: vi.fn(), findMany: vi.fn() },
-    stockMovement: { create: vi.fn(), findMany: vi.fn(), findFirst: vi.fn() },
+    stockMovement: { create: vi.fn(), findMany: vi.fn(), findFirst: vi.fn(), groupBy: vi.fn() },
     $transaction: vi.fn(async (ops: unknown[]) => ops),
   };
 }
@@ -84,5 +84,36 @@ describe('StockMovementsService', () => {
       select: { id: true, name: true, stockQuantity: true, minStock: true },
     });
     expect(alerts).toEqual([{ id: 'p1', name: 'Bière', stockQuantity: 2, minStock: 5 }]);
+  });
+
+  describe('listMovementTotals', () => {
+    it('sums quantity by product, mapping in/sale/loss to received/consumed/lost and ignoring out/adjustment', async () => {
+      prisma.stockMovement.groupBy.mockResolvedValue([
+        { productId: 'p1', type: 'in', _sum: { quantity: new Decimal(30) } },
+        { productId: 'p1', type: 'in', _sum: { quantity: new Decimal(20) } }, // deux entrées séparées -> cumulées
+        { productId: 'p1', type: 'sale', _sum: { quantity: new Decimal(15) } },
+        { productId: 'p1', type: 'loss', _sum: { quantity: new Decimal(2) } },
+        { productId: 'p1', type: 'out', _sum: { quantity: new Decimal(100) } }, // jamais confondu avec une vente
+        { productId: 'p1', type: 'adjustment', _sum: { quantity: new Decimal(999) } }, // correction, pas un flux réel
+        { productId: 'p2', type: 'sale', _sum: { quantity: new Decimal(7) } },
+      ]);
+
+      const totals = await service.listMovementTotals('est-1');
+
+      expect(prisma.stockMovement.groupBy).toHaveBeenCalledWith({
+        by: ['productId', 'type'],
+        where: { product: { establishmentId: 'est-1' } },
+        _sum: { quantity: true },
+      });
+      expect(totals).toEqual([
+        { productId: 'p1', received: 50, consumed: 15, lost: 2 },
+        { productId: 'p2', received: 0, consumed: 7, lost: 0 },
+      ]);
+    });
+
+    it('returns an empty array when the establishment has no stock movement at all', async () => {
+      prisma.stockMovement.groupBy.mockResolvedValue([]);
+      expect(await service.listMovementTotals('est-1')).toEqual([]);
+    });
   });
 });

@@ -16,6 +16,52 @@ const _kFilterInStock = 'in_stock';
 const _kFilterLow = 'low';
 const _kFilterOut = 'out';
 
+// Statut dérivé des données déjà chargées, sans nouvelle règle métier :
+// rupture si la quantité est nulle, faible si une alerte existe pour ce
+// produit, normal sinon.
+String stockStatusOf(Product product, StockAlert? alert) {
+  if (product.stockQuantity <= 0) return _kFilterOut;
+  if (alert != null) return _kFilterLow;
+  return _kFilterInStock;
+}
+
+/// Filtre (recherche, catégories sélectionnées, statut) puis trie par ordre
+/// croissant de stock actuel (demande utilisateur du 2026-09-16) — logique
+/// pure, testable sans widget ni réseau (voir `test/stock_page_test.dart`).
+List<Product> filterAndSortStockProducts({
+  required List<Product> products,
+  required Map<String, StockAlert> alertsByProduct,
+  required String search,
+  required String statusFilter,
+  required Set<String> selectedCategoryIds,
+}) {
+  return products.where((p) {
+        final matchesSearch =
+            search.isEmpty || p.name.toLowerCase().contains(search.toLowerCase());
+        if (!matchesSearch) return false;
+        if (selectedCategoryIds.isNotEmpty && !selectedCategoryIds.contains(p.categoryId)) {
+          return false;
+        }
+        if (statusFilter == _kFilterAll) return true;
+        return stockStatusOf(p, alertsByProduct[p.id]) == statusFilter;
+      }).toList()
+    ..sort((a, b) => a.stockQuantity.compareTo(b.stockQuantity));
+}
+
+class _StockPageData {
+  const _StockPageData({
+    required this.alerts,
+    required this.products,
+    required this.categories,
+    required this.totals,
+  });
+
+  final List<StockAlert> alerts;
+  final List<Product> products;
+  final List<Category> categories;
+  final List<StockMovementTotals> totals;
+}
+
 class StockPage extends StatefulWidget {
   const StockPage({
     super.key,
@@ -48,19 +94,30 @@ class _StockPageState extends State<StockPage> {
     widget.establishmentId,
   );
   late final CatalogCache _cache = CatalogCache(widget.establishmentId);
-  late Future<(List<StockAlert>, List<Product>)> _future = _load();
+  late Future<_StockPageData> _future = _load();
 
   String _search = '';
   String _filter = _kFilterAll;
+  // Vide = toutes les catégories (pas de filtre) — sélection multiple,
+  // demande utilisateur du 2026-09-16.
+  Set<String> _selectedCategoryIds = {};
 
-  Future<(List<StockAlert>, List<Product>)> _load() async {
+  Future<_StockPageData> _load() async {
     try {
-      final alerts = await _stock.listAlerts();
-      final products = await _catalog.listProducts();
-      return (alerts, products);
+      final (alerts, products, categories, totals) = await (
+        _stock.listAlerts(),
+        _catalog.listProducts(),
+        _catalog.listCategories(),
+        _stock.listMovementTotals(),
+      ).wait;
+      return _StockPageData(alerts: alerts, products: products, categories: categories, totals: totals);
     } catch (error) {
       final cached = await _cache.load();
-      if (cached != null) return (<StockAlert>[], cached.$2); // offline: stock levels shown may be stale, no alerts computed locally.
+      if (cached != null) {
+        // Offline : niveaux de stock potentiellement obsolètes, ni alertes
+        // ni totaux de mouvements calculables localement.
+        return _StockPageData(alerts: const [], products: cached.$2, categories: cached.$1, totals: const []);
+      }
       rethrow;
     }
   }
@@ -92,15 +149,6 @@ class _StockPageState extends State<StockPage> {
     return 0;
   }
 
-  // Statut dérivé des données déjà chargées, sans nouvelle règle métier :
-  // rupture si la quantité est nulle, faible si une alerte existe pour ce
-  // produit, normal sinon.
-  String _statusOf(Product product, StockAlert? alert) {
-    if (product.stockQuantity <= 0) return _kFilterOut;
-    if (alert != null) return _kFilterLow;
-    return _kFilterInStock;
-  }
-
   @override
   Widget build(BuildContext context) {
     return Scaffold(
@@ -108,7 +156,7 @@ class _StockPageState extends State<StockPage> {
       body: Column(
         children: [
           Expanded(
-            child: FutureBuilder<(List<StockAlert>, List<Product>)>(
+            child: FutureBuilder<_StockPageData>(
               future: _future,
               builder: (context, snapshot) {
                 if (snapshot.connectionState != ConnectionState.done) {
@@ -138,7 +186,11 @@ class _StockPageState extends State<StockPage> {
                   );
                 }
 
-                final (alerts, allProducts) = snapshot.data!;
+                final data = snapshot.data!;
+                final alerts = data.alerts;
+                final allProducts = data.products;
+                final categories = data.categories;
+                final totalsByProduct = {for (final t in data.totals) t.productId: t};
                 final alertsByProduct = {for (final a in alerts) a.id: a};
                 final outCount = allProducts
                     .where((p) => p.stockQuantity <= 0)
@@ -151,14 +203,13 @@ class _StockPageState extends State<StockPage> {
                   (sum, p) => sum + p.stockQuantity * _unitCost(p),
                 );
 
-                final products = allProducts.where((p) {
-                  final matchesSearch =
-                      _search.isEmpty ||
-                      p.name.toLowerCase().contains(_search.toLowerCase());
-                  if (!matchesSearch) return false;
-                  if (_filter == _kFilterAll) return true;
-                  return _statusOf(p, alertsByProduct[p.id]) == _filter;
-                }).toList();
+                final products = filterAndSortStockProducts(
+                  products: allProducts,
+                  alertsByProduct: alertsByProduct,
+                  search: _search,
+                  statusFilter: _filter,
+                  selectedCategoryIds: _selectedCategoryIds,
+                );
 
                 return RefreshIndicator(
                   onRefresh: () async => _reload(),
@@ -201,6 +252,15 @@ class _StockPageState extends State<StockPage> {
                         ),
                       ),
                       const SizedBox(height: 8),
+                      Padding(
+                        padding: const EdgeInsets.symmetric(horizontal: 12),
+                        child: _CategoryFilterField(
+                          categories: categories,
+                          selectedIds: _selectedCategoryIds,
+                          onChanged: (ids) => setState(() => _selectedCategoryIds = ids),
+                        ),
+                      ),
+                      const SizedBox(height: 8),
                       if (products.isEmpty)
                         const Padding(
                           padding: EdgeInsets.all(24),
@@ -212,6 +272,7 @@ class _StockPageState extends State<StockPage> {
                         _StockProductRow(
                           product: product,
                           alert: alertsByProduct[product.id],
+                          totals: totalsByProduct[product.id],
                           repository: _catalog,
                           readOnly: _isServeur,
                           onHistory: () => Navigator.of(context).push(
@@ -248,6 +309,103 @@ class _StockPageState extends State<StockPage> {
         labelStyle: TextStyle(
           color: selected ? AppColors.white : AppColors.textPrimary,
         ),
+      ),
+    );
+  }
+}
+
+/// Filtre par catégorie sous forme de liste déroulante, avec sélection
+/// multiple et réinitialisation (demande utilisateur du 2026-09-16) — pas de
+/// widget Flutter natif pour un menu déroulant à cases à cocher, donc un
+/// simple champ cliquable ouvrant un dialogue `CheckboxListTile` par
+/// catégorie, même principe que `CatalogPage._showCategoryDialog`.
+class _CategoryFilterField extends StatelessWidget {
+  const _CategoryFilterField({
+    required this.categories,
+    required this.selectedIds,
+    required this.onChanged,
+  });
+
+  final List<Category> categories;
+  final Set<String> selectedIds;
+  final ValueChanged<Set<String>> onChanged;
+
+  String get _label {
+    if (selectedIds.isEmpty) return 'Toutes les catégories';
+    if (selectedIds.length == 1) {
+      return categories.firstWhere((c) => c.id == selectedIds.first, orElse: () => Category(id: '', name: '1 catégorie')).name;
+    }
+    return '${selectedIds.length} catégories sélectionnées';
+  }
+
+  Future<void> _open(BuildContext context) async {
+    var working = Set<String>.from(selectedIds);
+    final result = await showDialog<Set<String>>(
+      context: context,
+      builder: (dialogContext) => StatefulBuilder(
+        builder: (dialogContext, setDialogState) => AlertDialog(
+          title: const Text('Filtrer par catégorie'),
+          content: SizedBox(
+            width: 360,
+            child: categories.isEmpty
+                ? const Text('Aucune catégorie.')
+                : ListView(
+                    shrinkWrap: true,
+                    children: [
+                      for (final category in categories)
+                        CheckboxListTile(
+                          contentPadding: EdgeInsets.zero,
+                          value: working.contains(category.id),
+                          title: Text(category.name),
+                          onChanged: (checked) => setDialogState(() {
+                            if (checked ?? false) {
+                              working.add(category.id);
+                            } else {
+                              working.remove(category.id);
+                            }
+                          }),
+                        ),
+                    ],
+                  ),
+          ),
+          actions: [
+            TextButton(
+              onPressed: () => setDialogState(() => working = {}),
+              child: const Text('Réinitialiser'),
+            ),
+            TextButton(
+              onPressed: () => Navigator.of(dialogContext).pop(selectedIds),
+              child: const Text('Annuler'),
+            ),
+            FilledButton(
+              onPressed: () => Navigator.of(dialogContext).pop(working),
+              child: const Text('Appliquer'),
+            ),
+          ],
+        ),
+      ),
+    );
+    if (result != null) onChanged(result);
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return InkWell(
+      borderRadius: BorderRadius.circular(4),
+      onTap: () => _open(context),
+      child: InputDecorator(
+        decoration: InputDecoration(
+          labelText: 'Catégorie',
+          prefixIcon: const Icon(Icons.filter_list),
+          suffixIcon: selectedIds.isEmpty
+              ? const Icon(Icons.arrow_drop_down)
+              : IconButton(
+                  tooltip: 'Réinitialiser le filtre',
+                  icon: const Icon(Icons.clear),
+                  onPressed: () => onChanged({}),
+                ),
+        ),
+        child: Text(_label, overflow: TextOverflow.ellipsis),
       ),
     );
   }
@@ -359,6 +517,7 @@ class _StockProductRow extends StatelessWidget {
   const _StockProductRow({
     required this.product,
     required this.alert,
+    required this.totals,
     required this.repository,
     required this.readOnly,
     required this.onHistory,
@@ -367,6 +526,9 @@ class _StockProductRow extends StatelessWidget {
 
   final Product product;
   final StockAlert? alert;
+  // Nul : aucun mouvement enregistré pour ce produit — les trois totaux
+  // s'affichent alors à 0 plutôt que de masquer la ligne de statistiques.
+  final StockMovementTotals? totals;
   // Masque l'action "Mouvement de stock" (rôle Serveur : `stock.view` sans
   // `stock.manage`, demande utilisateur du 2026-09-11) — "Voir l'historique"
   // reste toujours disponible.
@@ -494,12 +656,15 @@ class _StockProductRow extends StatelessWidget {
                   ),
                   const SizedBox(height: 4),
                   Text(
-                    'Stock actuel : ${product.stockQuantity.toStringAsFixed(0)}${minStock > 0 ? ' (seuil ${minStock.toStringAsFixed(0)})' : ''}',
-                    style: const TextStyle(
+                    'Stock actuel : ${product.stockQuantity.toStringAsFixed(0)}',
+                    style: TextStyle(
                       fontSize: 12,
-                      color: AppColors.textSecondary,
+                      fontWeight: FontWeight.w600,
+                      color: _statusColor,
                     ),
                   ),
+                  const SizedBox(height: 6),
+                  _MovementTotalsRow(totals: totals),
                 ],
               ),
             ),
@@ -524,6 +689,112 @@ class _StockProductRow extends StatelessWidget {
           ],
         ),
       ),
+    );
+  }
+}
+
+/// Trois totaux cumulés côte à côte (reçue/consommée/perte), même structure
+/// visuelle compacte pour chacun — icône + valeur en gras + libellé, séparés
+/// par de fins traits verticaux (demande utilisateur du 2026-09-16 :
+/// « organise de manière intelligente et structurée » ces chiffres dans la
+/// vignette). `totals` nul (aucun mouvement pour ce produit) affiche 0
+/// partout plutôt que de masquer la ligne.
+class _MovementTotalsRow extends StatelessWidget {
+  const _MovementTotalsRow({required this.totals});
+
+  final StockMovementTotals? totals;
+
+  @override
+  Widget build(BuildContext context) {
+    return Row(
+      children: [
+        Expanded(
+          child: _MovementStat(
+            icon: Icons.call_received,
+            color: AppColors.green,
+            value: totals?.received ?? 0,
+            label: 'Reçue',
+          ),
+        ),
+        const _StatDivider(),
+        Expanded(
+          child: _MovementStat(
+            icon: Icons.shopping_cart_outlined,
+            color: AppColors.orange,
+            value: totals?.consumed ?? 0,
+            label: 'Consommée',
+          ),
+        ),
+        const _StatDivider(),
+        Expanded(
+          child: _MovementStat(
+            icon: Icons.report_problem_outlined,
+            color: AppColors.alert,
+            value: totals?.lost ?? 0,
+            label: 'Perte',
+          ),
+        ),
+      ],
+    );
+  }
+}
+
+class _StatDivider extends StatelessWidget {
+  const _StatDivider();
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      width: 1,
+      height: 28,
+      margin: const EdgeInsets.symmetric(horizontal: 6),
+      color: AppColors.orangeLight,
+    );
+  }
+}
+
+class _MovementStat extends StatelessWidget {
+  const _MovementStat({
+    required this.icon,
+    required this.color,
+    required this.value,
+    required this.label,
+  });
+
+  final IconData icon;
+  final Color color;
+  final double value;
+  final String label;
+
+  @override
+  Widget build(BuildContext context) {
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Row(
+          children: [
+            Icon(icon, size: 13, color: color),
+            const SizedBox(width: 3),
+            Text(
+              value.toStringAsFixed(0),
+              style: TextStyle(
+                fontSize: 13,
+                fontWeight: FontWeight.bold,
+                color: color,
+              ),
+              overflow: TextOverflow.ellipsis,
+            ),
+          ],
+        ),
+        Text(
+          label,
+          style: const TextStyle(
+            fontSize: 10,
+            color: AppColors.textSecondary,
+          ),
+          overflow: TextOverflow.ellipsis,
+        ),
+      ],
     );
   }
 }

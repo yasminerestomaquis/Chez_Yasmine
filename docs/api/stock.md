@@ -8,6 +8,7 @@ Protégées par `SupabaseJwtGuard` + `PermissionsGuard`. **Depuis le 2026-09-11*
 POST /establishments/:establishmentId/products/:productId/stock-movements   { type, quantity, reason? }   stock.manage
 GET  /establishments/:establishmentId/products/:productId/stock-movements                                 stock.view
 GET  /establishments/:establishmentId/stock/alerts                                                         stock.view
+GET  /establishments/:establishmentId/stock/movement-totals                                                stock.view
 ```
 
 `type` ∈ `in | out | adjustment | loss`. **`sale` n'est jamais écrit manuellement** — ce type sera produit uniquement par le flux de vente (Phase 7). `transfer` (prévu dans la contrainte `CHECK` de `stock_movements`) attend un vrai support multi-établissement, non traité ici.
@@ -28,6 +29,18 @@ GET  /establishments/:establishmentId/stock/alerts                              
 ## UI Flutter
 
 [lib/stock/stock_page.dart](../../apps/web/flutter/lib/stock/stock_page.dart) : bandeau d'alertes en haut (si des produits sont sous leur seuil), liste des produits avec leur stock actuel, et par produit un accès à l'historique et à l'ajout d'un mouvement. [lib/stock/stock_movement_dialog.dart](../../apps/web/flutter/lib/stock/stock_movement_dialog.dart) adapte le libellé du champ quantité selon le type (« Nouvelle quantité totale » pour une correction, « Quantité » sinon). Accessible depuis l'écran d'accueil, à côté du bouton Catalogue.
+
+### Filtre par catégorie, tri par stock croissant, totaux de mouvements par vignette (décision actée 2026-09-16)
+
+Demande utilisateur explicite :
+
+- **Filtre catégorie** : `_CategoryFilterField` ouvre un dialogue de sélection **multiple** (`CheckboxListTile` par catégorie) plutôt qu'un simple menu déroulant à choix unique — plusieurs catégories peuvent être cochées à la fois, un produit apparaît dès qu'il appartient à l'une d'elles. Un bouton « Réinitialiser » dans le dialogue et une icône ✕ sur le champ lui-même (visible dès qu'au moins une catégorie est sélectionnée) ramènent au filtre vide (= toutes les catégories, aucun filtre).
+- **Tri** : la liste filtrée est désormais triée par ordre **croissant** du stock actuel (`stockQuantity`), remplaçant l'ordre du catalogue — les produits les plus urgents (rupture, stock faible) remontent naturellement en tête.
+- **Vignette produit** : la mention « (seuil X) » à côté de « Stock actuel » est retirée. Trois totaux cumulés apparaissent juste en dessous, dans une rangée structurée à 3 colonnes séparées par un fin trait vertical — **Reçue** (icône verte), **Consommée** (icône orange), **Perte** (icône rouge) — chacun icône + valeur en gras + libellé, la même structure visuelle pour les trois afin de rester lisible d'un coup d'œil.
+
+Nouvelle route `GET .../stock/movement-totals` (`stock.view`) : un seul `groupBy(productId, type)` sur `stock_movements` pour tout l'établissement plutôt qu'un aller-retour par produit (`listForProduct`), puisque le listing affiche potentiellement tout le catalogue en une fois. Mapping délibéré : `in` → reçue, `sale` → consommée, `loss` → perte. **`out` et `adjustment` sont volontairement exclus** : `out` reste une sortie manuelle distincte d'une vente (ex. usage interne) — jamais fusionnée avec « consommée » pour ne pas confondre deux mouvements que l'application distingue déjà partout ailleurs (`stockMovementTypeLabels`) ; `adjustment` est une correction du stock affiché (fixe une valeur absolue, voir `stock-math.ts`), pas un flux réel entré/sorti.
+
+Logique de filtrage/tri extraite en fonctions pures top-level (`stockStatusOf`, `filterAndSortStockProducts`, `lib/stock/stock_page.dart`) — testables sans widget ni réseau, voir `test/stock_page_test.dart`.
 
 ## Correctif (2026-09-11) — accès en lecture seule pour le Serveur, sans « Valeur du stock »
 

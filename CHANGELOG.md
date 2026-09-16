@@ -2,6 +2,13 @@
 
 ## [Unreleased]
 
+### Ajouté (2026-09-16) — Module Stock : filtre catégorie, tri par stock croissant, totaux de mouvements
+- Nouveau filtre par catégorie (liste déroulante à sélection **multiple**, avec réinitialisation) — un produit apparaît dès qu'il appartient à l'une des catégories cochées.
+- La liste est désormais triée par ordre **croissant** de stock actuel (les ruptures/stocks faibles remontent en tête), au lieu de l'ordre du catalogue.
+- Chaque vignette retire la mention « (seuil X) » et affiche à la place trois totaux cumulés bien structurés : **Reçue** (`in`), **Consommée** (`sale`), **Perte** (`loss`) — `out`/`adjustment` volontairement exclus (une sortie manuelle n'est jamais confondue avec une vente ; une correction n'est pas un flux réel).
+- Nouvelle route `GET .../stock/movement-totals` (`stock.view`) : un seul `groupBy` par établissement plutôt qu'un aller-retour par produit.
+- Voir `docs/api/stock.md`. Logique de filtrage/tri/agrégation extraite en fonctions pures, testées sans réseau (9 tests Flutter, 2 tests NestJS).
+
 ### Ajouté (2026-09-16) — Contour rouge sur les produits en rupture de stock (Caisse, Addition)
 - Chaque vignette produit affiche désormais un contour rouge dès que son stock est épuisé (`stockQuantity <= 0`) — même couleur que l'état « Rupture » du module Stock. Simple repère visuel : le produit reste cliquable et ajoutable au panier, aucun blocage ajouté.
 - Un seul point de modification (`PosProductTile`, `lib/pos/product_grid.dart`) couvre à la fois la Caisse et l'écran Addition, qui partagent déjà ce composant.

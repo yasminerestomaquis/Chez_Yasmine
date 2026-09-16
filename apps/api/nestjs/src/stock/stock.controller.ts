@@ -37,4 +37,10 @@ export class StockController {
   listLowStockAlerts(@Param('establishmentId') establishmentId: string) {
     return this.stockMovements.listLowStockAlerts(establishmentId);
   }
+
+  @Get('stock/movement-totals')
+  @RequirePermissions('stock.view')
+  listMovementTotals(@Param('establishmentId') establishmentId: string) {
+    return this.stockMovements.listMovementTotals(establishmentId);
+  }
 }

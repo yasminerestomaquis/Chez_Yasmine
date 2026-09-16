@@ -109,4 +109,35 @@ export class StockMovementsService {
       .filter((p) => isLowStock(p.stockQuantity.toNumber(), p.minStock.toNumber()))
       .map((p) => ({ id: p.id, name: p.name, stockQuantity: p.stockQuantity.toNumber(), minStock: p.minStock.toNumber() }));
   }
+
+  /**
+   * Totaux cumulés par produit pour le module Stock (demande utilisateur du
+   * 2026-09-16) : reçue (mouvements `in`), consommée (`sale`, vendue en
+   * caisse/salle — délibérément différente de `out`, qui reste une sortie
+   * manuelle distincte, ex. usage interne, jamais confondue avec une vente),
+   * perte (`loss`, écrite par le module Pertes). `adjustment` en est
+   * volontairement exclu : c'est une correction du stock affiché, pas un
+   * flux réel entré/sorti. Un seul `groupBy` pour tout l'établissement
+   * plutôt qu'un aller-retour par produit (`listForProduct`) — le listing
+   * Stock affiche potentiellement tout le catalogue en une fois.
+   */
+  async listMovementTotals(establishmentId: string) {
+    const rows = await this.prisma.stockMovement.groupBy({
+      by: ['productId', 'type'],
+      where: { product: { establishmentId } },
+      _sum: { quantity: true },
+    });
+
+    const byProduct = new Map<string, { received: number; consumed: number; lost: number }>();
+    for (const row of rows) {
+      const entry = byProduct.get(row.productId) ?? { received: 0, consumed: 0, lost: 0 };
+      const quantity = row._sum.quantity?.toNumber() ?? 0;
+      if (row.type === 'in') entry.received += quantity;
+      else if (row.type === 'sale') entry.consumed += quantity;
+      else if (row.type === 'loss') entry.lost += quantity;
+      byProduct.set(row.productId, entry);
+    }
+
+    return Array.from(byProduct.entries()).map(([productId, totals]) => ({ productId, ...totals }));
+  }
 }

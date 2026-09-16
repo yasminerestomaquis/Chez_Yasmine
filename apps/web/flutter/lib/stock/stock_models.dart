@@ -16,6 +16,25 @@ class StockMovement {
       );
 }
 
+/// Totaux cumulés d'un produit (2026-09-16) : reçue (`in`), consommée
+/// (`sale`), perte (`loss`) — voir `StockMovementsService.listMovementTotals`
+/// pour la définition exacte de chaque agrégat (`out`/`adjustment` exclus).
+class StockMovementTotals {
+  StockMovementTotals({required this.productId, required this.received, required this.consumed, required this.lost});
+
+  final String productId;
+  final double received;
+  final double consumed;
+  final double lost;
+
+  factory StockMovementTotals.fromJson(Map<String, dynamic> json) => StockMovementTotals(
+        productId: json['productId'] as String,
+        received: (json['received'] as num).toDouble(),
+        consumed: (json['consumed'] as num).toDouble(),
+        lost: (json['lost'] as num).toDouble(),
+      );
+}
+
 class StockAlert {
   StockAlert({required this.id, required this.name, required this.stockQuantity, required this.minStock});
 
