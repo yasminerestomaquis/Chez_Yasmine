@@ -2,6 +2,12 @@
 
 ## [Unreleased]
 
+### Ajouté (2026-09-16) — Le rôle Serveur peut corriger une vente (quantité, mode de paiement)
+- Nouvelle permission `pos.correct`, séparée de `pos.refund` : corriger une ligne de vente (quantité vendue) ou son mode de paiement (Espèces/Mobile Money) n'exige plus le droit d'annuler une vente entière.
+- Accordée à tous les rôles qui portaient déjà `pos.refund` (rien ne leur est retiré) **et désormais au Serveur**, qui reste volontairement sans `pos.refund` — il peut corriger une vente déjà enregistrée en Caisse et dans l'écran Addition, mais toujours pas l'annuler entièrement.
+- Le bouton « Rembourser cette vente » est désormais masqué côté client pour tout rôle sans `pos.refund`, pour ne pas laisser un bouton toujours voué à un 403.
+- Voir `docs/api/pos.md`. Aucun nouveau test NestJS nécessaire (permission déclarative, pas de logique à tester — `PermissionsGuard` déjà couvert) ; 3 nouveaux tests Flutter (`canRefundSale`, logique pure).
+
 ### Ajouté (2026-09-16) — Module Stock : filtre catégorie, tri par stock croissant, totaux de mouvements
 - Nouveau filtre par catégorie (liste déroulante à sélection **multiple**, avec réinitialisation) — un produit apparaît dès qu'il appartient à l'une des catégories cochées.
 - La liste est désormais triée par ordre **croissant** de stock actuel (les ruptures/stocks faibles remontent en tête), au lieu de l'ordre du catalogue.

@@ -20,6 +20,19 @@ String _formatQuantity(double quantity) =>
 bool _isPlatsCategory(Product p) => p.hasVariablePricing;
 bool _isBoissonsCategory(Product p) => p.hasCasePricing;
 
+/// Rôles portant `pos.refund` (voir supabase/seed/001_roles_permissions.sql)
+/// — même limitation/raison que `HomeDashboard._isGerant`/`_isServeur` :
+/// `GET /auth/me` n'expose pas de code de permission au client, comparaison
+/// par nom de rôle. Le Serveur a `pos.correct` (quantité/mode de paiement)
+/// depuis le 2026-09-16 mais délibérément pas `pos.refund` (annulation
+/// complète) — le bouton "Rembourser" reste donc masqué pour lui, même
+/// exception à la convention par défaut de l'application que pour
+/// Utilisateurs/Catalogue : un bouton toujours voué à un 403 est masqué
+/// plutôt que laissé cliquable pour rien. Fonction pure top-level (plutôt
+/// qu'un getter privé) pour être testable sans widget.
+const _refundRoles = {'Super Administrateur', 'Administrateur', 'Propriétaire', 'Gérant', 'Caissier'};
+bool canRefundSale(String roleName) => _refundRoles.contains(roleName);
+
 /// Filtre les ventes non remboursées de [sales] aux lignes dont le produit
 /// est dans [matchingProductIds], et calcule le total (qté × prix unitaire)
 /// de ces seules lignes — logique métier pure, testable sans widget ni
@@ -59,30 +72,34 @@ class CategorySoldItemsPage extends StatefulWidget {
   const CategorySoldItemsPage({
     super.key,
     required this.establishmentId,
+    required this.roleName,
     required this.title,
     required this.categoryFilter,
     required this.emptyMessage,
   });
 
-  factory CategorySoldItemsPage.plats({Key? key, required String establishmentId}) =>
+  factory CategorySoldItemsPage.plats({Key? key, required String establishmentId, required String roleName}) =>
       CategorySoldItemsPage(
         key: key,
         establishmentId: establishmentId,
+        roleName: roleName,
         title: 'Plats vendus',
         categoryFilter: _isPlatsCategory,
         emptyMessage: 'Aucune vente Plats africains/Poissons/Poulets ce jour-là.',
       );
 
-  factory CategorySoldItemsPage.boissons({Key? key, required String establishmentId}) =>
+  factory CategorySoldItemsPage.boissons({Key? key, required String establishmentId, required String roleName}) =>
       CategorySoldItemsPage(
         key: key,
         establishmentId: establishmentId,
+        roleName: roleName,
         title: 'Boissons vendues',
         categoryFilter: _isBoissonsCategory,
         emptyMessage: 'Aucune vente Bières/Vins/Sucreries ce jour-là.',
       );
 
   final String establishmentId;
+  final String roleName;
   final String title;
   final bool Function(Product) categoryFilter;
   final String emptyMessage;
@@ -94,6 +111,8 @@ class CategorySoldItemsPage extends StatefulWidget {
 class _CategorySoldItemsPageState extends State<CategorySoldItemsPage> {
   late final CatalogRepository _catalog = CatalogRepository(ApiClient(), widget.establishmentId);
   late final PosRepository _repository = PosRepository(ApiClient(), widget.establishmentId);
+
+  bool get _canRefund => canRefundSale(widget.roleName);
 
   DateTime _date = DateTime.now();
   List<Product> _products = [];
@@ -310,11 +329,12 @@ class _CategorySoldItemsPageState extends State<CategorySoldItemsPage> {
                                       '${formatAmount(sale.total)} FCFA',
                                       style: const TextStyle(fontWeight: FontWeight.bold),
                                     ),
-                                    IconButton(
-                                      tooltip: 'Rembourser cette vente',
-                                      icon: const Icon(Icons.undo_outlined, size: 20),
-                                      onPressed: () => _refund(sale),
-                                    ),
+                                    if (_canRefund)
+                                      IconButton(
+                                        tooltip: 'Rembourser cette vente',
+                                        icon: const Icon(Icons.undo_outlined, size: 20),
+                                        onPressed: () => _refund(sale),
+                                      ),
                                   ],
                                 ),
                               ],

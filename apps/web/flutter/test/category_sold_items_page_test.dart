@@ -31,6 +31,23 @@ void main() {
     );
   });
 
+  group('canRefundSale (logique pure, sans réseau) — 2026-09-16', () {
+    test('le Serveur ne peut pas rembourser (pos.correct sans pos.refund)', () {
+      expect(canRefundSale('Serveur'), isFalse);
+    });
+
+    test('les rôles portant pos.refund le peuvent', () {
+      for (final role in ['Super Administrateur', 'Administrateur', 'Propriétaire', 'Gérant', 'Caissier']) {
+        expect(canRefundSale(role), isTrue, reason: role);
+      }
+    });
+
+    test('un rôle inconnu ne peut pas rembourser', () {
+      expect(canRefundSale('Comptable'), isFalse);
+      expect(canRefundSale('Magasinier'), isFalse);
+    });
+  });
+
   group('matchingSalesWithTotal (logique pure, sans réseau)', () {
     test('somme uniquement les lignes dont le produit est dans matchingProductIds', () {
       final sales = [
@@ -92,7 +109,7 @@ void main() {
     (tester) async {
       await tester.pumpWidget(
         MaterialApp(
-          home: CategorySoldItemsPage.plats(establishmentId: 'est-1'),
+          home: CategorySoldItemsPage.plats(establishmentId: 'est-1', roleName: 'Gérant'),
         ),
       );
       await tester.pumpAndSettle();
@@ -109,7 +126,7 @@ void main() {
     (tester) async {
       await tester.pumpWidget(
         MaterialApp(
-          home: CategorySoldItemsPage.boissons(establishmentId: 'est-1'),
+          home: CategorySoldItemsPage.boissons(establishmentId: 'est-1', roleName: 'Gérant'),
         ),
       );
       await tester.pumpAndSettle();

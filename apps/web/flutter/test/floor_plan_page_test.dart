@@ -16,7 +16,7 @@ void main() {
 
   testWidgets('shows an empty state without crashing when no backend is reachable in test', (tester) async {
     await tester.pumpWidget(
-      const MaterialApp(home: FloorPlanPage(establishmentId: 'est-1')),
+      const MaterialApp(home: FloorPlanPage(establishmentId: 'est-1', roleName: 'Gérant')),
     );
     await tester.pumpAndSettle();
 

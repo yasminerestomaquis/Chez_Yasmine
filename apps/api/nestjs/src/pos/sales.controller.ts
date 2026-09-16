@@ -49,9 +49,14 @@ export class SalesController {
     return this.sales.refund(establishmentId, request.user!.sub, saleId);
   }
 
-  /** Corrige le nombre de produits vendus d'une ligne — voir SalesService.updateItemQuantity. Même permission que refund : une correction sur une vente déjà enregistrée est tout aussi sensible. */
+  /**
+   * Corrige le nombre de produits vendus d'une ligne — voir SalesService.updateItemQuantity.
+   * `pos.correct` (2026-09-16) — volontairement distincte de `pos.refund` : corriger une
+   * quantité/un mode de paiement n'annule pas la vente, contrairement à un remboursement
+   * complet. Sépare les deux pour pouvoir accorder l'une sans l'autre (ex. Serveur).
+   */
   @Patch(':saleId/items/:itemId')
-  @RequirePermissions('pos.refund')
+  @RequirePermissions('pos.correct')
   updateItemQuantity(
     @Req() request: Request,
     @Param('establishmentId') establishmentId: string,
@@ -64,7 +69,7 @@ export class SalesController {
 
   /** Corrige le mode de paiement (Espèces/Mobile Money) d'une ligne — voir SalesService.updatePaymentMethod. */
   @Patch(':saleId/payments/:paymentId')
-  @RequirePermissions('pos.refund')
+  @RequirePermissions('pos.correct')
   updatePaymentMethod(
     @Param('establishmentId') establishmentId: string,
     @Param('saleId') saleId: string,

@@ -20,6 +20,7 @@ void main() {
         home: TableOrderPage(
           repository: repository,
           establishmentId: 'est-1',
+          roleName: 'Gérant',
           tableId: 'table-1',
         ),
       ),

@@ -8,9 +8,10 @@ import 'tables_models.dart';
 import 'tables_repository.dart';
 
 class FloorPlanPage extends StatefulWidget {
-  const FloorPlanPage({super.key, required this.establishmentId});
+  const FloorPlanPage({super.key, required this.establishmentId, required this.roleName});
 
   final String establishmentId;
+  final String roleName;
 
   @override
   State<FloorPlanPage> createState() => _FloorPlanPageState();
@@ -65,6 +66,7 @@ class _FloorPlanPageState extends State<FloorPlanPage> {
           builder: (_) => TableOrderPage(
             repository: _repository,
             establishmentId: widget.establishmentId,
+            roleName: widget.roleName,
             tableId: table.id,
           ),
         ),

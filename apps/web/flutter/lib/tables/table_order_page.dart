@@ -29,11 +29,13 @@ class TableOrderPage extends StatefulWidget {
     super.key,
     required this.repository,
     required this.establishmentId,
+    required this.roleName,
     required this.tableId,
   });
 
   final TablesRepository repository;
   final String establishmentId;
+  final String roleName;
   final String tableId;
 
   @override
@@ -381,6 +383,7 @@ class _TableOrderPageState extends State<TableOrderPage> {
               MaterialPageRoute(
                 builder: (_) => CategorySoldItemsPage.boissons(
                   establishmentId: widget.establishmentId,
+                  roleName: widget.roleName,
                 ),
               ),
             ),
@@ -392,6 +395,7 @@ class _TableOrderPageState extends State<TableOrderPage> {
               MaterialPageRoute(
                 builder: (_) => CategorySoldItemsPage.plats(
                   establishmentId: widget.establishmentId,
+                  roleName: widget.roleName,
                 ),
               ),
             ),

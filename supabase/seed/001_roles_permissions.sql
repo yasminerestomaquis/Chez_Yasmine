@@ -11,6 +11,7 @@ insert into permissions (code, description) values
   ('purchases.view',    'Consulter l''historique des commandes d''achat — sans les créer/modifier/recevoir/annuler'),
   ('pos.sell',          'Encaisser une vente en caisse ou en salle'),
   ('pos.refund',        'Annuler une vente, rembourser'),
+  ('pos.correct',       'Corriger une vente déjà enregistrée (quantité, mode de paiement) sans la rembourser entièrement'),
   ('tables.manage',     'Plan de salle, ouverture/transfert/fusion/clôture d''addition'),
   ('customers.manage',  'Fiches client'),
   ('credits.manage',    'Ventes à crédit, remboursements de crédit'),
@@ -78,10 +79,14 @@ on conflict do nothing;
 -- `products.view` : la grille produits de la Caisse liste le catalogue
 -- (voir apps/api/nestjs/src/catalog/products.controller.ts) — sans elle,
 -- un Caissier ne peut même pas ouvrir la Caisse (404/403 au chargement).
+-- `pos.correct` (2026-09-16) : ajoutée explicitement en plus de `pos.refund`
+-- — depuis la séparation des deux permissions, plus rien ne l'accorderait
+-- automatiquement au Caissier, qui devait déjà pouvoir corriger une vente
+-- (la possédait via `pos.refund` avant la séparation).
 insert into role_permissions (role_id, permission_id)
 select r.id, p.id
 from roles r
-join permissions p on p.code in ('pos.sell', 'pos.refund', 'customers.manage', 'cash.manage', 'reports.view', 'products.view')
+join permissions p on p.code in ('pos.sell', 'pos.refund', 'pos.correct', 'customers.manage', 'cash.manage', 'reports.view', 'products.view')
 where r.is_system and r.name = 'Caissier'
 on conflict do nothing;
 
@@ -102,10 +107,15 @@ on conflict do nothing;
 -- module Pertes — contrairement à products/stock/purchases, il n'existe pas
 -- de `losses.view` séparée (voir `LossesController`, une seule permission
 -- gate à la fois la consultation et l'enregistrement d'une perte).
+-- `pos.correct` (2026-09-16, demande utilisateur) : le Serveur peut corriger
+-- la quantité vendue et le mode de paiement d'une ligne déjà enregistrée
+-- (boutons de `CategorySoldItemsPage`, Caisse et Addition) — délibérément
+-- SANS `pos.refund` : il ne peut toujours pas annuler une vente entière,
+-- seule la correction lui est accordée (voir `SalesController`).
 insert into role_permissions (role_id, permission_id)
 select r.id, p.id
 from roles r
-join permissions p on p.code in ('pos.sell', 'tables.manage', 'products.view', 'reports.view', 'purchases.view', 'stock.view', 'losses.manage')
+join permissions p on p.code in ('pos.sell', 'tables.manage', 'products.view', 'reports.view', 'purchases.view', 'stock.view', 'losses.manage', 'pos.correct')
 where r.is_system and r.name = 'Serveur'
 on conflict do nothing;
 

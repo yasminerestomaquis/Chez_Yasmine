@@ -24,9 +24,10 @@ import 'receipt_page.dart';
 const _kMobileBreakpoint = 700.0;
 
 class PosPage extends StatefulWidget {
-  const PosPage({super.key, required this.establishmentId});
+  const PosPage({super.key, required this.establishmentId, required this.roleName});
 
   final String establishmentId;
+  final String roleName;
 
   @override
   State<PosPage> createState() => _PosPageState();
@@ -332,6 +333,7 @@ class _PosPageState extends State<PosPage> {
               MaterialPageRoute(
                 builder: (_) => CategorySoldItemsPage.boissons(
                   establishmentId: widget.establishmentId,
+                  roleName: widget.roleName,
                 ),
               ),
             ),
@@ -343,6 +345,7 @@ class _PosPageState extends State<PosPage> {
               MaterialPageRoute(
                 builder: (_) => CategorySoldItemsPage.plats(
                   establishmentId: widget.establishmentId,
+                  roleName: widget.roleName,
                 ),
               ),
             ),

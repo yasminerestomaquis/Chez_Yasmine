@@ -176,12 +176,12 @@ class _HomeDashboardState extends State<HomeDashboard> {
     _ModuleEntry(
       Icons.table_restaurant_outlined,
       'Tables',
-      (_) => FloorPlanPage(establishmentId: widget.establishmentId),
+      (_) => FloorPlanPage(establishmentId: widget.establishmentId, roleName: widget.roleName),
     ),
     _ModuleEntry(
       Icons.point_of_sale_outlined,
       'Caisse',
-      (_) => PosPage(establishmentId: widget.establishmentId),
+      (_) => PosPage(establishmentId: widget.establishmentId, roleName: widget.roleName),
     ),
     _ModuleEntry(
       Icons.inventory_2_outlined,
@@ -377,7 +377,7 @@ class _HomeDashboardState extends State<HomeDashboard> {
               onTap: () {
                 Navigator.of(sheetContext).pop();
                 _openPage(
-                  (_) => FloorPlanPage(establishmentId: widget.establishmentId),
+                  (_) => FloorPlanPage(establishmentId: widget.establishmentId, roleName: widget.roleName),
                 );
               },
             ),
@@ -390,7 +390,7 @@ class _HomeDashboardState extends State<HomeDashboard> {
               onTap: () {
                 Navigator.of(sheetContext).pop();
                 _openPage(
-                  (_) => PosPage(establishmentId: widget.establishmentId),
+                  (_) => PosPage(establishmentId: widget.establishmentId, roleName: widget.roleName),
                 );
               },
             ),
@@ -1151,6 +1151,7 @@ class _HomeDashboardState extends State<HomeDashboard> {
                         onTap: () => _openPage(
                           (_) => FloorPlanPage(
                             establishmentId: widget.establishmentId,
+                            roleName: widget.roleName,
                           ),
                         ),
                       ),
@@ -1160,6 +1161,7 @@ class _HomeDashboardState extends State<HomeDashboard> {
                         onTap: () => _openPage(
                           (_) => FloorPlanPage(
                             establishmentId: widget.establishmentId,
+                            roleName: widget.roleName,
                           ),
                         ),
                       ),
@@ -1168,7 +1170,7 @@ class _HomeDashboardState extends State<HomeDashboard> {
                         label: 'Caisse',
                         onTap: () => _openPage(
                           (_) =>
-                              PosPage(establishmentId: widget.establishmentId),
+                              PosPage(establishmentId: widget.establishmentId, roleName: widget.roleName),
                         ),
                       ),
                       _quickActionButton(
@@ -1201,7 +1203,7 @@ class _HomeDashboardState extends State<HomeDashboard> {
           switch (index) {
             case 1:
               _openPage(
-                (_) => PosPage(establishmentId: widget.establishmentId),
+                (_) => PosPage(establishmentId: widget.establishmentId, roleName: widget.roleName),
               );
               break;
             case 2:
