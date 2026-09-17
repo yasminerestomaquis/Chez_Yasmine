@@ -18,7 +18,7 @@ String _formatQuantity(double quantity) =>
         : quantity.toString();
 
 bool _isPlatsCategory(Product p) => p.hasVariablePricing;
-bool _isBoissonsCategory(Product p) => p.hasCasePricing;
+bool _isBoissonsCategory(Product p) => p.isBoissonsGroup;
 
 /// Rôles portant `pos.refund` (voir supabase/seed/001_roles_permissions.sql)
 /// — même limitation/raison que `HomeDashboard._isGerant`/`_isServeur` :

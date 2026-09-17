@@ -165,9 +165,13 @@ export class ReportsService {
   /**
    * Ventilation utilisée par le tableau de bord Accueil : chiffre d'affaires
    * du jour réparti par mode de paiement (Espèces/Mobile Money) et par
-   * groupe de catégories (Boissons = `hasCasePricing`, ex. Bières/Vins/
-   * Sucreries ; Plats = `hasVariablePricing`, ex. Poulets/Poissons/Plats
-   * africains — voir docs/api/catalog.md), plus le croisement des deux.
+   * groupe de catégories (Boissons = `hasCasePricing` OU `isBeverage`, ex.
+   * Bières/Vins/Sucreries et Gbêlê ; Plats = `hasVariablePricing`, ex.
+   * Poulets/Poissons/Plats africains — voir docs/api/catalog.md), plus le
+   * croisement des deux. `isBeverage` couvre les boissons qui ne rentrent
+   * dans aucun des deux mécanismes de prix existants (ex. Gbêlê : prix
+   * d'achat connu, prix de vente saisi à chaque vente — décision
+   * utilisateur du 2026-09-17).
    *
    * Le CA par groupe de catégories est calculé ligne à ligne
    * (`SaleItem.quantity × SaleItem.unitPrice`), **jamais réduit par une
@@ -195,7 +199,7 @@ export class ReportsService {
           select: {
             quantity: true,
             unitPrice: true,
-            product: { select: { category: { select: { hasCasePricing: true, hasVariablePricing: true } } } },
+            product: { select: { category: { select: { hasCasePricing: true, hasVariablePricing: true, isBeverage: true } } } },
           },
         },
       },
@@ -223,7 +227,7 @@ export class ReportsService {
       let salePlats = 0;
       for (const item of sale.items) {
         const revenue = item.quantity.toNumber() * item.unitPrice.toNumber();
-        if (item.product.category?.hasCasePricing) saleBoissons += revenue;
+        if (item.product.category?.hasCasePricing || item.product.category?.isBeverage) saleBoissons += revenue;
         else if (item.product.category?.hasVariablePricing) salePlats += revenue;
       }
       boissonsRevenue += saleBoissons;
@@ -281,8 +285,9 @@ export class ReportsService {
   }
 
   /**
-   * Listing Excel des produits vendus des catégories à prix par casier
-   * (Bières/Vins/Sucreries — `hasCasePricing`, voir docs/api/catalog.md)
+   * Listing Excel des produits vendus des catégories "Boissons" — à prix par
+   * casier (Bières/Vins/Sucreries — `hasCasePricing`) ou marquées `isBeverage`
+   * (ex. Gbêlê, décision utilisateur du 2026-09-17 — voir docs/api/catalog.md)
    * pour un jour choisi par l'utilisateur, une ligne par `SaleItem` (pas
    * agrégé par produit : "Numéro de la commande" varie ligne à ligne, un même
    * produit pouvant appartenir à plusieurs ventes/commandes le même jour).
@@ -295,7 +300,7 @@ export class ReportsService {
     const items = await this.prisma.saleItem.findMany({
       where: {
         sale: { establishmentId, voidedAt: null, createdAt: { gte: from, lte: to } },
-        product: { category: { hasCasePricing: true } },
+        product: { category: { OR: [{ hasCasePricing: true }, { isBeverage: true }] } },
       },
       include: { sale: { select: { orderNumber: true, createdAt: true } } },
       orderBy: { sale: { createdAt: 'asc' } },

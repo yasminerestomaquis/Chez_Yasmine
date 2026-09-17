@@ -17,11 +17,17 @@ class CatalogRepository {
     return json.map((e) => Category.fromJson(e as Map<String, dynamic>)).toList();
   }
 
-  Future<Category> createCategory(String name, {bool hasVariablePricing = false, bool hasCasePricing = false}) async {
+  Future<Category> createCategory(
+    String name, {
+    bool hasVariablePricing = false,
+    bool hasCasePricing = false,
+    bool isBeverage = false,
+  }) async {
     final json = await _api.post('$_base/categories', body: {
       'name': name,
       'hasVariablePricing': hasVariablePricing,
       'hasCasePricing': hasCasePricing,
+      'isBeverage': isBeverage,
     }) as Map<String, dynamic>;
     return Category.fromJson(json);
   }
@@ -31,11 +37,13 @@ class CatalogRepository {
     String? name,
     bool? hasVariablePricing,
     bool? hasCasePricing,
+    bool? isBeverage,
   }) async {
     final json = await _api.patch('$_base/categories/$categoryId', body: {
       'name': ?name,
       'hasVariablePricing': ?hasVariablePricing,
       'hasCasePricing': ?hasCasePricing,
+      'isBeverage': ?isBeverage,
     }) as Map<String, dynamic>;
     return Category.fromJson(json);
   }

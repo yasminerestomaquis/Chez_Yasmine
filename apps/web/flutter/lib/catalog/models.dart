@@ -1,5 +1,11 @@
 class Category {
-  Category({required this.id, required this.name, this.hasVariablePricing = false, this.hasCasePricing = false});
+  Category({
+    required this.id,
+    required this.name,
+    this.hasVariablePricing = false,
+    this.hasCasePricing = false,
+    this.isBeverage = false,
+  });
 
   final String id;
   final String name;
@@ -16,11 +22,19 @@ class Category {
   /// propose que ces produits dans son flux de commande par casier.
   final bool hasCasePricing;
 
+  /// Vrai pour une boisson qui n'est ni [hasCasePricing] ni
+  /// [hasVariablePricing] (ex. Gbêlê, décision utilisateur du 2026-09-17) —
+  /// compte comme "Boissons" dans les rapports/exports/listings qui,
+  /// sinon, ne reconnaissent que [hasCasePricing] pour ce groupe. Une
+  /// catégorie déjà [hasCasePricing] n'a pas besoin de ce drapeau.
+  final bool isBeverage;
+
   factory Category.fromJson(Map<String, dynamic> json) => Category(
         id: json['id'] as String,
         name: json['name'] as String,
         hasVariablePricing: json['hasVariablePricing'] as bool? ?? false,
         hasCasePricing: json['hasCasePricing'] as bool? ?? false,
+        isBeverage: json['isBeverage'] as bool? ?? false,
       );
 }
 
@@ -98,6 +112,12 @@ class Product {
 
   bool get hasVariablePricing => category?.hasVariablePricing ?? false;
   bool get hasCasePricing => category?.hasCasePricing ?? false;
+  bool get isBeverage => category?.isBeverage ?? false;
+
+  /// Compte comme "Boissons" dans les listings/exports qui splittent
+  /// Boissons/Plats (ex. `CategorySoldItemsPage`, `ReportsPage`) — même
+  /// critère que côté serveur (`ReportsService.paymentCategoryBreakdown`).
+  bool get isBoissonsGroup => hasCasePricing || isBeverage;
 
   factory Product.fromJson(Map<String, dynamic> json) => Product(
         id: json['id'] as String,

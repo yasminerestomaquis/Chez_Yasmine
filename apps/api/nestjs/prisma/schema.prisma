@@ -192,6 +192,16 @@ model Category {
   /// n'accepte que ces produits dans son flux de commande par casier (voir
   /// docs/api/catalog.md, docs/api/purchasing.md).
   hasCasePricing     Boolean  @default(false) @map("has_case_pricing")
+  /// Vrai pour une catégorie de boisson qui ne rentre dans aucun des deux
+  /// mécanismes de prix ci-dessus (ex. Gbêlê : prix d'achat connu et fixe,
+  /// mais prix de vente saisi à chaque vente via `Product.requiresPriceAtSale`
+  /// — ni "prix par casier" ni "prix variable"). Sert uniquement à classer
+  /// une vente comme "Boissons" dans les rapports/exports qui, sinon, ne
+  /// reconnaissent que `hasCasePricing` pour ce groupe — voir
+  /// `ReportsService.paymentCategoryBreakdown`/`beveragesSoldExcel` et
+  /// `category_sold_items_page.dart`. Une catégorie déjà `hasCasePricing`
+  /// n'a pas besoin de ce drapeau (déjà comptée Boissons par ailleurs).
+  isBeverage         Boolean  @default(false) @map("is_beverage")
   createdAt          DateTime @default(now()) @map("created_at")
 
   establishment Establishment @relation(fields: [establishmentId], references: [id], onDelete: Cascade)

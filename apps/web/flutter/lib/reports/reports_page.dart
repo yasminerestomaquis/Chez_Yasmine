@@ -343,7 +343,7 @@ class _ReportsPageState extends State<ReportsPage> {
       ).wait;
 
       final caseProductIds = products
-          .where((p) => p.hasCasePricing)
+          .where((p) => p.isBoissonsGroup)
           .map((p) => p.id)
           .toSet();
 

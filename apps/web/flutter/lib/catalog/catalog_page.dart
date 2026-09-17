@@ -53,6 +53,7 @@ class _CatalogPageState extends State<CatalogPage> {
   List<String> _categoryBadges(Category category) => [
         if (category.hasVariablePricing) 'Prix variable',
         if (category.hasCasePricing) 'Prix par casier',
+        if (category.isBeverage) 'Boisson',
       ];
 
   Future<void> _addCategory() async {
@@ -63,6 +64,7 @@ class _CatalogPageState extends State<CatalogPage> {
         result.name,
         hasVariablePricing: result.hasVariablePricing,
         hasCasePricing: result.hasCasePricing,
+        isBeverage: result.isBeverage,
       );
       _reload();
     } on ApiException catch (e) {
@@ -77,6 +79,7 @@ class _CatalogPageState extends State<CatalogPage> {
       initialName: category.name,
       initialHasVariablePricing: category.hasVariablePricing,
       initialHasCasePricing: category.hasCasePricing,
+      initialIsBeverage: category.isBeverage,
     );
     if (result == null) return;
     try {
@@ -85,6 +88,7 @@ class _CatalogPageState extends State<CatalogPage> {
         name: result.name,
         hasVariablePricing: result.hasVariablePricing,
         hasCasePricing: result.hasCasePricing,
+        isBeverage: result.isBeverage,
       );
       _categories = [for (final c in _categories) if (c.id == category.id) updated else c];
       setDialogState(() {});
@@ -100,10 +104,12 @@ class _CatalogPageState extends State<CatalogPage> {
     String? initialName,
     bool initialHasVariablePricing = false,
     bool initialHasCasePricing = false,
+    bool initialIsBeverage = false,
   }) {
     final controller = TextEditingController(text: initialName ?? '');
     var hasVariablePricing = initialHasVariablePricing;
     var hasCasePricing = initialHasCasePricing;
+    var isBeverage = initialIsBeverage;
     return showDialog<_CategoryFormResult>(
       context: context,
       builder: (context) => StatefulBuilder(
@@ -129,6 +135,16 @@ class _CatalogPageState extends State<CatalogPage> {
                 title: const Text('Prix par casier'),
                 subtitle: const Text('Vendu par casier (ex. Bières, Vins, Sucreries) : active Nbre de bouteilles/Prix d\'achat par casier.'),
               ),
+              CheckboxListTile(
+                contentPadding: EdgeInsets.zero,
+                controlAffinity: ListTileControlAffinity.leading,
+                value: isBeverage,
+                onChanged: (v) => setState(() => isBeverage = v ?? false),
+                title: const Text('Boisson'),
+                subtitle: const Text(
+                  'Compte comme "Boissons" dans les rapports/exports (ex. Gbêlê) — inutile si "Prix par casier" est déjà coché.',
+                ),
+              ),
             ],
           ),
           actions: [
@@ -141,6 +157,7 @@ class _CatalogPageState extends State<CatalogPage> {
                   name: name,
                   hasVariablePricing: hasVariablePricing,
                   hasCasePricing: hasCasePricing,
+                  isBeverage: isBeverage,
                 ));
               },
               child: const Text('Valider'),
@@ -420,11 +437,17 @@ class _CategoryTile extends StatelessWidget {
 }
 
 class _CategoryFormResult {
-  const _CategoryFormResult({required this.name, required this.hasVariablePricing, required this.hasCasePricing});
+  const _CategoryFormResult({
+    required this.name,
+    required this.hasVariablePricing,
+    required this.hasCasePricing,
+    required this.isBeverage,
+  });
 
   final String name;
   final bool hasVariablePricing;
   final bool hasCasePricing;
+  final bool isBeverage;
 }
 
 class _ProductCard extends StatelessWidget {

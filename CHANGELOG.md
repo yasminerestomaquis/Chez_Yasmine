@@ -2,6 +2,12 @@
 
 ## [Unreleased]
 
+### Ajouté (2026-09-17) — Gbêlê compte désormais comme "Boissons" dans les rapports/exports
+- Constaté par l'utilisateur : la catégorie Gbêlê (achat à prix connu, prix de vente saisi à chaque vente) n'étant ni « prix par casier » ni « prix variable », ses ventes disparaissaient de tous les indicateurs "Boissons" (dashboard Accueil, "Boissons vendues" en Caisse/Addition, export Excel de Rapports) — sans apparaître non plus côté "Plats".
+- Nouveau `Category.isBeverage` (migration `20260917150000_add_category_is_beverage.sql`) : le critère "compte comme Boissons" devient partout `hasCasePricing OU isBeverage`. Nouvelle case à cocher « Boisson » dans le dialogue « Gérer les catégories ».
+- Corrigé au passage en production : la catégorie "Gbêlê", créée par erreur avec « Prix variable » avant ce correctif, est repassée à une catégorie à prix fixe normale (aucune donnée perdue, le produit n'avait encore ni prix ni mouvement de stock) et porte désormais `isBeverage = true`.
+- Voir `docs/api/catalog.md`, `docs/api/reports.md`. 1 nouveau test NestJS (`paymentCategoryBreakdown`), 1 test NestJS mis à jour (`beveragesSoldExcel`), 6 nouveaux tests Flutter (`catalog_models_test.dart`).
+
 ### Corrigé (2026-09-17) — « Plats vendus »/« Boissons vendues » affichaient le montant de toute la vente, pas seulement des lignes du groupe
 - Constaté par l'utilisateur : pour une vente mixte (ex. un plat + des boissons, payés ensemble en une fois), le montant en tête de chaque carte et à côté du mode de paiement affichait le total **réel de la vente entière** (ex. 3 300 FCFA), identique dans les deux listings, alors que chaque carte ne liste que les lignes de son propre groupe (ex. 2 300 FCFA de boissons seules) — donnant l'impression d'une erreur de calcul.
 - Corrigé en distinguant deux montants plutôt que d'en fabriquer un : le sous-total en tête de carte devient la somme des seules lignes affichées (`lineItemsTotal`) ; pour une vente mixte, une précision apparaît (« Vente mixte... total réel de la vente : X FCFA ») et chaque paiement affiche « (vente entière) » à côté de son montant — le montant du paiement lui-même reste inchangé, c'est une vraie donnée de transaction, jamais un chiffre réparti au prorata.

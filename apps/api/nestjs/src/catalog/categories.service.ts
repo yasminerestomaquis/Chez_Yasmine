@@ -22,6 +22,7 @@ export class CategoriesService {
         name: dto.name,
         hasVariablePricing: dto.hasVariablePricing,
         hasCasePricing: dto.hasCasePricing,
+        isBeverage: dto.isBeverage,
       },
     });
   }

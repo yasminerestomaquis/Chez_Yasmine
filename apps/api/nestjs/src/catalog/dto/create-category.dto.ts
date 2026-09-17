@@ -15,4 +15,9 @@ export class CreateCategoryDto {
   @IsOptional()
   @IsBoolean()
   hasCasePricing?: boolean;
+
+  /** Vrai pour une boisson qui n'est ni "prix par casier" ni "prix variable" (ex. Gbêlê) — compte comme Boissons dans les rapports. */
+  @IsOptional()
+  @IsBoolean()
+  isBeverage?: boolean;
 }

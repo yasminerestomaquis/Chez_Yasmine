@@ -14,4 +14,8 @@ export class UpdateCategoryDto {
   @IsOptional()
   @IsBoolean()
   hasCasePricing?: boolean;
+
+  @IsOptional()
+  @IsBoolean()
+  isBeverage?: boolean;
 }

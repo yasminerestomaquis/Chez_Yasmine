@@ -283,6 +283,27 @@ describe('ReportsService.paymentCategoryBreakdown', () => {
     expect(result.platsMobileMoney).toBe(0);
   });
 
+  it('counts an isBeverage category (ex. Gbêlê) as Boissons even without hasCasePricing (2026-09-17)', async () => {
+    (prisma.sale as any).findMany.mockResolvedValue([
+      {
+        payments: [{ method: 'mobile_money', amount: new Decimal(700) }],
+        items: [
+          {
+            quantity: new Decimal(1),
+            unitPrice: new Decimal(700),
+            product: { category: { hasCasePricing: false, hasVariablePricing: false, isBeverage: true } },
+          },
+        ],
+      },
+    ]);
+
+    const result = await service.paymentCategoryBreakdown('est-1', {});
+
+    expect(result.boissonsRevenue).toBe(700);
+    expect(result.platsRevenue).toBe(0);
+    expect(result.boissonsMobileMoney).toBeCloseTo(700);
+  });
+
   it('excludes card/credit payments from cash/mobile-money totals', async () => {
     (prisma.sale as any).findMany.mockResolvedValue([
       {
@@ -312,7 +333,7 @@ describe('ReportsService.beveragesSoldExcel', () => {
     service = new ReportsService(prisma as unknown as PrismaService, makeStockMovementsMock() as unknown as StockMovementsService);
   });
 
-  it('scopes the query to the chosen day, establishment, and case-pricing categories', async () => {
+  it('scopes the query to the chosen day, establishment, and Boissons categories (case-pricing or isBeverage)', async () => {
     (prisma.saleItem as any).findMany.mockResolvedValue([]);
 
     await service.beveragesSoldExcel('est-1', '2026-09-11');
@@ -321,7 +342,7 @@ describe('ReportsService.beveragesSoldExcel', () => {
       expect.objectContaining({
         where: expect.objectContaining({
           sale: expect.objectContaining({ establishmentId: 'est-1', voidedAt: null }),
-          product: { category: { hasCasePricing: true } },
+          product: { category: { OR: [{ hasCasePricing: true }, { isBeverage: true }] } },
         }),
       }),
     );
