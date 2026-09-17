@@ -108,21 +108,27 @@
       });
     }
 
-    // Mise à jour : flutter_service_worker.js appelle self.skipWaiting() une
-    // fois la nouvelle version installée (comportement par défaut du
-    // service worker généré par Flutter) ; "controllerchange" se déclenche
-    // au moment où l'onglet bascule effectivement dessus.
+    // Mise à jour : pwa_cache_worker.js appelle self.skipWaiting() à
+    // l'installation puis self.clients.claim() à l'activation (voir ce
+    // fichier) ; "controllerchange" se déclenche au moment où l'onglet
+    // bascule effectivement sur la nouvelle version. Seul service worker
+    // enregistré par cette application depuis flutter_bootstrap.js — celui
+    // généré par Flutter (flutter_service_worker.js, déprécié dans ce SDK)
+    // n'est plus enregistré du tout, voir web/flutter_bootstrap.js : son
+    // cycle installation/désinstallation à chaque chargement de page
+    // déclenchait ce même évènement quasi à chaque visite, pas seulement
+    // lors d'un vrai déploiement (bandeau qui réapparaissait à tort après un
+    // simple rechargement, constaté par l'utilisateur le 2026-09-17).
     //
     // Piège corrigé ici : "controllerchange" se déclenche AUSSI lors de la
-    // toute première installation (le service worker généré par Flutter
-    // appelle self.clients.claim() dans son activate, donc il prend le
-    // contrôle de l'onglet déjà ouvert même quand il n'y avait encore aucune
-    // version précédente). Sans garde, le bandeau "Nouvelle version
-    // disponible" s'affichait donc dès la première visite — jamais mis à
-    // jour en réalité. On ne le montre que si l'onglet avait déjà un
-    // controller AVANT cet événement : c'est la signature d'une vraie mise à
-    // jour (l'utilisateur avait déjà l'app chargée sous une version), pas
-    // d'une première installation.
+    // toute première installation (self.clients.claim() dans l'activate de
+    // pwa_cache_worker.js prend le contrôle de l'onglet déjà ouvert même
+    // quand il n'y avait encore aucune version précédente). Sans garde, le
+    // bandeau "Nouvelle version disponible" s'affichait donc dès la première
+    // visite — jamais mis à jour en réalité. On ne le montre que si l'onglet
+    // avait déjà un controller AVANT cet événement : c'est la signature
+    // d'une vraie mise à jour (l'utilisateur avait déjà l'app chargée sous
+    // une version), pas d'une première installation.
     if ('serviceWorker' in navigator) {
       const hadControllerBeforeUpdate = Boolean(navigator.serviceWorker.controller);
       let refreshing = false;

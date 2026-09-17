@@ -125,6 +125,47 @@ void main() {
     expect(find.text("Prix d'achat par bouteille"), findsOneWidget);
   });
 
+  group('requiresPriceAtSale (ex. Gbêlê : achat à prix connu, prix de vente saisi à chaque vente, 2026-09-17)', () {
+    testWidgets('checking the box swaps "Prix de vente" for the reference field and drops the requirement', (tester) async {
+      await pumpForm(tester);
+
+      await tester.enterText(find.widgetWithText(TextFormField, 'Nom *'), 'Gbêlê');
+      await tester.tap(find.text('Prix de vente saisi à chaque vente (ex. Gbêlê)'));
+      await tester.pumpAndSettle();
+
+      expect(find.text('Prix de vente (FCFA) *'), findsNothing);
+      expect(find.text('Prix de vente initial (référence)'), findsOneWidget);
+      // Le prix d'achat reste affiché et normal, contrairement à une
+      // catégorie à prix variable (Poulets) qui le masque entièrement.
+      expect(find.text("Prix d'achat par bouteille"), findsOneWidget);
+
+      await tester.tap(find.text('Créer le produit'));
+      await tester.pump();
+
+      expect(find.text('Requis'), findsNothing);
+    });
+
+    testWidgets('pre-fills the checkbox and the reference price when editing an existing product', (tester) async {
+      final product = Product(
+        id: 'prod-1',
+        name: 'Gbêlê',
+        unit: 'litre',
+        purchasePrice: 500,
+        requiresPriceAtSale: true,
+        referenceSalePrice: 800,
+        status: 'active',
+        stockQuantity: 20,
+      );
+      await pumpForm(tester, existing: product);
+
+      final checkbox = tester.widget<CheckboxListTile>(
+        find.widgetWithText(CheckboxListTile, 'Prix de vente saisi à chaque vente (ex. Gbêlê)'),
+      );
+      expect(checkbox.value, isTrue);
+      expect(find.text('800.0'), findsOneWidget);
+    });
+  });
+
   group('readOnly (rôle sans products.manage — Gérant/Serveur/Caissier, 2026-09-15)', () {
     testWidgets('hides the photo-picker actions and the submit button, shows the product name as title', (tester) async {
       final product = Product(id: 'prod-1', name: 'Bière 65cl', salePrice: 1000, status: 'active', stockQuantity: 12);

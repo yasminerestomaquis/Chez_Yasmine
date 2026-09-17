@@ -22,11 +22,16 @@ class _StockPalette {
   static const background = Color(0xFFF4FBF5);
 }
 
-/// Sous-module "Stock" du module Graphiques : fiche de lots FIFO d'un ou
-/// plusieurs produits de même catégorie (maquette demandée — voir PROMPT et
+/// Sous-module "Stock" du module Graphiques : fiche de lots FIFO des
+/// produits des catégories sélectionnées (maquette demandée — voir PROMPT et
 /// docs/api/charts.md pour la logique de reconstruction des lots à partir de
 /// l'historique des `StockMovement`, sans schéma de lot dédié, et pour le
 /// principe de numérotation lot ↔ commande/marché).
+///
+/// Piloté par un filtre Catégorie à sélection multiple (plus de filtre
+/// Produit séparé, retiré le 2026-09-17 sur demande utilisateur — les
+/// tableaux "Lots actifs"/"Historique" suivent directement la sélection de
+/// catégories, potentiellement plusieurs à la fois désormais).
 ///
 /// Contrairement à `MetricChartsTab` (Recettes / Bénéfices), cet onglet
 /// n'est PAS piloté par le filtre Année de `GraphiquesPage` : les lots FIFO
@@ -54,8 +59,7 @@ class _StockLotsTabState extends State<StockLotsTab> {
 
   List<Product> _products = [];
   List<Category> _categories = [];
-  String? _categoryId;
-  Set<String> _productIds = {};
+  Set<String> _selectedCategoryIds = {};
   bool _historyTabSelected = false;
   Future<StockLotsChart>? _lotsFuture;
   Future<List<OutOfStockProduct>>? _outOfStockFuture;
@@ -67,28 +71,26 @@ class _StockLotsTabState extends State<StockLotsTab> {
     _loadOutOfStock();
   }
 
-  List<Product> get _productsInCategory =>
-      _products.where((p) => p.categoryId == _categoryId).toList();
+  /// Aucune catégorie cochée ("Toutes") : tous les produits du catalogue,
+  /// même convention que `StockPage._CategoryFilterField` (case vide =
+  /// filtre inactif, pas "aucun résultat").
+  Set<String> get _selectedProductIds => _selectedCategoryIds.isEmpty
+      ? _products.map((p) => p.id).toSet()
+      : _products
+            .where((p) => p.categoryId != null && _selectedCategoryIds.contains(p.categoryId))
+            .map((p) => p.id)
+            .toSet();
 
   Future<void> _loadProducts() async {
     try {
       final products = await _catalog.listProducts();
       final categories = await _catalog.listCategories();
       if (!mounted) return;
-      final firstWithCategory = products
-          .where((p) => p.categoryId != null)
-          .toList();
       setState(() {
         _products = products;
         _categories = categories;
-        _categoryId = firstWithCategory.isNotEmpty
-            ? firstWithCategory.first.categoryId
-            : null;
-        _productIds = firstWithCategory.isNotEmpty
-            ? {firstWithCategory.first.id}
-            : {};
       });
-      if (_productIds.isNotEmpty) _reload();
+      if (_selectedProductIds.isNotEmpty) _reload();
     } catch (_) {
       // Le FutureBuilder du tableau affiche déjà son propre état d'erreur
       // réseau ; ici il n'y a simplement pas de produit à proposer.
@@ -109,40 +111,28 @@ class _StockLotsTabState extends State<StockLotsTab> {
   void _reload() {
     // `..ignore()` avant `setState` : même garde que MetricChartsTab contre
     // un rejet "unhandled" en test (flutter_test répond quasi instantanément).
-    final future = _charts.getStockLots(productIds: _productIds.toList());
+    final future = _charts.getStockLots(productIds: _selectedProductIds.toList());
     future.ignore();
     setState(() {
       _lotsFuture = future;
     });
   }
 
-  void _onCategoryChanged(String? categoryId) {
-    final firstOfCategory = _products
-        .where((p) => p.categoryId == categoryId)
-        .toList();
+  void _toggleCategory(String categoryId) {
     setState(() {
-      _categoryId = categoryId;
-      _productIds = firstOfCategory.isNotEmpty
-          ? {firstOfCategory.first.id}
-          : {};
+      if (_selectedCategoryIds.contains(categoryId)) {
+        _selectedCategoryIds.remove(categoryId);
+      } else {
+        _selectedCategoryIds.add(categoryId);
+      }
       _historyTabSelected = false;
     });
-    if (_productIds.isNotEmpty) _reload();
+    _reload();
   }
 
-  Future<void> _openProductPicker() async {
-    final candidates = _productsInCategory;
-    if (candidates.isEmpty) return;
-    final selected = await showDialog<Set<String>>(
-      context: context,
-      builder: (context) => _ProductMultiSelectDialog(
-        products: candidates,
-        initiallySelected: _productIds,
-      ),
-    );
-    if (selected == null || selected.isEmpty) return;
+  void _resetCategories() {
     setState(() {
-      _productIds = selected;
+      _selectedCategoryIds = {};
       _historyTabSelected = false;
     });
     _reload();
@@ -203,7 +193,7 @@ class _StockLotsTabState extends State<StockLotsTab> {
         child: Center(child: Text('Aucun lot à afficher pour cette sélection')),
       );
     }
-    final showProductColumn = _productIds.length > 1;
+    final showProductColumn = lots.map((l) => l.productId).toSet().length > 1;
     return SingleChildScrollView(
       scrollDirection: Axis.horizontal,
       child: DataTable(
@@ -277,15 +267,6 @@ class _StockLotsTabState extends State<StockLotsTab> {
         ],
       ),
     );
-  }
-
-  String get _productPickerLabel {
-    if (_productIds.isEmpty) return 'Sélectionner un produit';
-    if (_productIds.length == 1) {
-      final matches = _products.where((p) => p.id == _productIds.first);
-      return matches.isEmpty ? 'Produit sélectionné' : matches.first.name;
-    }
-    return '${_productIds.length} produits sélectionnés';
   }
 
   Widget _outOfStockTable(List<OutOfStockProduct> products) {
@@ -373,54 +354,31 @@ class _StockLotsTabState extends State<StockLotsTab> {
                   if (_products.isEmpty)
                     const Text('Aucun produit au catalogue')
                   else
-                    Row(
-                      crossAxisAlignment: CrossAxisAlignment.start,
+                    Wrap(
+                      spacing: 8,
+                      runSpacing: 4,
+                      crossAxisAlignment: WrapCrossAlignment.center,
                       children: [
-                        Expanded(
-                          child: OutlinedButton.icon(
-                            onPressed: _productsInCategory.isEmpty
-                                ? null
-                                : _openProductPicker,
-                            icon: const Icon(Icons.arrow_drop_down),
-                            label: Align(
-                              alignment: Alignment.centerLeft,
-                              child: Text(_productPickerLabel),
-                            ),
-                            style: OutlinedButton.styleFrom(
-                              foregroundColor: _StockPalette.darkGreen,
-                              side: const BorderSide(
-                                color: _StockPalette.borderGreen,
-                              ),
-                            ),
-                          ),
+                        FilterChip(
+                          label: const Text('Toutes'),
+                          selected: _selectedCategoryIds.isEmpty,
+                          onSelected: (_) => _resetCategories(),
                         ),
-                        const SizedBox(width: 12),
-                        Expanded(
-                          child: DropdownButtonFormField<String?>(
-                            initialValue: _categoryId,
-                            decoration: const InputDecoration(
-                              labelText: 'Catégorie',
-                              isDense: true,
-                            ),
-                            items: [
-                              for (final category in _categories)
-                                DropdownMenuItem(
-                                  value: category.id,
-                                  child: Text(category.name),
-                                ),
-                            ],
-                            onChanged: _onCategoryChanged,
+                        for (final category in _categories)
+                          FilterChip(
+                            label: Text(category.name),
+                            selected: _selectedCategoryIds.contains(category.id),
+                            onSelected: (_) => _toggleCategory(category.id),
                           ),
-                        ),
                       ],
                     ),
                   const SizedBox(height: 12),
-                  if (_productIds.isEmpty)
+                  if (_selectedProductIds.isEmpty)
                     const Padding(
                       padding: EdgeInsets.symmetric(vertical: 24),
                       child: Center(
                         child: Text(
-                          'Ajoutez un produit au catalogue pour suivre son stock par lots',
+                          'Sélectionnez au moins une catégorie pour suivre son stock par lots',
                         ),
                       ),
                     )
@@ -536,76 +494,6 @@ class _StockLotsTabState extends State<StockLotsTab> {
           ),
         ],
       ),
-    );
-  }
-}
-
-/// Sélection multiple des produits d'une même catégorie (déclenchée par le
-/// bouton "champ filtre Produit", qui reste visuellement une liste
-/// déroulante) — présentée en boîte de dialogue à cases à cocher plutôt
-/// qu'un `PopupMenuButton` pour éviter le conflit de geste bien connu entre
-/// `PopupMenuItem` et une case à cocher imbriquée.
-class _ProductMultiSelectDialog extends StatefulWidget {
-  const _ProductMultiSelectDialog({
-    required this.products,
-    required this.initiallySelected,
-  });
-
-  final List<Product> products;
-  final Set<String> initiallySelected;
-
-  @override
-  State<_ProductMultiSelectDialog> createState() =>
-      _ProductMultiSelectDialogState();
-}
-
-class _ProductMultiSelectDialogState extends State<_ProductMultiSelectDialog> {
-  final Set<String> _selected = {};
-
-  @override
-  void initState() {
-    super.initState();
-    _selected.addAll(widget.initiallySelected);
-  }
-
-  @override
-  Widget build(BuildContext context) {
-    return AlertDialog(
-      title: const Text('Sélectionner des produits'),
-      content: SizedBox(
-        width: 360,
-        child: ListView(
-          shrinkWrap: true,
-          children: [
-            for (final product in widget.products)
-              CheckboxListTile(
-                value: _selected.contains(product.id),
-                title: Text(product.name),
-                onChanged: (checked) {
-                  setState(() {
-                    if (checked == true) {
-                      _selected.add(product.id);
-                    } else {
-                      _selected.remove(product.id);
-                    }
-                  });
-                },
-              ),
-          ],
-        ),
-      ),
-      actions: [
-        TextButton(
-          onPressed: () => Navigator.of(context).pop(),
-          child: const Text('Annuler'),
-        ),
-        FilledButton(
-          onPressed: _selected.isEmpty
-              ? null
-              : () => Navigator.of(context).pop(_selected),
-          child: const Text('Appliquer'),
-        ),
-      ],
     );
   }
 }

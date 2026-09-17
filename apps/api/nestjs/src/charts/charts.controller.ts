@@ -73,7 +73,7 @@ export class ChartsController {
     @Param('establishmentId') establishmentId: string,
     @Query() query: ExpenseWeeklyByCategoryQueryDto,
   ) {
-    return this.charts.expensesWeeklyByCategory(establishmentId, query.weekStart, query.category);
+    return this.charts.expensesWeeklyByCategory(establishmentId, query.weekStart, query.categories);
   }
 
   @Get('expenses/monthly')

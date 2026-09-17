@@ -2,6 +2,27 @@
 
 ## [Unreleased]
 
+### Corrigé (2026-09-17) — Le bandeau « Nouvelle version disponible » réapparaissait après un simple rechargement
+- Cause réelle : Flutter réenregistrait à chaque chargement de page son propre service worker déprécié (`flutter_service_worker.js`, qui s'auto-désinstalle aussitôt) en plus de `pwa_cache_worker.js` — son cycle installation/désinstallation déclenchait un faux événement « changement de version » à quasi chaque visite, pas seulement lors d'un vrai déploiement.
+- Corrigé en fournissant un `web/flutter_bootstrap.js` personnalisé qui n'enregistre plus du tout ce service worker déprécié — solution pérenne, indépendante du flag `--pwa-strategy` (marqué pour suppression future par Flutter). `pwa_cache_worker.js` reste le seul service worker de l'application.
+- Voir `docs/pwa/advanced-pwa.md`.
+
+### Ajouté (2026-09-17) — Totaux hebdomadaires, filtres multi-sélection et couleurs distinctes dans le module Graphiques
+- Total de la semaine affiché en haut à droite des graphiques « journalières totales » et « journalières totales par catégorie » (Recettes, Bénéfices, Dépenses) — calcul purement client, aucune route dédiée.
+- Le filtre catégorie du graphique « Dépenses journalières totales par catégorie » passe en sélection multiple (`FilterChip`, "Toutes" = réinitialisation), même principe déjà utilisé pour Recettes/Bénéfices — nouveau paramètre `categories` (CSV) sur `GET .../charts/expenses/weekly-by-category`.
+- Les barres verticales des graphiques à plusieurs catégories utilisent désormais une vraie palette qualitative (12 teintes distinctes) au lieu de nuances d'une même couleur, qui devenaient visuellement quasi identiques dès 4-5 catégories.
+- Voir `docs/api/charts.md`. 1 nouveau test NestJS (agrégation multi-catégories des dépenses), 2 nouveaux tests Flutter (`WeeklyChart.total`), 1 test Flutter mis à jour (filtre Dépenses).
+
+### Modifié (2026-09-17) — Module Graphiques, onglet Stock : filtre Produit retiré au profit d'un filtre Catégorie multi-sélection
+- « Détail d'un produit » (onglet Stock) n'a plus de filtre Produit séparé : un seul filtre Catégorie à sélection multiple (`FilterChip`, "Toutes" = tout le catalogue) pilote directement les tableaux « Lots actifs » et « Historique ».
+- Backend : `GET .../charts/stock-lots` accepte désormais une sélection de produits couvrant plusieurs catégories à la fois (l'ancienne contrainte "même catégorie" est retirée) — le gating "numéro de marché"/"numéro de commande" se calcule par produit, selon sa propre catégorie.
+- Voir `docs/api/charts.md`. 1 test NestJS remplacé (gating multi-catégories au lieu du rejet), tests Flutter existants inchangés.
+
+### Ajouté (2026-09-17) — Gbêlê : prix d'achat connu, prix de vente saisi à chaque vente
+- Nouveau produit-type : achat à prix fixe et connu (par litre), mais prix de VENTE variable, saisi en caisse à chaque vente — distinct des catégories « prix variable » existantes (Poulets/Poissons), qui suppriment aussi le prix d'achat et exigent un numéro de marché à la livraison.
+- Nouveau drapeau `Product.requiresPriceAtSale` (migration `20260917090000_add_product_manual_sale_price.sql`) : le formulaire Catalogue remplace alors le champ « Prix de vente » par un champ « Prix de vente initial (référence) » (`Product.referenceSalePrice`, purement indicatif, jamais lu par la caisse) ; `salePrice` reste forcé à `null` côté serveur, ce qui suffit à déclencher la saisie manuelle du prix en caisse (mécanisme déjà existant, indépendant de la catégorie).
+- Voir `docs/api/catalog.md`, section « Prix de vente saisi à chaque vente pour un produit à catégorie fixe ». 5 nouveaux tests NestJS (`ProductsService`), 2 nouveaux tests Flutter (`ProductFormPage`).
+
 ### Ajouté (2026-09-16) — Tableau de bord « Gestion des permissions » (module Utilisateurs), réservé au Super Administrateur
 - Nouvelle page dans le module Utilisateurs : matrice rôle × permission, groupée par module/sous-module (dérivé du préfixe de `permission.code`, ex. `products.manage` → Catalogue), cases à cocher vert (accordée)/rouge (refusée) pour accorder/retirer chaque permission à chaque rôle, avec retour visuel immédiat et défilement double axe (en-tête de rôles et colonne des permissions restent figés).
 - Nouveau module backend `apps/api/nestjs/src/roles/` (`RolesController`/`RolesService`), 3 routes protégées par `roles.manage` : `GET .../roles-permissions`, `PUT`/`DELETE .../roles/:roleId/permissions/:code` (idempotents).

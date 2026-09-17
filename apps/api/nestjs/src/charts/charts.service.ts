@@ -1,4 +1,4 @@
-import { BadRequestException, Injectable, NotFoundException } from '@nestjs/common';
+import { Injectable, NotFoundException } from '@nestjs/common';
 import { effectiveUnitCost } from '../catalog/product-cost.util.js';
 import { PrismaService } from '../prisma/prisma.service.js';
 import { computeFifoLots, type StockLot, type StockLotMovementType } from '../stock/stock-lots.js';
@@ -438,6 +438,15 @@ export class ChartsService {
    * ce jour) ne sont pas soumises à cette règle et gardent la numérotation
    * séquentielle historique.
    */
+  /**
+   * [productIds] peut désormais mélanger plusieurs catégories (tableau de
+   * bord "Détail d'un produit" du module Graphiques, filtre Catégorie à
+   * sélection multiple — demande utilisateur du 2026-09-17) : le gating
+   * "numéro de marché"/"numéro de commande" (hasVariablePricing/
+   * hasCasePricing) et la validation des numéros de référence se calculent
+   * donc par PRODUIT, selon sa propre catégorie, plutôt qu'en supposant une
+   * catégorie unique pour toute la sélection.
+   */
   async stockLots(establishmentId: string, productIds: string[]) {
     const products = await this.prisma.product.findMany({
       where: { id: { in: productIds }, establishmentId },
@@ -450,9 +459,6 @@ export class ChartsService {
     });
     if (products.length !== productIds.length) {
       throw new NotFoundException('Un ou plusieurs produits sont introuvables pour cet établissement');
-    }
-    if (new Set(products.map((p) => p.categoryId)).size > 1) {
-      throw new BadRequestException('La sélection multiple ne peut porter que sur des produits de la même catégorie');
     }
 
     const movements = await this.prisma.stockMovement.findMany({
@@ -474,33 +480,39 @@ export class ChartsService {
       lotsByProduct.set(product.id, computeFifoLots(productMovements));
     }
 
-    const category = products[0]?.category;
-    const gated = Boolean(category?.hasCasePricing || category?.hasVariablePricing);
-    let validNumbers = new Set<number>();
-    if (gated) {
-      const referenceNumbers = [
-        ...new Set([...lotsByProduct.values()].flat().map((l) => l.referenceNumber).filter((n): n is number => n != null)),
-      ];
-      if (referenceNumbers.length > 0) {
-        if (category?.hasVariablePricing) {
-          const marches = await this.prisma.expense.findMany({
-            where: { establishmentId, category: 'Marché', marketNumber: { in: referenceNumbers } },
-            select: { marketNumber: true },
-          });
-          validNumbers = new Set(marches.map((m) => m.marketNumber).filter((n): n is number => n != null));
-        } else {
-          const purchases = await this.prisma.purchase.findMany({
-            where: { establishmentId, orderNumber: { in: referenceNumbers } },
-            select: { orderNumber: true },
-          });
-          validNumbers = new Set(purchases.map((p) => p.orderNumber).filter((n): n is number => n != null));
-        }
+    // Un seul aller-retour "Marché" et un seul "Purchase", même si plusieurs
+    // produits de catégories différentes sont sélectionnés à la fois.
+    const marketNumbersToCheck = new Set<number>();
+    const orderNumbersToCheck = new Set<number>();
+    for (const product of products) {
+      if (!product.category?.hasCasePricing && !product.category?.hasVariablePricing) continue;
+      const target = product.category.hasVariablePricing ? marketNumbersToCheck : orderNumbersToCheck;
+      for (const lot of lotsByProduct.get(product.id) ?? []) {
+        if (lot.referenceNumber != null) target.add(lot.referenceNumber);
       }
     }
+    const [marches, purchases] = await Promise.all([
+      marketNumbersToCheck.size > 0
+        ? this.prisma.expense.findMany({
+            where: { establishmentId, category: 'Marché', marketNumber: { in: [...marketNumbersToCheck] } },
+            select: { marketNumber: true },
+          })
+        : Promise.resolve([]),
+      orderNumbersToCheck.size > 0
+        ? this.prisma.purchase.findMany({
+            where: { establishmentId, orderNumber: { in: [...orderNumbersToCheck] } },
+            select: { orderNumber: true },
+          })
+        : Promise.resolve([]),
+    ]);
+    const validMarketNumbers = new Set(marches.map((m) => m.marketNumber).filter((n): n is number => n != null));
+    const validOrderNumbers = new Set(purchases.map((p) => p.orderNumber).filter((n): n is number => n != null));
 
     type ProductStockLot = StockLot & { productId: string; productName: string };
     const allLots: ProductStockLot[] = [];
     for (const product of products) {
+      const gated = Boolean(product.category?.hasCasePricing || product.category?.hasVariablePricing);
+      const validNumbers = product.category?.hasVariablePricing ? validMarketNumbers : validOrderNumbers;
       for (const lot of lotsByProduct.get(product.id) ?? []) {
         if (gated) {
           if (lot.referenceNumber == null || !validNumbers.has(lot.referenceNumber)) continue;
@@ -570,13 +582,23 @@ export class ChartsService {
     return this.buildWeekResponse(monday, [{ id: null, name: 'Total', values }]);
   }
 
-  async expensesWeeklyByCategory(establishmentId: string, weekStart?: string, category?: string) {
+  async expensesWeeklyByCategory(establishmentId: string, weekStart?: string, categoriesCsv?: string) {
     const { from, to, monday } = this.weekRange(weekStart);
     const lines = await this.expenseLines(establishmentId, from, to);
-    const filtered = category ? lines.filter((l) => l.category === category) : lines;
+    const categories = categoriesCsv ? categoriesCsv.split(',').filter((c) => c.length > 0) : [];
+
+    if (categories.length > 0) {
+      const filtered = lines.filter((l) => l.category != null && categories.includes(l.category));
+      const values = emptyWeek();
+      for (const line of filtered) {
+        values[weekdayIndex(line.createdAt)] += line.amount;
+      }
+      const name = categories.length === 1 ? categories[0] : `${categories.length} catégories sélectionnées`;
+      return this.buildWeekResponse(monday, [{ id: null, name, values }]);
+    }
 
     const byKey = new Map<string, WeekSeries>();
-    for (const line of filtered) {
+    for (const line of lines) {
       const key = line.category ?? '__none__';
       const name = line.category ?? 'Sans catégorie';
       const entry = byKey.get(key) ?? { id: line.category, name, values: emptyWeek() };

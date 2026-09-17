@@ -116,13 +116,22 @@ class ChartsRepository {
     return WeeklyChart.fromJson(json);
   }
 
+  /// [categories] vide/nul : une série par catégorie (comportement par
+  /// défaut). Une ou plusieurs catégories fournies : une seule série, somme
+  /// jour par jour de ces catégories — sélection multiple, même principe que
+  /// [getWeeklyByCategory].
   Future<WeeklyChart> getExpensesWeeklyByCategory({
     String? weekStart,
-    String? category,
+    Set<String>? categories,
   }) async {
     final json = await _api.get(
       '$_base/expenses/weekly-by-category',
-      query: _query({'weekStart': weekStart, 'category': category}),
+      query: _query({
+        'weekStart': weekStart,
+        'categories': (categories == null || categories.isEmpty)
+            ? null
+            : categories.join(','),
+      }),
     ) as Map<String, dynamic>;
     return WeeklyChart.fromJson(json);
   }

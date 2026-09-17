@@ -37,6 +37,12 @@ class WeeklyChart {
   final String weekEnd;
   final List<WeeklySeries> series;
 
+  /// Total de la semaine affichée, toutes séries confondues (ex. toutes les
+  /// catégories sélectionnées) — affiché en tête de graphique.
+  double get total => series
+      .expand((s) => s.points)
+      .fold(0.0, (sum, p) => sum + p.value);
+
   factory WeeklyChart.fromJson(Map<String, dynamic> json) => WeeklyChart(
     weekStart: json['weekStart'] as String,
     weekEnd: json['weekEnd'] as String,

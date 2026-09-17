@@ -101,17 +101,17 @@ void main() {
     expect(find.textContaining('par produit'), findsNothing);
   });
 
-  testWidgets('the Dépenses category filter offers the predefined categories', (tester) async {
-    await pumpPage(tester);
+  testWidgets(
+    'the Dépenses category filter offers the predefined categories as a multi-select, with a "Toutes" reset chip',
+    (tester) async {
+      await pumpPage(tester);
 
-    await tester.tap(find.text('Dépenses'));
-    await tester.pumpAndSettle();
+      await tester.tap(find.text('Dépenses'));
+      await tester.pumpAndSettle();
 
-    expect(find.text('Toutes les catégories'), findsOneWidget);
-    await tester.tap(find.text('Toutes les catégories'));
-    await tester.pumpAndSettle();
-
-    expect(find.text('Loyer').hitTestable(), findsOneWidget);
-    expect(find.text('Bouteilles de gaz').hitTestable(), findsOneWidget);
-  });
+      expect(find.widgetWithText(FilterChip, 'Toutes'), findsOneWidget);
+      expect(find.widgetWithText(FilterChip, 'Loyer'), findsOneWidget);
+      expect(find.widgetWithText(FilterChip, 'Bouteilles de gaz'), findsOneWidget);
+    },
+  );
 }

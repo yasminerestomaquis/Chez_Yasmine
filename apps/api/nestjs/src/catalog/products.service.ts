@@ -30,7 +30,12 @@ export class ProductsService {
   async create(establishmentId: string, dto: CreateProductDto) {
     await this.assertReferencesBelongToEstablishment(establishmentId, dto.categoryId, dto.supplierId);
     const hasVariablePricing = await this.categoryHasVariablePricing(establishmentId, dto.categoryId);
-    if (!hasVariablePricing && dto.salePrice == null) {
+    // requiresPriceAtSale : produit de catégorie fixe (achat à prix connu,
+    // ex. Gbêlê) dont le prix de VENTE varie néanmoins à chaque vente —
+    // distinct de hasVariablePricing, qui supprime aussi le prix d'achat et
+    // exige un numéro de marché à la livraison (voir schema.prisma).
+    const manualPriceAtSale = hasVariablePricing || dto.requiresPriceAtSale === true;
+    if (!manualPriceAtSale && dto.salePrice == null) {
       throw new BadRequestException('Le prix de vente est requis pour cette catégorie');
     }
     return this.prisma.product.create({
@@ -49,8 +54,10 @@ export class ProductsService {
         // le client — prix de vente saisi en caisse, achat suivi via la
         // dépense "Marché" (voir docs/api/catalog.md).
         purchasePrice: hasVariablePricing ? null : dto.purchasePrice,
-        salePrice: hasVariablePricing ? null : dto.salePrice,
+        salePrice: manualPriceAtSale ? null : dto.salePrice,
         unitSalePrice: hasVariablePricing ? null : dto.unitSalePrice,
+        requiresPriceAtSale: dto.requiresPriceAtSale ?? false,
+        referenceSalePrice: dto.requiresPriceAtSale ? dto.referenceSalePrice : null,
         bottlesPerCase: dto.bottlesPerCase,
         purchasePricePerCase: dto.purchasePricePerCase,
         vatRate: dto.vatRate,
@@ -69,17 +76,25 @@ export class ProductsService {
     await this.assertReferencesBelongToEstablishment(establishmentId, dto.categoryId, dto.supplierId);
     const effectiveCategoryId = dto.categoryId !== undefined ? dto.categoryId : existing.categoryId;
     const hasVariablePricing = await this.categoryHasVariablePricing(establishmentId, effectiveCategoryId);
+    const nextRequiresPriceAtSale =
+      dto.requiresPriceAtSale !== undefined ? dto.requiresPriceAtSale : existing.requiresPriceAtSale;
+    const manualPriceAtSale = hasVariablePricing || nextRequiresPriceAtSale;
 
     const data: Prisma.ProductUpdateManyMutationInput = { ...dto };
     if (hasVariablePricing) {
       data.purchasePrice = null;
       data.salePrice = null;
       data.unitSalePrice = null;
+    } else if (manualPriceAtSale) {
+      data.salePrice = null;
     } else {
       const nextSalePrice = dto.salePrice !== undefined ? dto.salePrice : existing.salePrice?.toNumber();
       if (nextSalePrice == null) {
         throw new BadRequestException('Le prix de vente est requis pour cette catégorie');
       }
+    }
+    if (!nextRequiresPriceAtSale) {
+      data.referenceSalePrice = null;
     }
 
     const { count } = await this.prisma.product.updateMany({

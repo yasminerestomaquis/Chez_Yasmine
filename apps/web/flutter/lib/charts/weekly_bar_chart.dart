@@ -4,14 +4,39 @@ import 'package:flutter/material.dart';
 import '../common/formatting.dart';
 import 'chart_models.dart';
 
+/// Total de la semaine affichée, en haut à droite d'un graphique
+/// hebdomadaire (Recettes/Dépenses journalières, avec ou sans filtre
+/// catégorie) — demande utilisateur du 2026-09-17.
+class WeekTotalBadge extends StatelessWidget {
+  const WeekTotalBadge({super.key, required this.total, required this.color});
+
+  final double total;
+  final Color color;
+
+  @override
+  Widget build(BuildContext context) {
+    return Align(
+      alignment: Alignment.topRight,
+      child: Text(
+        '${formatAmount(total)} FCFA',
+        style: TextStyle(fontWeight: FontWeight.bold, fontSize: 15, color: color),
+      ),
+    );
+  }
+}
+
 /// Histogramme vertical générique pour les graphiques hebdomadaires
 /// (Lundi..Dimanche), avec une ou plusieurs séries groupées par jour.
 ///
 /// [baseColor] identifie le *type* de graphique (une couleur différente par
-/// graphique, comme demandé) ; quand plusieurs séries sont affichées (par
-/// catégorie ou par produit sans filtre), chacune reprend une nuance de
-/// [baseColor] plutôt qu'une couleur sans rapport, pour rester dans la même
-/// famille visuelle tout en restant distinguable.
+/// graphique, comme demandé) et sert de seule couleur quand il n'y a qu'une
+/// série. Dès que plusieurs séries sont affichées (par catégorie ou par
+/// produit sans filtre), on bascule sur [_categoricalPalette] : nuancer
+/// [baseColor] par simple mélange vers le noir donnait des barres trop
+/// proches visuellement dès 4-5 catégories (constaté par l'utilisateur,
+/// 2026-09-17) — une vraie palette qualitative (teintes distinctes, pas de
+/// simple variation de luminosité) reste distinguable quel que soit le
+/// nombre de catégories.
 class WeeklyBarChartWidget extends StatelessWidget {
   const WeeklyBarChartWidget({super.key, required this.series, required this.baseColor});
 
@@ -19,9 +44,24 @@ class WeeklyBarChartWidget extends StatelessWidget {
   final Color baseColor;
 
   static const _days = ['Lun', 'Mar', 'Mer', 'Jeu', 'Ven', 'Sam', 'Dim'];
-  static const _shadeSteps = [0.0, 0.45, 0.2, 0.6, 0.32, 0.75, 0.12];
 
-  Color _shade(int index) => Color.lerp(baseColor, Colors.black, _shadeSteps[index % _shadeSteps.length])!;
+  static const _categoricalPalette = [
+    Color(0xFF1E88E5), // bleu
+    Color(0xFFD81B60), // rose/magenta
+    Color(0xFF43A047), // vert
+    Color(0xFFFB8C00), // orange
+    Color(0xFF8E24AA), // violet
+    Color(0xFF00ACC1), // cyan
+    Color(0xFFC62828), // rouge
+    Color(0xFF6D4C41), // brun
+    Color(0xFFFDD835), // jaune
+    Color(0xFF3949AB), // indigo
+    Color(0xFF00897B), // teal
+    Color(0xFFEC407A), // rose clair
+  ];
+
+  Color _colorFor(int index) =>
+      series.length > 1 ? _categoricalPalette[index % _categoricalPalette.length] : baseColor;
 
   @override
   Widget build(BuildContext context) {
@@ -77,7 +117,7 @@ class WeeklyBarChartWidget extends StatelessWidget {
                     for (var i = 0; i < series.length; i++)
                       BarChartRodData(
                         toY: series[i].points[dayIndex].value,
-                        color: _shade(i),
+                        color: _colorFor(i),
                         width: series.length > 1 ? 10 : 20,
                         borderRadius: const BorderRadius.vertical(top: Radius.circular(3)),
                       ),
@@ -97,7 +137,7 @@ class WeeklyBarChartWidget extends StatelessWidget {
                 Row(
                   mainAxisSize: MainAxisSize.min,
                   children: [
-                    Container(width: 10, height: 10, color: _shade(i)),
+                    Container(width: 10, height: 10, color: _colorFor(i)),
                     const SizedBox(width: 4),
                     Text(series[i].name, style: const TextStyle(fontSize: 12)),
                   ],

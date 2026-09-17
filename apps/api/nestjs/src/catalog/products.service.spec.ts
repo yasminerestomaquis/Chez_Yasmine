@@ -120,6 +120,84 @@ describe('ProductsService', () => {
     });
   });
 
+  describe('requiresPriceAtSale (ex. Gbêlê : achat à prix connu, prix de vente saisi à chaque vente)', () => {
+    it('create() allows a missing salePrice, keeps purchasePrice, and stores the reference sale price', async () => {
+      prisma.product.create.mockResolvedValue({ id: 'prod-1' });
+
+      await service.create('est-1', {
+        name: 'Gbêlê',
+        unit: 'litre',
+        purchasePrice: 500,
+        requiresPriceAtSale: true,
+        referenceSalePrice: 800,
+        stockQuantity: 20,
+      });
+
+      expect(prisma.product.create).toHaveBeenCalledWith({
+        data: expect.objectContaining({
+          purchasePrice: 500,
+          salePrice: null,
+          requiresPriceAtSale: true,
+          referenceSalePrice: 800,
+        }),
+      });
+    });
+
+    it('create() forces salePrice to null even if the client sent one', async () => {
+      prisma.product.create.mockResolvedValue({ id: 'prod-1' });
+
+      await service.create('est-1', { name: 'Gbêlê', requiresPriceAtSale: true, salePrice: 800 });
+
+      expect(prisma.product.create).toHaveBeenCalledWith({
+        data: expect.objectContaining({ salePrice: null }),
+      });
+    });
+
+    it('create() ignores referenceSalePrice when requiresPriceAtSale is not set', async () => {
+      prisma.product.create.mockResolvedValue({ id: 'prod-1' });
+
+      await service.create('est-1', { name: 'Bière', salePrice: 1000, referenceSalePrice: 800 });
+
+      expect(prisma.product.create).toHaveBeenCalledWith({
+        data: expect.objectContaining({ requiresPriceAtSale: false, referenceSalePrice: null }),
+      });
+    });
+
+    it('update() forces salePrice to null once requiresPriceAtSale is turned on', async () => {
+      prisma.product.findFirst.mockResolvedValue({
+        id: 'prod-1',
+        categoryId: null,
+        salePrice: 800,
+        requiresPriceAtSale: false,
+      });
+      prisma.product.updateMany.mockResolvedValue({ count: 1 });
+
+      await service.update('est-1', 'prod-1', { requiresPriceAtSale: true });
+
+      expect(prisma.product.updateMany).toHaveBeenCalledWith({
+        where: { id: 'prod-1', establishmentId: 'est-1' },
+        data: expect.objectContaining({ salePrice: null }),
+      });
+    });
+
+    it('update() clears referenceSalePrice once requiresPriceAtSale is turned back off', async () => {
+      prisma.product.findFirst.mockResolvedValue({
+        id: 'prod-1',
+        categoryId: null,
+        salePrice: null,
+        requiresPriceAtSale: true,
+      });
+      prisma.product.updateMany.mockResolvedValue({ count: 1 });
+
+      await service.update('est-1', 'prod-1', { requiresPriceAtSale: false, salePrice: 900 });
+
+      expect(prisma.product.updateMany).toHaveBeenCalledWith({
+        where: { id: 'prod-1', establishmentId: 'est-1' },
+        data: expect.objectContaining({ referenceSalePrice: null }),
+      });
+    });
+  });
+
   it('update() rejects clearing the sale price of a fixed-price product without providing a new one', async () => {
     prisma.product.findFirst.mockResolvedValue({ id: 'prod-1', categoryId: null, salePrice: null });
     await expect(service.update('est-1', 'prod-1', { name: 'Bière renommée' })).rejects.toBeInstanceOf(

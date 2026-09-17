@@ -53,6 +53,8 @@ class Product {
     this.barcode,
     this.unit,
     this.purchasePrice,
+    this.requiresPriceAtSale = false,
+    this.referenceSalePrice,
     this.bottlesPerCase,
     this.purchasePricePerCase,
     this.vatRate,
@@ -70,9 +72,17 @@ class Product {
   final String? unit;
   /// Libellé UI "Prix d'achat par bouteille".
   final double? purchasePrice;
-  /// Nul quand `category.hasVariablePricing` est vrai — le prix se saisit
-  /// alors en caisse à chaque vente plutôt que d'être fixé dans le catalogue.
+  /// Nul quand `category.hasVariablePricing` est vrai, ou quand
+  /// [requiresPriceAtSale] est vrai — le prix se saisit alors en caisse à
+  /// chaque vente plutôt que d'être fixé dans le catalogue.
   final double? salePrice;
+  /// Vrai pour un produit à catégorie fixe (achat à prix connu, ex. Gbêlê)
+  /// mais dont le prix de vente varie néanmoins à chaque vente — distinct de
+  /// `category.hasVariablePricing` (voir apps/api/nestjs/prisma/schema.prisma).
+  final bool requiresPriceAtSale;
+  /// Valeur indicative du stock initial, renseignée uniquement quand
+  /// [requiresPriceAtSale] est vrai — jamais utilisée par la caisse.
+  final double? referenceSalePrice;
   /// Prix de vente alternatif pour une seule unité, quand `salePrice`
   /// représente un lot (ex. "3 unités à 2 000 FCFA" -> 700 l'unité). Nul :
   /// pas de vente à l'unité proposée en caisse pour ce produit.
@@ -100,6 +110,8 @@ class Product {
         unit: json['unit'] as String?,
         purchasePrice: (json['purchasePrice'] as num?)?.toDouble(),
         salePrice: (json['salePrice'] as num?)?.toDouble(),
+        requiresPriceAtSale: json['requiresPriceAtSale'] as bool? ?? false,
+        referenceSalePrice: (json['referenceSalePrice'] as num?)?.toDouble(),
         unitSalePrice: (json['unitSalePrice'] as num?)?.toDouble(),
         bottlesPerCase: (json['bottlesPerCase'] as num?)?.toInt(),
         purchasePricePerCase: (json['purchasePricePerCase'] as num?)?.toDouble(),

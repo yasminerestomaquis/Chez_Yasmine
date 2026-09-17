@@ -317,14 +317,22 @@ class _MetricChartsTabState extends State<MetricChartsTab> {
             return Column(
               crossAxisAlignment: CrossAxisAlignment.stretch,
               children: [
-                if (chart.weekStart.isNotEmpty)
-                  Padding(
-                    padding: const EdgeInsets.only(bottom: 4),
-                    child: Text(
-                      'Semaine du ${_dayFormat.format(DateTime.parse(chart.weekStart))} au ${_dayFormat.format(DateTime.parse(chart.weekEnd))}',
-                      style: Theme.of(context).textTheme.bodySmall,
-                    ),
+                Padding(
+                  padding: const EdgeInsets.only(bottom: 4),
+                  child: Row(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      if (chart.weekStart.isNotEmpty)
+                        Expanded(
+                          child: Text(
+                            'Semaine du ${_dayFormat.format(DateTime.parse(chart.weekStart))} au ${_dayFormat.format(DateTime.parse(chart.weekEnd))}',
+                            style: Theme.of(context).textTheme.bodySmall,
+                          ),
+                        ),
+                      WeekTotalBadge(total: chart.total, color: widget.palette.dailyTotal),
+                    ],
                   ),
+                ),
                 WeeklyBarChartWidget(
                   series: chart.series,
                   baseColor: widget.palette.dailyTotal,
@@ -360,13 +368,21 @@ class _MetricChartsTabState extends State<MetricChartsTab> {
                 ],
               ),
           ],
-          child: _futureChart(
-            _byCategoryFuture,
-            (chart) => WeeklyBarChartWidget(
-              series: chart.series,
-              baseColor: widget.palette.dailyByCategory,
-            ),
-          ),
+          child: _futureChart(_byCategoryFuture, (chart) {
+            return Column(
+              crossAxisAlignment: CrossAxisAlignment.stretch,
+              children: [
+                Padding(
+                  padding: const EdgeInsets.only(bottom: 4),
+                  child: WeekTotalBadge(total: chart.total, color: widget.palette.dailyByCategory),
+                ),
+                WeeklyBarChartWidget(
+                  series: chart.series,
+                  baseColor: widget.palette.dailyByCategory,
+                ),
+              ],
+            );
+          }),
         ),
         _card(
           title: widget.titles.dailyByProduct,

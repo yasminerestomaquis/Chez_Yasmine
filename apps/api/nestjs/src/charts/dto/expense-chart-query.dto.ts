@@ -8,9 +8,10 @@ export class ExpenseWeeklyQueryDto {
 }
 
 export class ExpenseWeeklyByCategoryQueryDto extends ExpenseWeeklyQueryDto {
+  /** CSV de noms de catégorie — sélection multiple, agrégée en une seule série (somme), même principe que WeeklyByCategoryQueryDto.categoryIds. */
   @IsOptional()
   @IsString()
-  category?: string;
+  categories?: string;
 }
 
 export class ExpenseMonthlyQueryDto {

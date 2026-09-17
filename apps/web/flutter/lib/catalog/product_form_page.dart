@@ -48,6 +48,7 @@ class _ProductFormPageState extends State<ProductFormPage> {
   late final TextEditingController _unitController;
   late final TextEditingController _purchasePriceController;
   late final TextEditingController _salePriceController;
+  late final TextEditingController _referenceSalePriceController;
   late final TextEditingController _unitSalePriceController;
   late final TextEditingController _bottlesPerCaseController;
   late final TextEditingController _purchasePricePerCaseController;
@@ -55,6 +56,7 @@ class _ProductFormPageState extends State<ProductFormPage> {
   late final TextEditingController _minStockController;
   late final TextEditingController _initialStockController;
   String? _categoryId;
+  late bool _requiresPriceAtSale;
   bool _isSubmitting = false;
 
   Uint8List? _pickedImageBytes;
@@ -74,7 +76,9 @@ class _ProductFormPageState extends State<ProductFormPage> {
     _unitController = TextEditingController(text: p?.unit ?? '');
     _purchasePriceController = TextEditingController(text: p?.purchasePrice?.toString() ?? '');
     _salePriceController = TextEditingController(text: p?.salePrice?.toString() ?? '');
+    _referenceSalePriceController = TextEditingController(text: p?.referenceSalePrice?.toString() ?? '');
     _unitSalePriceController = TextEditingController(text: p?.unitSalePrice?.toString() ?? '');
+    _requiresPriceAtSale = p?.requiresPriceAtSale ?? false;
     _bottlesPerCaseController = TextEditingController(text: p?.bottlesPerCase?.toString() ?? '');
     _purchasePricePerCaseController = TextEditingController(text: p?.purchasePricePerCase?.toString() ?? '');
     _vatRateController = TextEditingController(text: p?.vatRate?.toString() ?? '');
@@ -112,6 +116,7 @@ class _ProductFormPageState extends State<ProductFormPage> {
     _unitController.dispose();
     _purchasePriceController.dispose();
     _salePriceController.dispose();
+    _referenceSalePriceController.dispose();
     _unitSalePriceController.dispose();
     _bottlesPerCaseController.dispose();
     _purchasePricePerCaseController.dispose();
@@ -195,7 +200,10 @@ class _ProductFormPageState extends State<ProductFormPage> {
         if (_unitController.text.trim().isNotEmpty) 'unit': _unitController.text.trim(),
         if (!_isVariablePricing && _parseNumber(_purchasePriceController.text) != null)
           'purchasePrice': _parseNumber(_purchasePriceController.text),
-        if (!_isVariablePricing) 'salePrice': _parseNumber(_salePriceController.text),
+        if (!_isVariablePricing) 'requiresPriceAtSale': _requiresPriceAtSale,
+        if (!_isVariablePricing && !_requiresPriceAtSale) 'salePrice': _parseNumber(_salePriceController.text),
+        if (!_isVariablePricing && _requiresPriceAtSale && _parseNumber(_referenceSalePriceController.text) != null)
+          'referenceSalePrice': _parseNumber(_referenceSalePriceController.text),
         if (!_isVariablePricing && _isCasePricing && _parseNumber(_unitSalePriceController.text) != null)
           'unitSalePrice': _parseNumber(_unitSalePriceController.text),
         if (_parseNumber(_vatRateController.text) != null) 'vatRate': _parseNumber(_vatRateController.text),
@@ -328,7 +336,20 @@ class _ProductFormPageState extends State<ProductFormPage> {
                   ),
                 ),
               )
-            else
+            else ...[
+              CheckboxListTile(
+                value: _requiresPriceAtSale,
+                onChanged: widget.readOnly
+                    ? null
+                    : (checked) => setState(() => _requiresPriceAtSale = checked ?? false),
+                controlAffinity: ListTileControlAffinity.leading,
+                contentPadding: EdgeInsets.zero,
+                title: const Text('Prix de vente saisi à chaque vente (ex. Gbêlê)'),
+                subtitle: const Text(
+                  "Le prix d'achat ci-dessous reste fixe, mais le caissier saisit le prix de vente "
+                  "à chaque vente en caisse plutôt qu'un prix unique fixé ici.",
+                ),
+              ),
               Row(children: [
                 Expanded(
                   child: TextFormField(
@@ -340,15 +361,25 @@ class _ProductFormPageState extends State<ProductFormPage> {
                 ),
                 const SizedBox(width: 12),
                 Expanded(
-                  child: TextFormField(
-                    controller: _salePriceController,
-                    readOnly: widget.readOnly,
-                    keyboardType: const TextInputType.numberWithOptions(decimal: true),
-                    decoration: const InputDecoration(labelText: 'Prix de vente (FCFA) *'),
-                    validator: (v) => _parseNumber(v ?? '') == null ? 'Requis' : null,
-                  ),
+                  child: _requiresPriceAtSale
+                      ? TextFormField(
+                          controller: _referenceSalePriceController,
+                          readOnly: widget.readOnly,
+                          keyboardType: const TextInputType.numberWithOptions(decimal: true),
+                          decoration: const InputDecoration(
+                            labelText: 'Prix de vente initial (référence)',
+                          ),
+                        )
+                      : TextFormField(
+                          controller: _salePriceController,
+                          readOnly: widget.readOnly,
+                          keyboardType: const TextInputType.numberWithOptions(decimal: true),
+                          decoration: const InputDecoration(labelText: 'Prix de vente (FCFA) *'),
+                          validator: (v) => _parseNumber(v ?? '') == null ? 'Requis' : null,
+                        ),
                 ),
               ]),
+            ],
             if (_isCasePricing && !_isVariablePricing) ...[
               const SizedBox(height: 12),
               TextFormField(

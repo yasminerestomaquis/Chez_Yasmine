@@ -416,15 +416,33 @@ describe('ChartsService.stockLots', () => {
     await expect(service.stockLots('est-1', ['missing'])).rejects.toThrow('introuvable');
   });
 
-  it('throws BadRequestException when the selected products span more than one category', async () => {
+  it('applies each product\'s own category gating when the selection spans several categories', async () => {
     const prisma = makePrismaMock();
     const service = new ChartsService(prisma as unknown as PrismaService);
     prisma.product.findMany.mockResolvedValue([
       { id: 'p1', name: 'Bière', categoryId: 'c1', category: { name: 'Bières', hasCasePricing: true, hasVariablePricing: false } },
       { id: 'p2', name: 'Poulet', categoryId: 'c2', category: { name: 'Poulets', hasCasePricing: false, hasVariablePricing: true } },
+      { id: 'p3', name: 'Sucrerie', categoryId: 'c3', category: { name: 'Sucreries', hasCasePricing: false, hasVariablePricing: false } },
     ]);
+    prisma.stockMovement.findMany.mockResolvedValue([
+      { productId: 'p1', type: 'in', quantity: new Decimal(50), createdAt: new Date('2025-08-20T08:00:00Z'), reason: 'Commande n°1' },
+      { productId: 'p2', type: 'in', quantity: new Decimal(20), createdAt: new Date('2026-01-01T00:00:00Z'), reason: 'Marché n°2' },
+      { productId: 'p3', type: 'in', quantity: new Decimal(10), createdAt: new Date('2025-09-01T08:00:00Z'), reason: null },
+    ]);
+    prisma.purchase.findMany.mockResolvedValue([{ orderNumber: 1 }]);
+    prisma.expense.findMany.mockResolvedValue([{ marketNumber: 2 }]);
 
-    await expect(service.stockLots('est-1', ['p1', 'p2'])).rejects.toThrow('même catégorie');
+    const result = await service.stockLots('est-1', ['p1', 'p2', 'p3']);
+
+    expect(result.historyLots.map((l) => l.productName)).toEqual(['Bière', 'Sucrerie', 'Poulet']);
+    expect(prisma.purchase.findMany).toHaveBeenCalledWith({
+      where: { establishmentId: 'est-1', orderNumber: { in: [1] } },
+      select: { orderNumber: true },
+    });
+    expect(prisma.expense.findMany).toHaveBeenCalledWith({
+      where: { establishmentId: 'est-1', category: 'Marché', marketNumber: { in: [2] } },
+      select: { marketNumber: true },
+    });
   });
 
   it('renumbers a lot with the order number parsed from its reason, and hides it when no matching purchase exists', async () => {
@@ -577,6 +595,22 @@ describe('ChartsService — sous-module Dépenses', () => {
 
     expect(result.series).toHaveLength(1);
     expect(result.series[0].name).toBe('Eau');
+  });
+
+  it('expensesWeeklyByCategory aggregates several selected categories into a single summed series', async () => {
+    const prisma = makePrismaMock();
+    const service = new ChartsService(prisma as unknown as PrismaService);
+    prisma.expense.findMany.mockResolvedValue([
+      expense({ category: 'Loyer', amount: 50000 }),
+      expense({ category: 'Eau', amount: 5000 }),
+      expense({ category: 'Cie', amount: 3000 }),
+    ]);
+
+    const result = await service.expensesWeeklyByCategory('est-1', '2026-09-07', 'Loyer,Eau');
+
+    expect(result.series).toHaveLength(1);
+    expect(result.series[0].name).toBe('2 catégories sélectionnées');
+    expect(result.series[0].points.reduce((sum, p) => sum + p.value, 0)).toBe(55000);
   });
 
   it('expensesMonthly buckets by month for the given year', async () => {

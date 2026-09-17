@@ -1,4 +1,4 @@
-import { IsIn, IsInt, IsNumber, IsOptional, IsString, IsUUID, Min, MinLength } from 'class-validator';
+import { IsBoolean, IsIn, IsInt, IsNumber, IsOptional, IsString, IsUUID, Min, MinLength } from 'class-validator';
 
 export class CreateProductDto {
   @IsString()
@@ -38,11 +38,22 @@ export class CreateProductDto {
   @Min(0)
   purchasePrice?: number;
 
-  /** Optionnel : nul quand la catégorie a hasVariablePricing = true — voir ProductsService.create. */
+  /** Optionnel : nul quand la catégorie a hasVariablePricing = true, ou quand requiresPriceAtSale est vrai — voir ProductsService.create. */
   @IsOptional()
   @IsNumber()
   @Min(0)
   salePrice?: number;
+
+  /** Prix de vente saisi à chaque vente plutôt que fixé au catalogue, pour un produit de catégorie fixe (ex. Gbêlê) — voir schema.prisma. */
+  @IsOptional()
+  @IsBoolean()
+  requiresPriceAtSale?: boolean;
+
+  /** Valeur indicative du stock initial, uniquement quand requiresPriceAtSale est vrai — jamais utilisée par la caisse. */
+  @IsOptional()
+  @IsNumber()
+  @Min(0)
+  referenceSalePrice?: number;
 
   /** Prix de vente alternatif pour une seule unité, quand salePrice représente un lot (catégories à prix par casier uniquement). */
   @IsOptional()

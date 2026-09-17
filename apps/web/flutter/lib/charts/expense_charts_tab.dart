@@ -45,7 +45,7 @@ class _ExpenseChartsTabState extends State<ExpenseChartsTab> {
   static final DateFormat _dayFormat = DateFormat('dd/MM/yyyy');
 
   late DateTime _weekAnchor = _clampToYear(DateTime.now(), widget.year);
-  String? _category;
+  final Set<String> _selectedCategories = {};
   int? _topMonth;
 
   // `..ignore()` sur chacun de ces futurs initiaux — même garde que
@@ -83,9 +83,23 @@ class _ExpenseChartsTabState extends State<ExpenseChartsTab> {
   }
 
   void _reloadByCategory() {
-    final future = _charts.getExpensesWeeklyByCategory(weekStart: _weekStartParam, category: _category);
+    final future = _charts.getExpensesWeeklyByCategory(
+      weekStart: _weekStartParam,
+      categories: _selectedCategories,
+    );
     future.ignore();
     setState(() => _byCategoryFuture = future);
+  }
+
+  void _toggleCategory(String category) {
+    setState(() {
+      if (_selectedCategories.contains(category)) {
+        _selectedCategories.remove(category);
+      } else {
+        _selectedCategories.add(category);
+      }
+    });
+    _reloadByCategory();
   }
 
   void _reloadTop() {
@@ -171,14 +185,22 @@ class _ExpenseChartsTabState extends State<ExpenseChartsTab> {
             return Column(
               crossAxisAlignment: CrossAxisAlignment.stretch,
               children: [
-                if (chart.weekStart.isNotEmpty)
-                  Padding(
-                    padding: const EdgeInsets.only(bottom: 4),
-                    child: Text(
-                      'Semaine du ${_dayFormat.format(DateTime.parse(chart.weekStart))} au ${_dayFormat.format(DateTime.parse(chart.weekEnd))}',
-                      style: Theme.of(context).textTheme.bodySmall,
-                    ),
+                Padding(
+                  padding: const EdgeInsets.only(bottom: 4),
+                  child: Row(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      if (chart.weekStart.isNotEmpty)
+                        Expanded(
+                          child: Text(
+                            'Semaine du ${_dayFormat.format(DateTime.parse(chart.weekStart))} au ${_dayFormat.format(DateTime.parse(chart.weekEnd))}',
+                            style: Theme.of(context).textTheme.bodySmall,
+                          ),
+                        ),
+                      WeekTotalBadge(total: chart.total, color: _ExpensePalette.dailyTotal),
+                    ],
                   ),
+                ),
                 WeeklyBarChartWidget(series: chart.series, baseColor: _ExpensePalette.dailyTotal),
               ],
             );
@@ -187,24 +209,39 @@ class _ExpenseChartsTabState extends State<ExpenseChartsTab> {
         _card(
           title: 'Dépenses journalières totales par catégorie',
           controls: [
-            DropdownButton<String?>(
-              value: _category,
-              hint: const Text('Toutes les catégories'),
-              items: [
-                const DropdownMenuItem<String?>(value: null, child: Text('Toutes les catégories')),
+            Wrap(
+              spacing: 8,
+              runSpacing: 4,
+              children: [
+                FilterChip(
+                  label: const Text('Toutes'),
+                  selected: _selectedCategories.isEmpty,
+                  onSelected: (_) {
+                    setState(() => _selectedCategories.clear());
+                    _reloadByCategory();
+                  },
+                ),
                 for (final category in kPredefinedExpenseCategories)
-                  DropdownMenuItem(value: category, child: Text(category)),
+                  FilterChip(
+                    label: Text(category),
+                    selected: _selectedCategories.contains(category),
+                    onSelected: (_) => _toggleCategory(category),
+                  ),
               ],
-              onChanged: (value) {
-                setState(() => _category = value);
-                _reloadByCategory();
-              },
             ),
           ],
-          child: _futureChart(
-            _byCategoryFuture,
-            (chart) => WeeklyBarChartWidget(series: chart.series, baseColor: _ExpensePalette.dailyByCategory),
-          ),
+          child: _futureChart(_byCategoryFuture, (chart) {
+            return Column(
+              crossAxisAlignment: CrossAxisAlignment.stretch,
+              children: [
+                Padding(
+                  padding: const EdgeInsets.only(bottom: 4),
+                  child: WeekTotalBadge(total: chart.total, color: _ExpensePalette.dailyByCategory),
+                ),
+                WeeklyBarChartWidget(series: chart.series, baseColor: _ExpensePalette.dailyByCategory),
+              ],
+            );
+          }),
         ),
         _card(
           title: 'Top dépenses',
