@@ -33,6 +33,14 @@ bool _isBoissonsCategory(Product p) => p.hasCasePricing;
 const _refundRoles = {'Super Administrateur', 'Administrateur', 'Propriétaire', 'Gérant', 'Caissier'};
 bool canRefundSale(String roleName) => _refundRoles.contains(roleName);
 
+/// Somme (qté × prix unitaire) d'un sous-ensemble de lignes de vente —
+/// utilisé à la fois pour le total global de la page et pour le sous-total
+/// par carte, qui ne doivent porter que sur les lignes réellement affichées,
+/// jamais sur `sale.total` (qui inclut les lignes d'autres catégories pour
+/// une vente mixte — voir `matchingSalesWithTotal`).
+double lineItemsTotal(List<SaleItemResult> items) =>
+    items.fold(0.0, (sum, item) => sum + item.quantity * item.unitPrice);
+
 /// Filtre les ventes non remboursées de [sales] aux lignes dont le produit
 /// est dans [matchingProductIds], et calcule le total (qté × prix unitaire)
 /// de ces seules lignes — logique métier pure, testable sans widget ni
@@ -48,9 +56,7 @@ bool canRefundSale(String roleName) => _refundRoles.contains(roleName);
     if (sale.voidedAt != null) continue;
     final items = sale.items.where((i) => matchingProductIds.contains(i.productId)).toList();
     if (items.isEmpty) continue;
-    for (final item in items) {
-      total += item.quantity * item.unitPrice;
-    }
+    total += lineItemsTotal(items);
     matches.add((sale: sale, items: items));
   }
   return (matches: matches, total: total);
@@ -308,6 +314,12 @@ class _CategorySoldItemsPageState extends State<CategorySoldItemsPage> {
                   itemCount: matches.length,
                   itemBuilder: (context, index) {
                     final (:sale, :items) = matches[index];
+                    // Vente mixte : d'autres lignes (d'une autre catégorie)
+                    // existent sur cette même vente mais ne sont pas
+                    // affichées ici — sale.total (et les paiements plus bas)
+                    // portent alors sur le total réel de la vente entière,
+                    // pas seulement sur les lignes de cette carte.
+                    final isMixedSale = items.length != sale.items.length;
                     return Card(
                       margin: const EdgeInsets.only(bottom: 12),
                       child: Padding(
@@ -326,7 +338,7 @@ class _CategorySoldItemsPageState extends State<CategorySoldItemsPage> {
                                   mainAxisSize: MainAxisSize.min,
                                   children: [
                                     Text(
-                                      '${formatAmount(sale.total)} FCFA',
+                                      '${formatAmount(lineItemsTotal(items))} FCFA',
                                       style: const TextStyle(fontWeight: FontWeight.bold),
                                     ),
                                     if (_canRefund)
@@ -339,6 +351,14 @@ class _CategorySoldItemsPageState extends State<CategorySoldItemsPage> {
                                 ),
                               ],
                             ),
+                            if (isMixedSale)
+                              Padding(
+                                padding: const EdgeInsets.only(top: 2),
+                                child: Text(
+                                  'Vente mixte, avec d\'autres catégories — total réel de la vente : ${formatAmount(sale.total)} FCFA',
+                                  style: Theme.of(context).textTheme.bodySmall,
+                                ),
+                              ),
                             const Divider(height: 16),
                             for (final item in items)
                               ListTile(
@@ -363,7 +383,11 @@ class _CategorySoldItemsPageState extends State<CategorySoldItemsPage> {
                                   size: 20,
                                 ),
                                 title: Text(paymentMethodLabels[payment.method] ?? payment.method),
-                                subtitle: Text('${formatAmount(payment.amount)} FCFA'),
+                                subtitle: Text(
+                                  isMixedSale
+                                      ? '${formatAmount(payment.amount)} FCFA (vente entière)'
+                                      : '${formatAmount(payment.amount)} FCFA',
+                                ),
                                 trailing: (payment.method == 'cash' || payment.method == 'mobile_money')
                                     ? IconButton(
                                         tooltip: 'Modifier le mode de paiement',

@@ -2,6 +2,11 @@
 
 ## [Unreleased]
 
+### Corrigé (2026-09-17) — « Plats vendus »/« Boissons vendues » affichaient le montant de toute la vente, pas seulement des lignes du groupe
+- Constaté par l'utilisateur : pour une vente mixte (ex. un plat + des boissons, payés ensemble en une fois), le montant en tête de chaque carte et à côté du mode de paiement affichait le total **réel de la vente entière** (ex. 3 300 FCFA), identique dans les deux listings, alors que chaque carte ne liste que les lignes de son propre groupe (ex. 2 300 FCFA de boissons seules) — donnant l'impression d'une erreur de calcul.
+- Corrigé en distinguant deux montants plutôt que d'en fabriquer un : le sous-total en tête de carte devient la somme des seules lignes affichées (`lineItemsTotal`) ; pour une vente mixte, une précision apparaît (« Vente mixte... total réel de la vente : X FCFA ») et chaque paiement affiche « (vente entière) » à côté de son montant — le montant du paiement lui-même reste inchangé, c'est une vraie donnée de transaction, jamais un chiffre réparti au prorata.
+- Voir `docs/api/pos.md`. 4 nouveaux tests Flutter (`lineItemsTotal`, distinction vente mixte/pure).
+
 ### Corrigé (2026-09-17) — Le bandeau « Nouvelle version disponible » réapparaissait après un simple rechargement
 - Cause réelle : Flutter réenregistrait à chaque chargement de page son propre service worker déprécié (`flutter_service_worker.js`, qui s'auto-désinstalle aussitôt) en plus de `pwa_cache_worker.js` — son cycle installation/désinstallation déclenchait un faux événement « changement de version » à quasi chaque visite, pas seulement lors d'un vrai déploiement.
 - Corrigé en fournissant un `web/flutter_bootstrap.js` personnalisé qui n'enregistre plus du tout ce service worker déprécié — solution pérenne, indépendante du flag `--pwa-strategy` (marqué pour suppression future par Flutter). `pwa_cache_worker.js` reste le seul service worker de l'application.

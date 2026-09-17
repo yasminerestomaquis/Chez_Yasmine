@@ -48,6 +48,67 @@ void main() {
     });
   });
 
+  group('lineItemsTotal (logique pure, sans réseau) — 2026-09-17', () {
+    test('somme qté × prix unitaire des lignes fournies', () {
+      final items = [
+        SaleItemResult(id: 'i1', productId: 'p1', name: 'Chill', quantity: 1, unitPrice: 500),
+        SaleItemResult(id: 'i2', productId: 'p2', name: 'Bock', quantity: 3, unitPrice: 600),
+      ];
+
+      expect(lineItemsTotal(items), 2300);
+    });
+
+    test('vaut 0 pour une liste vide', () {
+      expect(lineItemsTotal(const []), 0);
+    });
+  });
+
+  group('vente mixte : le sous-total par carte ne doit jamais utiliser sale.total (2026-09-17)', () {
+    test('une vente mêlant plats et boissons a un sous-total par catégorie distinct de sale.total', () {
+      final sale = _sale(
+        id: 's1',
+        items: [
+          SaleItemResult(id: 'i1', productId: 'plat-1', name: 'Foutou Sauce', quantity: 1, unitPrice: 1000),
+          SaleItemResult(id: 'i2', productId: 'biere-1', name: 'Chill', quantity: 1, unitPrice: 500),
+          SaleItemResult(id: 'i3', productId: 'biere-2', name: 'Bock', quantity: 3, unitPrice: 600),
+        ],
+        payments: [PaymentResult(id: 'pay-1', method: 'mobile_money', amount: 3300)],
+      );
+
+      final boissons = matchingSalesWithTotal([sale], {'biere-1', 'biere-2'});
+      final plats = matchingSalesWithTotal([sale], {'plat-1'});
+
+      // Sous-total Boissons : 500 + 1800 = 2300, jamais les 3300 de sale.total.
+      expect(lineItemsTotal(boissons.matches.single.items), 2300);
+      expect(boissons.total, 2300);
+      // Sous-total Plats : 1000 seul, jamais les 3300 de sale.total.
+      expect(lineItemsTotal(plats.matches.single.items), 1000);
+      expect(plats.total, 1000);
+      // La vente réelle (sale.total, servant à "Rembourser cette vente" et
+      // affiché comme tel en cas de vente mixte) reste bien 3300 dans les deux vues.
+      expect(boissons.matches.single.sale.total, 3300);
+      expect(plats.matches.single.sale.total, 3300);
+      // Signature d'une vente mixte utilisée par la carte pour afficher la
+      // précision "vente mixte" et le vrai montant du paiement : le nombre
+      // de lignes affichées est inférieur au nombre total de lignes de la vente.
+      expect(boissons.matches.single.items.length, isNot(sale.items.length));
+      expect(plats.matches.single.items.length, isNot(sale.items.length));
+    });
+
+    test('une vente "pure" (une seule catégorie) a un sous-total identique à sale.total', () {
+      final sale = _sale(
+        id: 's1',
+        items: [SaleItemResult(id: 'i1', productId: 'eau-1', name: 'Eau Bassam', quantity: 1, unitPrice: 100)],
+      );
+
+      final result = matchingSalesWithTotal([sale], {'eau-1'});
+
+      expect(lineItemsTotal(result.matches.single.items), 100);
+      expect(result.matches.single.sale.total, 100);
+      expect(result.matches.single.items.length, sale.items.length);
+    });
+  });
+
   group('matchingSalesWithTotal (logique pure, sans réseau)', () {
     test('somme uniquement les lignes dont le produit est dans matchingProductIds', () {
       final sales = [
