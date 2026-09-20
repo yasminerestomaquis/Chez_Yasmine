@@ -84,6 +84,9 @@ class Purchase {
   final Supplier? supplier;
   final List<PurchaseItem> items;
 
+  /// Commande en attente : projection, aucune entrée de stock tant qu'elle n'est pas validée.
+  bool get isPending => status == 'pending';
+
   double get totalCases => items.fold(0, (sum, i) => sum + i.casesOrdered);
 
   factory Purchase.fromJson(Map<String, dynamic> json) => Purchase(

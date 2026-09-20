@@ -436,7 +436,7 @@ describe('ChartsService.stockLots', () => {
 
     expect(result.historyLots.map((l) => l.productName)).toEqual(['Bière', 'Sucrerie', 'Poulet']);
     expect(prisma.purchase.findMany).toHaveBeenCalledWith({
-      where: { establishmentId: 'est-1', orderNumber: { in: [1] } },
+      where: { establishmentId: 'est-1', status: 'received', orderNumber: { in: [1] } },
       select: { orderNumber: true },
     });
     expect(prisma.expense.findMany).toHaveBeenCalledWith({
@@ -466,7 +466,7 @@ describe('ChartsService.stockLots', () => {
     expect(result.historyLots[0]).toMatchObject({ code: 'L001', referenceNumber: 1, remainingQuantity: 70 });
     expect(result.totalActiveUnits).toBe(70);
     expect(prisma.purchase.findMany).toHaveBeenCalledWith({
-      where: { establishmentId: 'est-1', orderNumber: { in: expect.arrayContaining([1, 3]) } },
+      where: { establishmentId: 'est-1', status: 'received', orderNumber: { in: expect.arrayContaining([1, 3]) } },
       select: { orderNumber: true },
     });
   });

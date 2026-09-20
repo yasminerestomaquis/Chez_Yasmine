@@ -30,7 +30,7 @@ export async function orderNumberChoices(
   if (!required) return { required: false, options: [], defaultOrderNumber: null };
 
   const purchases = await prisma.purchase.findMany({
-    where: { establishmentId, items: { some: { productId } } },
+    where: { establishmentId, status: 'received', items: { some: { productId } } },
     select: { orderNumber: true },
   });
   const options = [...new Set(purchases.map((p) => p.orderNumber))].sort((a, b) => b - a);
@@ -65,7 +65,7 @@ export async function resolveOrderNumber(
   if (!product.category?.hasCasePricing) return undefined;
   if (!orderNumber) throw new BadRequestException('N° de la commande obligatoire pour ce produit');
   const purchase = await prisma.purchase.findFirst({
-    where: { establishmentId, orderNumber, items: { some: { productId: product.id } } },
+    where: { establishmentId, orderNumber, status: 'received', items: { some: { productId: product.id } } },
     select: { id: true },
   });
   if (!purchase) throw new BadRequestException(`Aucune commande n°${orderNumber} ne contient ce produit`);

@@ -194,14 +194,37 @@ class _PurchaseOrderDetailPageState extends State<PurchaseOrderDetailPage> {
     }
   }
 
+  /// Valide une commande en attente (« Créer la commande ») : le stock entre à ce moment.
+  Future<void> _confirmPending() async {
+    setState(() => _isBusy = true);
+    try {
+      final updated = await widget.repository.updatePurchase(
+        _purchase.id,
+        items: _purchase.items.map((l) => {'productId': l.productId, 'casesOrdered': l.casesOrdered}).toList(),
+        confirm: true,
+      );
+      if (!mounted) return;
+      setState(() => _purchase = updated);
+      ScaffoldMessenger.of(context)
+          .showSnackBar(const SnackBar(content: Text('Commande créée : le stock a été mis à jour.')));
+    } on ApiException catch (e) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text(e.message)));
+    } finally {
+      if (mounted) setState(() => _isBusy = false);
+    }
+  }
+
   Future<void> _delete() async {
     final confirmed = await showDialog<bool>(
       context: context,
       builder: (context) => AlertDialog(
         title: const Text('Supprimer cette commande ?'),
         content: Text(
-          'La commande n°${_purchase.orderNumber} sera supprimée et le stock qu\'elle avait fait entrer sera retiré '
-          '(sans jamais passer sous 0, même si une partie a déjà été vendue).',
+          _purchase.isPending
+              ? 'La commande en attente n°${_purchase.orderNumber} sera supprimée (aucun stock n\'est concerné).'
+              : 'La commande n°${_purchase.orderNumber} sera supprimée et le stock qu\'elle avait fait entrer sera retiré '
+                  '(sans jamais passer sous 0, même si une partie a déjà été vendue).',
         ),
         actions: [
           TextButton(
@@ -246,7 +269,7 @@ class _PurchaseOrderDetailPageState extends State<PurchaseOrderDetailPage> {
 
     return Scaffold(
       appBar: AppBar(
-        title: Text('Commande n°${_purchase.orderNumber}'),
+        title: Text('Commande n°${_purchase.orderNumber}${_purchase.isPending ? ' (en attente)' : ''}'),
         actions: widget.readOnly
             ? const []
             : _isEditing
@@ -260,6 +283,11 @@ class _PurchaseOrderDetailPageState extends State<PurchaseOrderDetailPage> {
                 ),
               ]
             : [
+                if (_purchase.isPending)
+                  TextButton(
+                    onPressed: _isBusy ? null : _confirmPending,
+                    child: const Text('Créer la commande', style: TextStyle(color: Colors.white)),
+                  ),
                 IconButton(
                   tooltip: 'Modifier',
                   icon: const Icon(Icons.edit_outlined),

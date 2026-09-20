@@ -175,7 +175,7 @@ class _PurchasesPageState extends State<PurchasesPage>
   void _removeDraftLine(_DraftLine line) =>
       setState(() => _draftLines.remove(line));
 
-  Future<void> _submitOrder() async {
+  Future<void> _submitOrder({bool pending = false}) async {
     if (_draftLines.isEmpty) return;
     final orderNumber = int.tryParse(_orderNumberController.text.trim());
     if (orderNumber == null) {
@@ -200,6 +200,7 @@ class _PurchasesPageState extends State<PurchasesPage>
         orderNumber: orderNumber,
         orderDate: _draftOrderDate,
         items: items,
+        pending: pending,
       );
       setState(() {
         _draftLines.clear();
@@ -210,7 +211,7 @@ class _PurchasesPageState extends State<PurchasesPage>
       _reload();
       if (!mounted) return;
       ScaffoldMessenger.of(context)
-          .showSnackBar(const SnackBar(content: Text('Commande enregistrée.')));
+          .showSnackBar(SnackBar(content: Text(pending ? 'Commande mise en attente (aucune entrée de stock).' : 'Commande enregistrée.')));
       _tabController.animateTo(2);
     } on ApiException catch (e) {
       // Rejet métier réel (ex. produit non conforme au module par casier) —
@@ -232,6 +233,7 @@ class _PurchasesPageState extends State<PurchasesPage>
             'orderNumber': orderNumber,
             'orderDate': _draftOrderDate.toIso8601String(),
             'items': items,
+            if (pending) 'status': 'pending',
           },
           createdAt: DateTime.now(),
         ),
@@ -564,9 +566,22 @@ class _PurchasesPageState extends State<PurchasesPage>
                 ],
               ),
               const SizedBox(height: 12),
-              FilledButton(
-                onPressed: _draftLines.isEmpty ? null : _submitOrder,
-                child: const Text('Créer la commande'),
+              Row(
+                children: [
+                  Expanded(
+                    child: OutlinedButton(
+                      onPressed: _draftLines.isEmpty ? null : () => _submitOrder(pending: true),
+                      child: const Text('En attente'),
+                    ),
+                  ),
+                  const SizedBox(width: 12),
+                  Expanded(
+                    child: FilledButton(
+                      onPressed: _draftLines.isEmpty ? null : () => _submitOrder(),
+                      child: const Text('Créer la commande'),
+                    ),
+                  ),
+                ],
               ),
             ],
           ),
@@ -583,6 +598,11 @@ class _PurchasesPageState extends State<PurchasesPage>
       children: [
         for (final purchase in _purchases)
           ListTile(
+            leading: Icon(
+              purchase.isPending ? Icons.hourglass_top_rounded : Icons.check_circle_outline,
+              color: purchase.isPending ? Colors.orange : Colors.green,
+            ),
+            trailing: _statusChip(purchase),
             title: Text(
               'N° ${purchase.orderNumber} — ${purchase.supplier?.name ?? 'Sans fournisseur'}',
             ),
@@ -607,6 +627,18 @@ class _PurchasesPageState extends State<PurchasesPage>
       ],
     );
   }
+}
+
+/// Pastille de statut de l'Historique : « Validée » (stock entré) ou « En attente » (projection, sans stock).
+Widget _statusChip(Purchase purchase) {
+  final label = purchase.isPending ? 'En attente' : (purchase.status == 'received' ? 'Validée' : purchaseStatusLabels[purchase.status] ?? purchase.status);
+  final color = purchase.isPending ? Colors.orange : (purchase.status == 'received' ? Colors.green : Colors.grey);
+  return Chip(
+    label: Text(label, style: TextStyle(color: color.shade800, fontSize: 12)),
+    backgroundColor: color.withValues(alpha: 0.12),
+    side: BorderSide.none,
+    visualDensity: VisualDensity.compact,
+  );
 }
 
 Widget _readOnlyField(String label, String value) => InputDecorator(

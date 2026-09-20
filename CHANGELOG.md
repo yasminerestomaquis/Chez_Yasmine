@@ -2,6 +2,12 @@
 
 ## [Unreleased]
 
+### Ajouté (2026-09-20) — Achats : bouton « En attente » (projection de commande)
+- Dans « Liste de commandes », le bouton **En attente** enregistre la commande sans validation : `POST .../purchases` avec `status: 'pending'`. **Aucune entrée de stock** (ni mouvement, ni lot Graphiques) tant qu'elle n'est pas confirmée.
+- **Créer la commande** valide une commande en attente (depuis le détail de la commande dans l'Historique : `PATCH .../purchases/:id` avec `confirm: true`) : le stock entre alors, avec le motif « Commande n°X ».
+- L'Historique distingue les commandes **Validée** (vert) et **En attente** (orange). Une commande en attente se modifie et se supprime sans effet sur le stock ; elle n'apparaît pas dans les N° de commande proposés par Pertes/Stock ni dans les lots.
+- Tests : 4 NestJS (`PurchasesService`, commande en attente).
+
 ### Ajouté (2026-09-20) — N° de la commande dans Pertes et Stock ; lots Graphiques cohérents
 - **Pertes** et **Stock** (Entrée, Sortie, Correction) : champ obligatoire « N° de la commande » pour les produits à prix par casier (Bières, Vins, Sucreries). Valeur par défaut : commande du dernier lot actif du produit (sinon lot récent, sinon dernière commande). Le serveur refuse une commande absente ou qui ne contient pas le produit. Nouvelles routes `GET .../losses/order-numbers/:productId` et `GET .../products/:id/order-numbers`, colonne `losses.order_number` (migration `20260920150000`, appliquée).
 - Le mouvement de stock porte le motif « Commande n°X » : la sortie/perte est imputée au lot de cette commande (puis FIFO pour le reste).

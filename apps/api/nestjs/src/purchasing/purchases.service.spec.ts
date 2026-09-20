@@ -262,6 +262,7 @@ describe('PurchasesService.receive (flux hérité, commandes `pending` existante
   it('increments stock for every line, records an "in" movement per line, and marks the purchase received', async () => {
     (prisma.purchase as any).findFirst.mockResolvedValue({
       id: 'purchase-1',
+      orderNumber: 3,
       status: 'pending',
       items: [
         { productId: 'p1', quantity: new Decimal(10) },
@@ -281,7 +282,7 @@ describe('PurchasesService.receive (flux hérité, commandes `pending` existante
     expect(prisma.product.update).toHaveBeenCalledWith({ where: { id: 'p1' }, data: { stockQuantity: { increment: 10 } } });
     expect(prisma.product.update).toHaveBeenCalledWith({ where: { id: 'p2' }, data: { stockQuantity: { increment: 5 } } });
     expect(prisma.stockMovement.create).toHaveBeenCalledWith({
-      data: { productId: 'p1', type: 'in', quantity: 10, reason: 'Réception achat purchase-1', createdBy: 'user-1' },
+      data: { productId: 'p1', type: 'in', quantity: 10, reason: 'Commande n°3', createdBy: 'user-1' },
     });
     expect(prisma.purchase.update).toHaveBeenCalledWith(
       expect.objectContaining({ where: { id: 'purchase-1' }, data: { status: 'received' } }),
@@ -318,5 +319,64 @@ describe('PurchasesService.cancel (flux hérité)', () => {
 
     expect(prisma.purchase.update).toHaveBeenCalledWith({ where: { id: 'purchase-1' }, data: { status: 'cancelled' } });
     expect(prisma.stockMovement.create).not.toHaveBeenCalled();
+  });
+});
+
+describe('Commande en attente (projection, 2026-09-20)', () => {
+  let prisma: ReturnType<typeof makePrismaMock>;
+  let service: PurchasesService;
+
+  beforeEach(() => {
+    vi.mocked(activityNotifierMock.notify).mockClear();
+    prisma = makePrismaMock();
+    service = new PurchasesService(prisma as unknown as PrismaService, activityNotifierMock);
+  });
+
+  it('cree la commande en attente sans aucune entree de stock', async () => {
+    (prisma.product as any).findMany.mockResolvedValue([caseProduct()]);
+    (prisma.purchase as any).create.mockResolvedValue({ id: 'purchase-1', supplier: null, items: [] });
+
+    await service.create('est-1', 'user-1', { orderNumber: 4, status: 'pending', items: [{ productId: 'p1', casesOrdered: 2 }] });
+
+    expect((prisma.purchase as any).create.mock.calls[0][0].data.status).toBe('pending');
+    expect(prisma.product.update).not.toHaveBeenCalled();
+    expect(prisma.stockMovement.create).not.toHaveBeenCalled();
+    expect(activityNotifierMock.notify).toHaveBeenCalledWith('est-1', 'user-1', 'Commande en attente', expect.any(String));
+  });
+
+  it('modifier une commande en attente ne touche pas au stock', async () => {
+    (prisma.purchase as any).findFirst.mockResolvedValue({ id: 'purchase-1', orderNumber: 4, status: 'pending', items: [{ productId: 'p1', quantity: new Decimal(24) }] });
+    (prisma.product as any).findMany.mockResolvedValue([caseProduct()]);
+    (prisma.purchase as any).findUniqueOrThrow.mockResolvedValue({ id: 'purchase-1', supplier: null });
+
+    await service.update('est-1', 'user-1', 'purchase-1', { items: [{ productId: 'p1', casesOrdered: 1 }] });
+
+    expect(prisma.product.update).not.toHaveBeenCalled();
+    expect(prisma.stockMovement.create).not.toHaveBeenCalled();
+    expect((prisma.purchase as any).update.mock.calls[0][0].data.status).toBeUndefined();
+  });
+
+  it('confirmer une commande en attente la valide et fait entrer le stock (motif Commande n°X)', async () => {
+    (prisma.purchase as any).findFirst.mockResolvedValue({ id: 'purchase-1', orderNumber: 4, status: 'pending', items: [{ productId: 'p1', quantity: new Decimal(24) }] });
+    (prisma.product as any).findMany.mockResolvedValue([caseProduct()]);
+    (prisma.purchase as any).findUniqueOrThrow.mockResolvedValue({ id: 'purchase-1', supplier: null });
+
+    await service.update('est-1', 'user-1', 'purchase-1', { confirm: true, items: [{ productId: 'p1', casesOrdered: 2 }] });
+
+    expect((prisma.purchase as any).update.mock.calls[0][0].data.status).toBe('received');
+    expect(prisma.product.update).toHaveBeenCalledWith({ where: { id: 'p1' }, data: { stockQuantity: { increment: 24 } } });
+    expect(prisma.stockMovement.create).toHaveBeenCalledWith({
+      data: { productId: 'p1', type: 'in', quantity: 24, reason: 'Commande n°4', createdBy: 'user-1' },
+    });
+  });
+
+  it('supprimer une commande en attente ne retire rien du stock', async () => {
+    (prisma.purchase as any).findFirst.mockResolvedValue({ id: 'purchase-1', orderNumber: 4, status: 'pending', items: [{ productId: 'p1', quantity: new Decimal(24) }] });
+
+    await service.remove('est-1', 'user-1', 'purchase-1');
+
+    expect(prisma.product.update).not.toHaveBeenCalled();
+    expect(prisma.stockMovement.create).not.toHaveBeenCalled();
+    expect((prisma.purchase as any).delete).toHaveBeenCalledWith({ where: { id: 'purchase-1' } });
   });
 });

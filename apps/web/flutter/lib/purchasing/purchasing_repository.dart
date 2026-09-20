@@ -49,9 +49,11 @@ class PurchasingRepository {
     required int orderNumber,
     required DateTime orderDate,
     required List<Map<String, dynamic>> items,
+    bool pending = false,
   }) async {
     final json = await _api.post('$_base/purchases', body: {
       'id': ?id,
+      if (pending) 'status': 'pending',
       'supplierId': ?supplierId,
       'orderNumber': orderNumber,
       'orderDate': _dateOnly(orderDate),
@@ -66,12 +68,14 @@ class PurchasingRepository {
     int? orderNumber,
     DateTime? orderDate,
     required List<Map<String, dynamic>> items,
+    bool confirm = false,
   }) async {
     final json = await _api.patch('$_base/purchases/$purchaseId', body: {
       'supplierId': ?supplierId,
       'orderNumber': ?orderNumber,
       'orderDate': ?(orderDate != null ? _dateOnly(orderDate) : null),
       'items': items,
+      if (confirm) 'confirm': true,
     }) as Map<String, dynamic>;
     return Purchase.fromJson(json);
   }

@@ -1,5 +1,5 @@
 import { Type } from 'class-transformer';
-import { ArrayMinSize, IsArray, IsDateString, IsInt, IsOptional, IsUUID, Min, ValidateNested } from 'class-validator';
+import { ArrayMinSize, IsArray, IsDateString, IsIn, IsInt, IsOptional, IsUUID, Min, ValidateNested } from 'class-validator';
 
 export class PurchaseItemDto {
   @IsUUID()
@@ -30,6 +30,15 @@ export class CreatePurchaseDto {
   @IsOptional()
   @IsDateString()
   orderDate?: string;
+
+  /**
+   * 'pending' : commande en attente (projection, 2026-09-20) — enregistrée
+   * sans entrée de stock ; 'received' (défaut) : commande validée, le stock
+   * entre. Une commande en attente se confirme via `UpdatePurchaseDto.confirm`.
+   */
+  @IsOptional()
+  @IsIn(['pending', 'received'])
+  status?: 'pending' | 'received';
 
   @IsArray()
   @ArrayMinSize(1)

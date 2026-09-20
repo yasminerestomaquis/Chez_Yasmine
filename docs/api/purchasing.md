@@ -61,6 +61,10 @@ Contrairement au flux hérité ci-dessous, **`create` fait immédiatement entrer
 - **Modification** (`update`) : remplace l'intégralité des lignes — annule d'abord l'effet stock des anciennes lignes, revalide et applique les nouvelles (même validation que `create`). Aucune édition partielle ligne par ligne.
 - **Suppression** (`remove`) : annule l'effet stock de la commande puis la supprime. La décrémentation est **clampée à 0** plutôt que de faire échouer si une partie du stock a déjà été vendue depuis (même principe que les remboursements de crédit — un ajustement/une correction ne doit pas bloquer sur un désalignement comptable mineur).
 
+### Commande en attente (projection, 2026-09-20)
+
+`POST` accepte `status: 'pending'` : la commande est enregistrée (`Purchase.status = 'pending'`) **sans aucun effet de stock**. `PATCH` avec `confirm: true` la valide (`received`) et fait entrer le stock (motif « Commande n°X ») ; sans `confirm`, modifier une commande en attente ne touche pas au stock, et la supprimer non plus. Les commandes en attente sont exclues des N° de commande proposés (Pertes/Stock) et de la validation des lots (Graphiques > Stock).
+
 ## Flux hérité (`pending` → `receive`/`cancel`)
 
 `receive`/`cancel` restent en place, dépréciés, pour les achats `pending` créés avant cette migration (l'ancien flux "achat classique" créait toujours en `pending`, sans passer par le casier). Jamais utilisés par le nouveau flux, qui crée directement en `received`.

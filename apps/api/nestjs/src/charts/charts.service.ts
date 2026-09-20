@@ -500,7 +500,7 @@ export class ChartsService {
         : Promise.resolve([]),
       orderNumbersToCheck.size > 0
         ? this.prisma.purchase.findMany({
-            where: { establishmentId, orderNumber: { in: [...orderNumbersToCheck] } },
+            where: { establishmentId, status: 'received', orderNumber: { in: [...orderNumbersToCheck] } },
             select: { orderNumber: true },
           })
         : Promise.resolve([]),

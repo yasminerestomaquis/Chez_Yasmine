@@ -96,6 +96,7 @@ export class PurchasesService {
     }
     const lines = await this.resolveLines(establishmentId, dto.items);
     const total = lines.reduce((sum, l) => sum + l.casesOrdered * l.purchasePricePerCase, 0);
+    const isPending = dto.status === 'pending';
 
     const purchase = await this.prisma.$transaction(async (tx) => {
       const created = await tx.purchase.create({
@@ -105,7 +106,7 @@ export class PurchasesService {
           supplierId: dto.supplierId,
           orderNumber: dto.orderNumber,
           orderDate: dto.orderDate ? new Date(dto.orderDate) : undefined,
-          status: 'received',
+          status: isPending ? 'pending' : 'received',
           total,
           items: {
             create: lines.map((l) => ({
@@ -120,15 +121,18 @@ export class PurchasesService {
         },
         include: purchaseInclude,
       });
-      for (const line of lines) {
-        await this.applyStock(tx, line.productId, line.quantity, userId, `Commande n°${dto.orderNumber}`);
+      // Commande en attente : simple projection, jamais d'entrée de stock.
+      if (!isPending) {
+        for (const line of lines) {
+          await this.applyStock(tx, line.productId, line.quantity, userId, `Commande n°${dto.orderNumber}`);
+        }
       }
       return created;
     }, PURCHASE_TRANSACTION_OPTIONS);
     await this.activityNotifier.notify(
       establishmentId,
       userId,
-      'Achat reçu',
+      isPending ? 'Commande en attente' : 'Achat reçu',
       `${purchase.supplier?.name ?? 'Fournisseur non renseigné'} — ${total.toLocaleString('fr-FR')} FCFA (${lines.length} article(s))`,
     );
     return purchase;
@@ -152,10 +156,17 @@ export class PurchasesService {
     const lines = await this.resolveLines(establishmentId, dto.items);
     const total = lines.reduce((sum, l) => sum + l.casesOrdered * l.purchasePricePerCase, 0);
     const orderNumber = dto.orderNumber ?? existing.orderNumber;
+    // Une commande en attente n'a jamais touché au stock : rien à annuler, et
+    // le stock n'entre qu'à sa confirmation (`confirm`).
+    const wasPending = existing.status === 'pending';
+    const confirming = wasPending && dto.confirm === true;
+    const stockReason = confirming ? `Commande n°${orderNumber}` : `Correction commande n°${orderNumber}`;
 
-    return this.prisma.$transaction(async (tx) => {
-      for (const item of existing.items) {
-        await this.reverseStock(tx, item.productId, item.quantity.toNumber(), userId, `Correction commande n°${orderNumber}`);
+    const updated = await this.prisma.$transaction(async (tx) => {
+      if (!wasPending) {
+        for (const item of existing.items) {
+          await this.reverseStock(tx, item.productId, item.quantity.toNumber(), userId, `Correction commande n°${orderNumber}`);
+        }
       }
       await tx.purchaseItem.deleteMany({ where: { purchaseId } });
       await tx.purchase.update({
@@ -164,6 +175,7 @@ export class PurchasesService {
           supplierId: dto.supplierId,
           orderNumber,
           orderDate: dto.orderDate ? new Date(dto.orderDate) : undefined,
+          status: confirming ? 'received' : undefined,
           total,
           items: {
             create: lines.map((l) => ({
@@ -177,11 +189,22 @@ export class PurchasesService {
           },
         },
       });
-      for (const line of lines) {
-        await this.applyStock(tx, line.productId, line.quantity, userId, `Correction commande n°${orderNumber}`);
+      if (!wasPending || confirming) {
+        for (const line of lines) {
+          await this.applyStock(tx, line.productId, line.quantity, userId, stockReason);
+        }
       }
       return tx.purchase.findUniqueOrThrow({ where: { id: purchaseId }, include: purchaseInclude });
     }, PURCHASE_TRANSACTION_OPTIONS);
+    if (confirming) {
+      await this.activityNotifier.notify(
+        establishmentId,
+        userId,
+        'Achat reçu',
+        `${updated.supplier?.name ?? 'Fournisseur non renseigné'} — ${total.toLocaleString('fr-FR')} FCFA (${lines.length} article(s))`,
+      );
+    }
+    return updated;
   }
 
   /** Annule l'effet stock de la commande (clampé à 0, jamais négatif) puis la supprime. */
@@ -194,14 +217,17 @@ export class PurchasesService {
       throw new NotFoundException('Achat introuvable pour cet établissement');
     }
     await this.prisma.$transaction(async (tx) => {
-      for (const item of existing.items) {
-        await this.reverseStock(
-          tx,
-          item.productId,
-          item.quantity.toNumber(),
-          userId,
-          `Suppression commande n°${existing.orderNumber}`,
-        );
+      // Une commande en attente n'a pas fait entrer de stock : rien à retirer.
+      if (existing.status !== 'pending') {
+        for (const item of existing.items) {
+          await this.reverseStock(
+            tx,
+            item.productId,
+            item.quantity.toNumber(),
+            userId,
+            `Suppression commande n°${existing.orderNumber}`,
+          );
+        }
       }
       await tx.purchase.delete({ where: { id: purchaseId } });
     }, PURCHASE_TRANSACTION_OPTIONS);
@@ -235,7 +261,7 @@ export class PurchasesService {
         const quantity = item.quantity.toNumber();
         await tx.product.update({ where: { id: item.productId }, data: { stockQuantity: { increment: quantity } } });
         await tx.stockMovement.create({
-          data: { productId: item.productId, type: 'in', quantity, reason: `Réception achat ${purchase.id}`, createdBy: userId },
+          data: { productId: item.productId, type: 'in', quantity, reason: `Commande n°${purchase.orderNumber}`, createdBy: userId },
         });
       }
       return tx.purchase.update({
