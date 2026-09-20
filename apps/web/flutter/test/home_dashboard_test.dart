@@ -79,7 +79,7 @@ void main() {
   );
 
   testWidgets(
-    'the "Date" label is a dropdown defaulting to "Aujourd\'hui", opening a menu with today\'s label (2026-09-14)',
+    'the Date filter defaults to today and opens a multi-select dialog with a reset action (2026-09-20)',
     (tester) async {
       await tester.pumpWidget(
         const MaterialApp(
@@ -97,16 +97,14 @@ void main() {
       await tester.tap(find.text("Aujourd'hui").first);
       await tester.pumpAndSettle();
 
-      // `DropdownButton` construit un IndexedStack de tous les items même
-      // fermé (pour dimensionner le champ sur le plus large) — chaque
-      // libellé apparaît donc en double une fois le menu ouvert : un de
-      // plus qu'avant l'ouverture confirme que le menu s'est bien déployé.
-      expect(find.text("Aujourd'hui"), findsNWidgets(2));
+      expect(find.text('Filtrer par date'), findsOneWidget);
+      expect(find.byType(CheckboxListTile), findsNWidgets(7));
+      expect(find.text('Réinitialiser'), findsOneWidget);
     },
   );
 
   testWidgets(
-    'selecting a past date from the dropdown reloads and drops "aujourd\'hui" from the label (2026-09-14)',
+    'ticking several dates and applying relabels the filter with the day count (2026-09-20)',
     (tester) async {
       await tester.pumpWidget(
         const MaterialApp(
@@ -122,46 +120,14 @@ void main() {
       await tester.tap(find.text("Aujourd'hui").first);
       await tester.pumpAndSettle();
 
-      // Même formatage que `_frenchDate` (privée à home_dashboard.dart),
-      // recalculé ici pour retrouver le libellé du jour précédent sans
-      // dépendre d'une date figée.
-      final yesterday = DateTime.now().subtract(const Duration(days: 1));
-      const weekdays = [
-        'lundi',
-        'mardi',
-        'mercredi',
-        'jeudi',
-        'vendredi',
-        'samedi',
-        'dimanche',
-      ];
-      const months = [
-        'janvier',
-        'février',
-        'mars',
-        'avril',
-        'mai',
-        'juin',
-        'juillet',
-        'août',
-        'septembre',
-        'octobre',
-        'novembre',
-        'décembre',
-      ];
-      final weekday = weekdays[yesterday.weekday - 1];
-      final weekdayCapitalized =
-          weekday[0].toUpperCase() + weekday.substring(1);
-      final yesterdayLabel =
-          '$weekdayCapitalized ${yesterday.day} ${months[yesterday.month - 1]}';
-
-      // Widget de l'option de menu ouvert (voir le commentaire du test
-      // ci-dessus sur l'IndexedStack) : `.last` cible bien le menu déployé.
-      await tester.tap(find.text(yesterdayLabel).last);
+      // Aujourd'hui est déjà coché : cocher la 2e ligne (hier) donne 2 jours.
+      await tester.tap(find.byType(CheckboxListTile).at(1));
+      await tester.pumpAndSettle();
+      await tester.tap(find.text('Appliquer'));
       await tester.pumpAndSettle();
 
+      expect(find.text('2 jours sélectionnés'), findsOneWidget);
       expect(find.text("Aujourd'hui"), findsNothing);
-      expect(find.text(yesterdayLabel), findsWidgets);
     },
   );
 }

@@ -9,6 +9,7 @@ import '../common/app_reload.dart';
 import '../common/formatting.dart';
 import '../customers/customers_page.dart';
 import '../expenses/expenses_page.dart';
+import 'date_selection.dart';
 import '../losses/losses_page.dart';
 import '../notifications/notifications_page.dart';
 import '../notifications/notifications_repository.dart';
@@ -22,37 +23,6 @@ import '../sync/global_sync_context.dart';
 import '../tables/floor_plan_page.dart';
 import '../theme/app_theme.dart';
 import '../users/users_page.dart';
-
-const _frenchWeekdays = [
-  'lundi',
-  'mardi',
-  'mercredi',
-  'jeudi',
-  'vendredi',
-  'samedi',
-  'dimanche',
-];
-const _frenchMonths = [
-  'janvier',
-  'février',
-  'mars',
-  'avril',
-  'mai',
-  'juin',
-  'juillet',
-  'août',
-  'septembre',
-  'octobre',
-  'novembre',
-  'décembre',
-];
-
-String _frenchDate(DateTime date) {
-  final weekday = _frenchWeekdays[date.weekday - 1];
-  final month = _frenchMonths[date.month - 1];
-  final weekdayCapitalized = weekday[0].toUpperCase() + weekday.substring(1);
-  return '$weekdayCapitalized ${date.day} $month';
-}
 
 class _ModuleEntry {
   const _ModuleEntry(this.icon, this.label, this.builder);
@@ -99,7 +69,7 @@ class _DashboardData {
   // Magasinier — voir supabase/seed/001_roles_permissions.sql) n'a pas accès
   // à ces indicateurs. On l'affiche sans eux plutôt que de bloquer tout
   // l'accueil derrière un 403 (voir _load()).
-  final ReportSummary? summary;
+  final ({int salesCount, int lowStockCount})? summary;
   final PaymentCategoryBreakdown? breakdown;
   final int unreadCount;
 }
@@ -137,27 +107,76 @@ class _HomeDashboardState extends State<HomeDashboard> {
     return DateTime(now.year, now.month, now.day);
   }
 
-  /// Filtre "Date" de l'accueil (décision utilisateur du 2026-09-14) :
-  /// aujourd'hui et les 6 jours précédents, le plus récent en premier. Les
-  /// cartes de statistiques ci-dessous (ventes, recettes boissons/plats,
-  /// détail par mode de paiement) reflètent la date choisie ici, jamais
-  /// figées sur "aujourd'hui".
+  /// Filtre "Date" de l'accueil (décision utilisateur du 2026-09-14, passé en
+  /// sélection multiple le 2026-09-20) : aujourd'hui et les 6 jours
+  /// précédents, le plus récent en premier. Les cartes de statistiques
+  /// ci-dessous (ventes, recettes boissons/plats, détail par mode de
+  /// paiement) cumulent toutes les dates cochées ici, jamais figées sur
+  /// "aujourd'hui".
   List<DateTime> get _dateOptions =>
       List.generate(7, (i) => _todayDate.subtract(Duration(days: i)));
 
-  late DateTime _selectedDate = _todayDate;
+  late Set<DateTime> _selectedDates = {_todayDate};
 
-  bool get _isToday => _selectedDate == _todayDate;
+  bool get _isToday =>
+      _selectedDates.length == 1 && _selectedDates.first == _todayDate;
 
-  /// "aujourd'hui" pour la date du jour, sinon `du <jour> <j> <mois>` (ex.
-  /// "du lundi 8 septembre") — recompose les libellés des cartes ("Ventes
-  /// aujourd'hui" -> "Ventes du lundi 8 septembre") pour qu'ils restent
-  /// exacts quelle que soit la date choisie dans le filtre.
-  String get _periodPhrase {
-    if (_isToday) return "aujourd'hui";
-    final weekday = _frenchWeekdays[_selectedDate.weekday - 1];
-    final month = _frenchMonths[_selectedDate.month - 1];
-    return 'du $weekday ${_selectedDate.day} $month';
+  String get _periodPhrase => periodPhrase(_selectedDates, _todayDate);
+
+  Future<void> _pickDates() async {
+    final chosen = await showDialog<Set<DateTime>>(
+      context: context,
+      builder: (dialogContext) {
+        var working = {..._selectedDates};
+        return StatefulBuilder(
+          builder: (dialogContext, setDialogState) => AlertDialog(
+            title: const Text('Filtrer par date'),
+            content: SizedBox(
+              width: 360,
+              child: ListView(
+                shrinkWrap: true,
+                children: [
+                  for (final date in _dateOptions)
+                    CheckboxListTile(
+                      contentPadding: EdgeInsets.zero,
+                      value: working.contains(date),
+                      title: Text(
+                        date == _todayDate ? "Aujourd'hui" : frenchDate(date),
+                      ),
+                      onChanged: (checked) => setDialogState(() {
+                        if (checked ?? false) {
+                          working.add(date);
+                        } else {
+                          working.remove(date);
+                        }
+                      }),
+                    ),
+                ],
+              ),
+            ),
+            actions: [
+              TextButton(
+                onPressed: () => setDialogState(() => working = {_todayDate}),
+                child: const Text('Réinitialiser'),
+              ),
+              TextButton(
+                onPressed: () => Navigator.of(dialogContext).pop(),
+                child: const Text('Annuler'),
+              ),
+              FilledButton(
+                onPressed: working.isEmpty
+                    ? null
+                    : () => Navigator.of(dialogContext).pop(working),
+                child: const Text('Appliquer'),
+              ),
+            ],
+          ),
+        );
+      },
+    );
+    if (chosen == null) return;
+    setState(() => _selectedDates = chosen);
+    _reload();
   }
 
   late Future<_DashboardData> _future = _load();
@@ -282,42 +301,52 @@ class _HomeDashboardState extends State<HomeDashboard> {
   /// hors ligne est un compromis largement préférable à bloquer la
   /// navigation.
   Future<_DashboardData> _load() async {
-    // Bornes UTC explicites du jour choisi (00:00:00.000 -> 23:59:59.999) :
-    // ReportsService.resolveRange fait `new Date(from)`/`new Date(to)` côté
-    // serveur sans ajouter de fin de journée — envoyer la même date pour
-    // from et to donnerait un intervalle de largeur nulle (aucune vente ne
-    // tombe pile à minuit) et ne renverrait jamais rien.
-    final from = DateTime.utc(
-      _selectedDate.year,
-      _selectedDate.month,
-      _selectedDate.day,
-    );
-    final to = from
-        .add(const Duration(days: 1))
-        .subtract(const Duration(milliseconds: 1));
-    final fromIso = from.toIso8601String();
-    final toIso = to.toIso8601String();
+    // Bornes UTC explicites de chaque jour choisi (00:00:00.000 ->
+    // 23:59:59.999) : ReportsService.resolveRange fait `new Date(from)`/
+    // `new Date(to)` côté serveur sans ajouter de fin de journée — envoyer la
+    // même date pour from et to donnerait un intervalle de largeur nulle
+    // (aucune vente ne tombe pile à minuit) et ne renverrait jamais rien.
+    // Une requête par jour coché (le serveur ne résout qu'un intervalle
+    // continu), cumulées ensuite par `mergeSummaries`/`mergeBreakdowns`.
+    final ranges = [
+      for (final date in _selectedDates)
+        (
+          from: DateTime.utc(date.year, date.month, date.day),
+          to: DateTime.utc(date.year, date.month, date.day)
+              .add(const Duration(days: 1))
+              .subtract(const Duration(milliseconds: 1)),
+        ),
+    ];
 
-    final summaryFuture = _reports.getSummary(from: fromIso, to: toIso);
-    final breakdownFuture = _reports.getPaymentCategoryBreakdown(
-      from: fromIso,
-      to: toIso,
-    );
+    final summaryFuture = Future.wait([
+      for (final r in ranges)
+        _reports.getSummary(
+          from: r.from.toIso8601String(),
+          to: r.to.toIso8601String(),
+        ),
+    ]);
+    final breakdownFuture = Future.wait([
+      for (final r in ranges)
+        _reports.getPaymentCategoryBreakdown(
+          from: r.from.toIso8601String(),
+          to: r.to.toIso8601String(),
+        ),
+    ]);
     final unreadFuture = _notifications.unreadCount();
 
     // Les 3 futures sont attendues ici quoi qu'il arrive : un retour anticipé
     // sur l'échec de l'une laisserait les autres, déjà lancées, sans jamais
     // être observées si elles échouent aussi — une "unhandled exception"
     // silencieuse en prime d'une régression bien plus difficile à repérer.
-    ReportSummary? summary;
+    ({int salesCount, int lowStockCount})? summary;
     try {
-      summary = await summaryFuture;
+      summary = mergeSummaries(await summaryFuture);
     } catch (_) {
       // ignore — voir le commentaire de _load() ci-dessus.
     }
     PaymentCategoryBreakdown? breakdown;
     try {
-      breakdown = await breakdownFuture;
+      breakdown = mergeBreakdowns(await breakdownFuture);
     } catch (_) {
       // ignore
     }
@@ -950,35 +979,25 @@ class _HomeDashboardState extends State<HomeDashboard> {
                         color: AppColors.textSecondary,
                       ),
                       const SizedBox(width: 6),
-                      DropdownButton<DateTime>(
-                        value: _selectedDate,
-                        isDense: true,
-                        underline: const SizedBox.shrink(),
-                        icon: const Icon(
-                          Icons.expand_more,
-                          size: 18,
-                          color: AppColors.textSecondary,
-                        ),
-                        style: const TextStyle(
-                          color: AppColors.textSecondary,
-                          fontSize: 14,
-                        ),
-                        items: [
-                          for (final date in _dateOptions)
-                            DropdownMenuItem(
-                              value: date,
-                              child: Text(
-                                date == _todayDate
-                                    ? "Aujourd'hui"
-                                    : _frenchDate(date),
+                      InkWell(
+                        onTap: _pickDates,
+                        child: Row(
+                          mainAxisSize: MainAxisSize.min,
+                          children: [
+                            Text(
+                              dateFilterLabel(_selectedDates, _todayDate),
+                              style: const TextStyle(
+                                color: AppColors.textSecondary,
+                                fontSize: 14,
                               ),
                             ),
-                        ],
-                        onChanged: (date) {
-                          if (date == null) return;
-                          setState(() => _selectedDate = date);
-                          _reload();
-                        },
+                            const Icon(
+                              Icons.expand_more,
+                              size: 18,
+                              color: AppColors.textSecondary,
+                            ),
+                          ],
+                        ),
                       ),
                     ],
                   ),

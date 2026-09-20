@@ -2,6 +2,11 @@
 
 ## [Unreleased]
 
+### Modifié (2026-09-20) — Accueil : le filtre Date passe en sélection multiple
+- Le filtre « Date » de l'Accueil (aujourd'hui et les 6 jours précédents) ouvre désormais un dialogue à cases à cocher (bouton « Réinitialiser » = aujourd'hui seul). Toutes les statistiques — Total ventes, Espèces, Mobile Money, Commandes, Recettes boissons/plats et leur détail par mode de paiement — cumulent les dates cochées ; les libellés suivent (« aujourd'hui », « du lundi 14 septembre », « sur 3 jours »).
+- Le serveur ne résolvant qu'un intervalle continu, l'application interroge `summary`/`payment-category-breakdown` une fois par date cochée puis additionne (`mergeBreakdowns`/`mergeSummaries`, `lib/home/date_selection.dart`) — aucun changement d'API. Les alertes stock, état courant indépendant de la date, ne sont jamais additionnées.
+- Voir `docs/api/reports.md`. Nouveaux tests : 5 purs (`date_selection_test.dart`), 2 widget (dialogue multi-sélection) remplaçant les 2 tests de l'ancien menu déroulant.
+
 ### Ajouté (2026-09-17) — Gbêlê compte désormais comme "Boissons" dans les rapports/exports
 - Constaté par l'utilisateur : la catégorie Gbêlê (achat à prix connu, prix de vente saisi à chaque vente) n'étant ni « prix par casier » ni « prix variable », ses ventes disparaissaient de tous les indicateurs "Boissons" (dashboard Accueil, "Boissons vendues" en Caisse/Addition, export Excel de Rapports) — sans apparaître non plus côté "Plats".
 - Nouveau `Category.isBeverage` (migration `20260917150000_add_category_is_beverage.sql`) : le critère "compte comme Boissons" devient partout `hasCasePricing OU isBeverage`. Nouvelle case à cocher « Boisson » dans le dialogue « Gérer les catégories ».

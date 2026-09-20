@@ -33,6 +33,10 @@ Alimente les cartes de l'écran Accueil (`lib/home/home_dashboard.dart`), toujou
 - **Espèces/Mobile Money** (`cashRevenue`/`mobileMoneyRevenue`) : somme de `Payment.amount` par méthode — reflète l'argent réellement encaissé, donc net de remise. `totalRevenue` est construit comme leur somme exacte (jamais un troisième chiffre indépendant) : sur une vente avec remise, `boissonsRevenue + platsRevenue` peut donc légèrement différer de `totalRevenue`, choix délibéré de cohérence interne plutôt qu'un alignement strict entre les deux.
 - **Croisement catégorie × mode de paiement** (`boissonsCash`, `boissonsMobileMoney`, `platsCash`, `platsMobileMoney`) : chaque vente répartit son chiffre d'affaires Boissons/Plats au prorata de sa propre part Espèces/Mobile Money — même principe de répartition proportionnelle que l'allocation du coût « Marché » dans `ChartsService`. Une vente payée en partie Carte/Crédit (anciennes données — ces méthodes ne sont plus sélectionnables en Caisse depuis le 2026-09-10) ne compte dans aucun des deux totaux demandés.
 
+### Filtre Date de l'Accueil en sélection multiple (2026-09-20)
+
+Le filtre « Date » de l'Accueil accepte plusieurs jours (parmi aujourd'hui et les 6 précédents). `summary` et `paymentCategoryBreakdown` ne résolvant qu'un intervalle continu, `HomeDashboard._load` émet une requête par jour coché (bornes UTC du jour, comme avant) et cumule les réponses côté client : `mergeBreakdowns` additionne toutes les valeurs Espèces/Mobile Money/Boissons/Plats, `mergeSummaries` additionne `salesCount` et garde le maximum de `lowStockCount` (état courant du stock, jamais additionné). Une seule requête en échec masque les cartes correspondantes, comme avant. Aucun changement côté API.
+
 ## Exports
 
 Le prompt maître (§34) demande PDF/Excel/CSV. Le **CSV** est livré (`GET .../summary.csv`, un indicateur par ligne, plus une ligne « Bénéfice — <produit> » par produit vendu sur la période) — sans dépendance supplémentaire, entièrement testable en pur TypeScript. Le **PDF** reste délibérément **reporté** : aucune bibliothèque de rendu choisie ni testée, et aucune demande explicite ne l'a justifié à ce jour.
