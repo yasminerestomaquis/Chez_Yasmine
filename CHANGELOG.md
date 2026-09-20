@@ -2,6 +2,12 @@
 
 ## [Unreleased]
 
+### Ajouté (2026-09-20) — Pertes : choix Lot / Unité
+- Pour les produits vendus par lot ET à l'unité (Heineken 33, Despé 33, Budweiser 33…), l'enregistrement (et la modification) d'une perte propose « Lot (3) — 2 000 FCFA » ou « Unité — 700 FCFA », comme la caisse.
+- **Stock** : Lot retire quantité × taille du lot (3 unités par lot) ; Unité retire la quantité. **Valorisation** : prix du lot ou prix à l'unité (listing, totaux, Accueil Mobile Money). Le mouvement de stock 'loss' porte les unités réellement retirées ; modification/suppression restituent le même nombre.
+- Nouvelle colonne `losses.sell_as_unit` (migration `20260920140000`, appliquée en production ; la perte existante d'un produit à lot a été marquée « Unité », sa quantité ayant été retirée en unités). Taille du lot lue dans `Product.unit`.
+- Tests : 5 NestJS (`LossesService`).
+
 ### Modifié (2026-09-20) — Accueil : les pertes comptent côté Mobile Money, par catégorie
 - Une perte enregistrée à une date précise s'ajoute, à son prix de vente, au groupe Boissons ou Plats de son produit et **uniquement côté Mobile Money** : Total ventes, Mobile Money, Boissons/Plats (recettes) et Boissons/Plats Mobile Money l'incluent ; Espèces, Boissons Espèces et Plats Espèces jamais. `GET .../reports/payment-category-breakdown` renvoie aussi `lossesRevenue`. Le bénéfice net de Rapports est inchangé (pertes au coût).
 - Voir `docs/api/reports.md`. Nouveaux tests : 3 (`loss-revenue`) + 2 (`paymentCategoryBreakdown`).

@@ -7,6 +7,8 @@ class Loss {
     this.reason,
     required this.estimatedValue,
     this.unitSalePrice = 0,
+    this.sellAsUnit = false,
+    this.hasUnitPrice = false,
     this.createdByName,
     required this.createdAt,
   });
@@ -21,6 +23,12 @@ class Loss {
   final double estimatedValue;
   final double unitSalePrice;
 
+  /// Perte valorisée au prix à l'unité plutôt qu'au tarif du lot.
+  final bool sellAsUnit;
+
+  /// Le produit se vend par lot ET à l'unité (le choix Lot/Unité s'applique).
+  final bool hasUnitPrice;
+
   /// Nom complet de l'auteur (`UserProfile.fullName`) ; nul si inconnu.
   final String? createdByName;
   final DateTime createdAt;
@@ -33,6 +41,8 @@ class Loss {
         reason: json['reason'] as String?,
         estimatedValue: (json['estimatedValue'] as num).toDouble(),
         unitSalePrice: (json['unitSalePrice'] as num?)?.toDouble() ?? 0,
+        sellAsUnit: json['sellAsUnit'] as bool? ?? false,
+        hasUnitPrice: json['hasUnitPrice'] as bool? ?? false,
         createdByName: json['createdByName'] as String?,
         createdAt: DateTime.parse(json['createdAt'] as String),
       );

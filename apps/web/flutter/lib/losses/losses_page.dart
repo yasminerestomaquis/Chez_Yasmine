@@ -176,7 +176,7 @@ class _LossesPageState extends State<LossesPage> {
                               subtitle: Text(
                                 '${loss.reason != null && loss.reason!.isNotEmpty ? '${loss.reason} — ' : ''}'
                                 '${dateFormat.format(loss.createdAt.toLocal())}\n'
-                                'Prix de vente : ${formatAmount(loss.unitSalePrice)} FCFA — '
+                                '${loss.hasUnitPrice ? (loss.sellAsUnit ? 'Unité' : 'Lot') : 'Prix de vente'} : ${formatAmount(loss.unitSalePrice)} FCFA — '
                                 'Par ${loss.createdByName ?? 'auteur inconnu'}',
                               ),
                               isThreeLine: true,

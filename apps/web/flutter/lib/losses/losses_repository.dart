@@ -24,6 +24,7 @@ class LossesRepository {
     required double quantity,
     String? reason,
     DateTime? createdAt,
+    bool sellAsUnit = false,
   }) {
     return _api.post(_base, body: {
       'id': id,
@@ -31,6 +32,7 @@ class LossesRepository {
       'quantity': quantity,
       'reason': ?reason,
       'createdAt': ?createdAt?.toUtc().toIso8601String(),
+      if (sellAsUnit) 'sellAsUnit': true,
     });
   }
 
@@ -42,12 +44,14 @@ class LossesRepository {
     required double quantity,
     required String reason,
     required DateTime createdAt,
+    bool sellAsUnit = false,
   }) {
     return _api.patch('$_base/$lossId', body: {
       'productId': productId,
       'quantity': quantity,
       'reason': reason,
       'createdAt': createdAt.toUtc().toIso8601String(),
+      'sellAsUnit': sellAsUnit,
     });
   }
 

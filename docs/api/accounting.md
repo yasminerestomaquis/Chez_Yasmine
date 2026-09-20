@@ -15,6 +15,8 @@ POST   /establishments/:establishmentId/losses                  (losses.manage)
 PATCH  /establishments/:establishmentId/losses/:lossId          (losses.edit — date, produit, quantité, motif)
 DELETE /establishments/:establishmentId/losses/:lossId          (losses.edit — restitue la quantité au stock)
 
+`sellAsUnit` (POST/PATCH, optionnel) : pour un produit avec `unitSalePrice`, `false` = Lot (retire quantité × taille du lot lue dans `Product.unit`, valorisé à `salePrice`), `true` = Unité (retire la quantité, valorisé à `unitSalePrice`). Ignoré sans prix à l'unité. Le listing renvoie `sellAsUnit` et `hasUnitPrice`.
+
 GET    /establishments/:establishmentId/cash/closings            (cash.manage)
 POST   /establishments/:establishmentId/cash/closings            (cash.manage)
 ```

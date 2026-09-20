@@ -218,9 +218,11 @@ export class ReportsService {
       where: { establishmentId, createdAt: { gte: from, lte: to } },
       select: {
         quantity: true,
+        sellAsUnit: true,
         product: {
           select: {
             salePrice: true,
+            unitSalePrice: true,
             referenceSalePrice: true,
             category: { select: { hasCasePricing: true, hasVariablePricing: true, isBeverage: true } },
           },

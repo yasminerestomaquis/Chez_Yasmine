@@ -5,6 +5,7 @@ import '../api/api_client.dart';
 import '../catalog/catalog_repository.dart';
 import '../catalog/models.dart';
 import 'loss_models.dart';
+import 'loss_pricing_choice.dart';
 import 'losses_repository.dart';
 
 /// Modifie date, produit, quantité et motif d'une perte déjà enregistrée
@@ -46,6 +47,8 @@ class _EditLossDialogState extends State<_EditLossDialog> {
   late final Future<List<Product>> _products = widget.catalogRepository.listProducts();
   late String _productId = widget.loss.productId;
   late DateTime _date = widget.loss.createdAt.toLocal();
+  late bool _sellAsUnit = widget.loss.sellAsUnit;
+  List<Product> _loaded = const [];
   bool _isSubmitting = false;
   String? _error;
 
@@ -69,6 +72,13 @@ class _EditLossDialogState extends State<_EditLossDialog> {
     setState(() => _date = DateTime(picked.year, picked.month, picked.day, _date.hour, _date.minute, _date.second));
   }
 
+  Product? get _selectedProduct {
+    for (final p in _loaded) {
+      if (p.id == _productId) return p;
+    }
+    return null;
+  }
+
   Future<void> _submit() async {
     if (!_formKey.currentState!.validate()) return;
     final quantity = double.parse(_quantityController.text.trim().replaceAll(',', '.'));
@@ -83,6 +93,7 @@ class _EditLossDialogState extends State<_EditLossDialog> {
         quantity: quantity,
         reason: _reasonController.text.trim(),
         createdAt: _date,
+        sellAsUnit: _sellAsUnit && hasLotAndUnitPricing(_selectedProduct),
       );
       if (!mounted) return;
       Navigator.of(context).pop(true);
@@ -121,15 +132,27 @@ class _EditLossDialogState extends State<_EditLossDialog> {
                     return const Text('Impossible de charger la liste des produits.', style: TextStyle(color: Colors.red));
                   }
                   final products = snapshot.data!;
+                  _loaded = products;
                   return DropdownButtonFormField<String>(
                     initialValue: products.any((p) => p.id == _productId) ? _productId : null,
                     isExpanded: true,
                     decoration: const InputDecoration(labelText: 'Produit *'),
                     items: products.map((p) => DropdownMenuItem(value: p.id, child: Text(p.name))).toList(),
-                    onChanged: (value) => setState(() => _productId = value ?? _productId),
+                    onChanged: (value) => setState(() {
+                      _productId = value ?? _productId;
+                      _sellAsUnit = false;
+                    }),
                   );
                 },
               ),
+              if (hasLotAndUnitPricing(_selectedProduct)) ...[
+                const SizedBox(height: 12),
+                LossPricingChoice(
+                  product: _selectedProduct!,
+                  sellAsUnit: _sellAsUnit,
+                  onChanged: (v) => setState(() => _sellAsUnit = v),
+                ),
+              ],
               const SizedBox(height: 12),
               TextFormField(
                 controller: _quantityController,

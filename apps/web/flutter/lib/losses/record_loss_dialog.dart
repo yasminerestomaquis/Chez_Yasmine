@@ -8,6 +8,7 @@ import '../catalog/models.dart';
 import '../sync/device_id.dart';
 import '../sync/pending_operation.dart';
 import '../sync/sync_queue_service.dart';
+import 'loss_pricing_choice.dart';
 import 'losses_repository.dart';
 
 /// Retourne `true` si une perte a été enregistrée (pour rafraîchir l'écran appelant).
@@ -49,6 +50,7 @@ class _RecordLossDialogState extends State<_RecordLossDialog> {
   late final Future<List<Product>> _products = widget.catalogRepository.listProducts();
   Product? _selectedProduct;
   DateTime _date = DateTime.now();
+  bool _sellAsUnit = false;
   bool _isSubmitting = false;
   String? _error;
 
@@ -82,6 +84,8 @@ class _RecordLossDialogState extends State<_RecordLossDialog> {
     setState(() => _date = DateTime(picked.year, picked.month, picked.day, now.hour, now.minute, now.second));
   }
 
+  bool get _sendSellAsUnit => _sellAsUnit && hasLotAndUnitPricing(_selectedProduct);
+
   Future<void> _submit() async {
     if (_selectedProduct == null) {
       setState(() => _error = 'Choisissez un produit');
@@ -103,6 +107,7 @@ class _RecordLossDialogState extends State<_RecordLossDialog> {
         quantity: quantity,
         reason: reason,
         createdAt: _sentDate,
+        sellAsUnit: _sendSellAsUnit,
       );
       if (!mounted) return;
       Navigator.of(context).pop(true);
@@ -123,6 +128,7 @@ class _RecordLossDialogState extends State<_RecordLossDialog> {
             'quantity': quantity,
             'reason': ?(reason.isEmpty ? null : reason),
             'createdAt': ?_sentDate?.toUtc().toIso8601String(),
+            if (_sendSellAsUnit) 'sellAsUnit': true,
           },
           createdAt: DateTime.now(),
         ),
@@ -147,7 +153,7 @@ class _RecordLossDialogState extends State<_RecordLossDialog> {
       title: const Text('Enregistrer une perte'),
       content: Form(
         key: _formKey,
-        child: Column(
+        child: SingleChildScrollView(child: Column(
           mainAxisSize: MainAxisSize.min,
           children: [
             if (widget.allowDateEntry) ...[
@@ -175,11 +181,20 @@ class _RecordLossDialogState extends State<_RecordLossDialog> {
                   items: products.map((p) => DropdownMenuItem(value: p, child: Text(p.name))).toList(),
                   onChanged: (value) => setState(() {
                     _selectedProduct = value;
+                    _sellAsUnit = false;
                     _error = null;
                   }),
                 );
               },
             ),
+            if (hasLotAndUnitPricing(_selectedProduct)) ...[
+              const SizedBox(height: 12),
+              LossPricingChoice(
+                product: _selectedProduct!,
+                sellAsUnit: _sellAsUnit,
+                onChanged: (v) => setState(() => _sellAsUnit = v),
+              ),
+            ],
             const SizedBox(height: 12),
             TextFormField(
               controller: _quantityController,
@@ -198,7 +213,7 @@ class _RecordLossDialogState extends State<_RecordLossDialog> {
               Text(_error!, style: const TextStyle(color: Colors.red)),
             ],
           ],
-        ),
+        )),
       ),
       actions: [
         TextButton(onPressed: () => Navigator.of(context).pop(), child: const Text('Annuler')),

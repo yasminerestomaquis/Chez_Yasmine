@@ -2,6 +2,7 @@ import { BadRequestException, Injectable, NotFoundException } from '@nestjs/comm
 import { PrismaService } from '../prisma/prisma.service.js';
 import { ActivityNotifierService } from '../notifications/activity-notifier.service.js';
 import { applyStockMovement } from '../stock/stock-math.js';
+import { lossStockUnits, lossUnitSalePrice } from '../reports/loss-revenue.js';
 import type { CreateLossDto } from './dto/create-loss.dto.js';
 import type { UpdateLossDto } from './dto/update-loss.dto.js';
 
@@ -36,14 +37,17 @@ export class LossesService {
       throw new NotFoundException('Produit introuvable pour cet établissement');
     }
 
+    // « Unité » n'a de sens que pour un produit qui a un prix à l'unité.
+    const sellAsUnit = dto.sellAsUnit === true && product.unitSalePrice != null;
     const createdAt = dto.createdAt ? new Date(dto.createdAt) : undefined;
     if (createdAt && createdAt.getTime() > Date.now() + MAX_FUTURE_MS) {
       throw new BadRequestException('La date de la perte ne peut pas être dans le futur');
     }
 
+    const stockUnits = lossStockUnits(product, dto.quantity, sellAsUnit);
     let nextQuantity: number;
     try {
-      nextQuantity = applyStockMovement(product.stockQuantity.toNumber(), { type: 'loss', quantity: dto.quantity });
+      nextQuantity = applyStockMovement(product.stockQuantity.toNumber(), { type: 'loss', quantity: stockUnits });
     } catch (error) {
       throw new BadRequestException(error instanceof Error ? error.message : 'Perte invalide');
     }
@@ -51,10 +55,19 @@ export class LossesService {
     const loss = await this.prisma.$transaction(async (tx) => {
       await tx.product.update({ where: { id: product.id }, data: { stockQuantity: nextQuantity } });
       await tx.stockMovement.create({
-        data: { productId: product.id, type: 'loss', quantity: dto.quantity, reason: dto.reason, createdBy: userId, createdAt },
+        data: { productId: product.id, type: 'loss', quantity: stockUnits, reason: dto.reason, createdBy: userId, createdAt },
       });
       return tx.loss.create({
-        data: { id: dto.id, establishmentId, productId: product.id, quantity: dto.quantity, reason: dto.reason, createdBy: userId, createdAt },
+        data: {
+          id: dto.id,
+          establishmentId,
+          productId: product.id,
+          quantity: dto.quantity,
+          reason: dto.reason,
+          sellAsUnit,
+          createdBy: userId,
+          createdAt,
+        },
       });
     });
     await this.activityNotifier.notify(
@@ -76,13 +89,14 @@ export class LossesService {
 
   private findLossMovement(
     tx: Pick<PrismaService, 'stockMovement'>,
-    loss: { productId: string; quantity: { toNumber(): number }; createdBy: string | null; createdAt: Date },
+    loss: { productId: string; createdBy: string | null; createdAt: Date },
+    stockUnits: number,
   ) {
     return tx.stockMovement.findFirst({
       where: {
         productId: loss.productId,
         type: 'loss',
-        quantity: loss.quantity.toNumber(),
+        quantity: stockUnits,
         createdBy: loss.createdBy,
         createdAt: {
           gte: new Date(loss.createdAt.getTime() - MOVEMENT_MATCH_WINDOW_MS),
@@ -112,6 +126,7 @@ export class LossesService {
     if (!product) {
       throw new NotFoundException('Produit introuvable pour cet établissement');
     }
+    const sellAsUnit = (dto.sellAsUnit ?? loss.sellAsUnit) && product.unitSalePrice != null;
     const sameProduct = productId === loss.productId;
     const oldProduct = sameProduct
       ? product
@@ -120,38 +135,38 @@ export class LossesService {
       throw new NotFoundException('Produit introuvable pour cet établissement');
     }
 
+    const oldUnits = lossStockUnits(oldProduct, loss.quantity.toNumber(), loss.sellAsUnit);
+    const newUnits = lossStockUnits(product, quantity, sellAsUnit);
     let newStock: number;
     try {
-      const base = sameProduct
-        ? product.stockQuantity.toNumber() + loss.quantity.toNumber()
-        : product.stockQuantity.toNumber();
-      newStock = applyStockMovement(base, { type: 'loss', quantity });
+      const base = sameProduct ? product.stockQuantity.toNumber() + oldUnits : product.stockQuantity.toNumber();
+      newStock = applyStockMovement(base, { type: 'loss', quantity: newUnits });
     } catch (error) {
       throw new BadRequestException(error instanceof Error ? error.message : 'Perte invalide');
     }
 
     const updated = await this.prisma.$transaction(async (tx) => {
-      const movement = await this.findLossMovement(tx, loss);
+      const movement = await this.findLossMovement(tx, loss, oldUnits);
       if (!sameProduct) {
         await tx.product.update({
           where: { id: oldProduct.id },
-          data: { stockQuantity: oldProduct.stockQuantity.toNumber() + loss.quantity.toNumber() },
+          data: { stockQuantity: oldProduct.stockQuantity.toNumber() + oldUnits },
         });
       }
       await tx.product.update({ where: { id: product.id }, data: { stockQuantity: newStock } });
       if (movement) {
         await tx.stockMovement.update({
           where: { id: movement.id },
-          data: { productId: product.id, quantity, reason, createdAt },
+          data: { productId: product.id, quantity: newUnits, reason, createdAt },
         });
       } else {
         await tx.stockMovement.create({
-          data: { productId: product.id, type: 'loss', quantity, reason, createdBy: userId, createdAt },
+          data: { productId: product.id, type: 'loss', quantity: newUnits, reason, createdBy: userId, createdAt },
         });
       }
       return tx.loss.update({
         where: { id: lossId },
-        data: { productId: product.id, quantity, reason, createdAt },
+        data: { productId: product.id, quantity, reason, sellAsUnit, createdAt },
       });
     });
     await this.activityNotifier.notify(
@@ -170,11 +185,12 @@ export class LossesService {
     if (!product) {
       throw new NotFoundException('Produit introuvable pour cet établissement');
     }
+    const units = lossStockUnits(product, loss.quantity.toNumber(), loss.sellAsUnit);
     await this.prisma.$transaction(async (tx) => {
-      const movement = await this.findLossMovement(tx, loss);
+      const movement = await this.findLossMovement(tx, loss, units);
       await tx.product.update({
         where: { id: product.id },
-        data: { stockQuantity: product.stockQuantity.toNumber() + loss.quantity.toNumber() },
+        data: { stockQuantity: product.stockQuantity.toNumber() + units },
       });
       if (movement) {
         await tx.stockMovement.delete({ where: { id: movement.id } });
@@ -193,7 +209,7 @@ export class LossesService {
     const losses = await this.prisma.loss.findMany({
       where: { establishmentId },
       include: {
-        product: { select: { name: true, salePrice: true, referenceSalePrice: true } },
+        product: { select: { name: true, salePrice: true, unitSalePrice: true, referenceSalePrice: true } },
         createdByUser: { select: { fullName: true } },
       },
       orderBy: { createdAt: 'desc' },
@@ -203,13 +219,15 @@ export class LossesService {
       // remplacement du prix d'achat) ; un produit dont le prix se saisit à
       // chaque vente (`salePrice` nul, ex. Gbêlê) retombe sur son prix de
       // vente de référence, sinon 0.
-      const unitSalePrice = loss.product.salePrice?.toNumber() ?? loss.product.referenceSalePrice?.toNumber() ?? 0;
+      const unitSalePrice = lossUnitSalePrice(loss.product, loss.sellAsUnit);
       return {
         id: loss.id,
         productId: loss.productId,
         productName: loss.product.name,
         quantity: loss.quantity.toNumber(),
         reason: loss.reason,
+        sellAsUnit: loss.sellAsUnit,
+        hasUnitPrice: loss.product.unitSalePrice != null,
         unitSalePrice,
         estimatedValue: loss.quantity.toNumber() * unitSalePrice,
         createdByName: loss.createdByUser?.fullName ?? null,

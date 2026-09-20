@@ -63,7 +63,7 @@ describe('LossesService.create', () => {
       data: { productId: 'p1', type: 'loss', quantity: 4, reason: 'Casse', createdBy: 'user-1' },
     });
     expect(prisma.loss.create).toHaveBeenCalledWith({
-      data: { id: 'loss-1', establishmentId: 'est-1', productId: 'p1', quantity: 4, reason: 'Casse', createdBy: 'user-1' },
+      data: { id: 'loss-1', establishmentId: 'est-1', productId: 'p1', quantity: 4, reason: 'Casse', sellAsUnit: false, createdBy: 'user-1' },
     });
     expect(activityNotifierMock.notify).toHaveBeenCalledWith(
       'est-1',
@@ -97,6 +97,7 @@ describe('LossesService.list', () => {
         productId: 'p1',
         quantity: new Decimal(3),
         reason: 'Casse',
+        sellAsUnit: false,
         createdAt: new Date('2026-09-01'),
         product: { name: 'Bière', salePrice: new Decimal(500), referenceSalePrice: null },
         createdByUser: { fullName: 'Awa Koné' },
@@ -106,6 +107,7 @@ describe('LossesService.list', () => {
         productId: 'p2',
         quantity: new Decimal(2),
         reason: null,
+        sellAsUnit: false,
         createdAt: new Date('2026-09-02'),
         product: { name: 'Gbêlê', salePrice: null, referenceSalePrice: new Decimal(4000) },
         createdByUser: null,
@@ -121,6 +123,8 @@ describe('LossesService.list', () => {
         productName: 'Bière',
         quantity: 3,
         reason: 'Casse',
+        sellAsUnit: false,
+        hasUnitPrice: false,
         unitSalePrice: 500,
         estimatedValue: 1500,
         createdByName: 'Awa Koné',
@@ -132,11 +136,88 @@ describe('LossesService.list', () => {
         productName: 'Gbêlê',
         quantity: 2,
         reason: null,
+        sellAsUnit: false,
+        hasUnitPrice: false,
         unitSalePrice: 4000,
         estimatedValue: 8000,
         createdByName: null,
         createdAt: new Date('2026-09-02'),
       },
+    ]);
+  });
+});
+
+describe('LossesService - choix Lot / Unite (2026-09-20)', () => {
+  let prisma: ReturnType<typeof makePrismaMock>;
+  let service: LossesService;
+
+  beforeEach(() => {
+    vi.mocked(activityNotifierMock.notify).mockClear();
+    prisma = makePrismaMock();
+    service = new LossesService(prisma as unknown as PrismaService, activityNotifierMock);
+  });
+
+  it('enregistre sellAsUnit quand le produit a un prix a lunite', async () => {
+    (prisma.product as any).findFirst.mockResolvedValue({
+      id: 'p1',
+      name: 'Heineken 33',
+      stockQuantity: new Decimal(10),
+      unitSalePrice: new Decimal(700),
+    });
+    (prisma.loss as any).create.mockResolvedValue({ id: 'loss-1' });
+
+    await service.create('est-1', 'user-1', { id: 'loss-1', productId: 'p1', quantity: 1, sellAsUnit: true });
+
+    expect((prisma.loss as any).create.mock.calls[0][0].data.sellAsUnit).toBe(true);
+  });
+
+  it('ignore sellAsUnit quand le produit na pas de prix a lunite', async () => {
+    (prisma.product as any).findFirst.mockResolvedValue({ id: 'p1', name: 'Poulet', stockQuantity: new Decimal(10), unitSalePrice: null });
+    (prisma.loss as any).create.mockResolvedValue({ id: 'loss-1' });
+
+    await service.create('est-1', 'user-1', { id: 'loss-1', productId: 'p1', quantity: 1, sellAsUnit: true });
+
+    expect((prisma.loss as any).create.mock.calls[0][0].data.sellAsUnit).toBe(false);
+  });
+
+  it('Lot (3) retire 3 unites par lot du stock, Unite en retire une seule', async () => {
+    const heineken = { id: 'p1', name: 'Heineken 33', stockQuantity: new Decimal(20), unit: '3', unitSalePrice: new Decimal(700) };
+    (prisma.product as any).findFirst.mockResolvedValue(heineken);
+    (prisma.loss as any).create.mockResolvedValue({ id: 'l' });
+
+    await service.create('est-1', 'user-1', { id: 'l1', productId: 'p1', quantity: 2, sellAsUnit: false });
+    expect(prisma.product.update).toHaveBeenLastCalledWith({ where: { id: 'p1' }, data: { stockQuantity: 14 } });
+    expect((prisma.stockMovement as any).create.mock.calls[0][0].data.quantity).toBe(6);
+
+    await service.create('est-1', 'user-1', { id: 'l2', productId: 'p1', quantity: 2, sellAsUnit: true });
+    expect(prisma.product.update).toHaveBeenLastCalledWith({ where: { id: 'p1' }, data: { stockQuantity: 18 } });
+    expect((prisma.stockMovement as any).create.mock.calls[1][0].data.quantity).toBe(2);
+  });
+
+  it('supprimer une perte Lot restitue 3 unites par lot', async () => {
+    (prisma.loss as any).findFirst.mockResolvedValue({
+      id: 'l1', productId: 'p1', quantity: new Decimal(2), sellAsUnit: false, createdBy: 'u', createdAt: new Date(), reason: null,
+    });
+    (prisma.product as any).findFirst.mockResolvedValue({ id: 'p1', name: 'Heineken 33', stockQuantity: new Decimal(14), unit: '3', unitSalePrice: new Decimal(700) });
+    (prisma.stockMovement as any).findFirst.mockResolvedValue({ id: 'mv' });
+
+    await service.remove('est-1', 'user-1', 'l1');
+
+    expect(prisma.product.update).toHaveBeenCalledWith({ where: { id: 'p1' }, data: { stockQuantity: 20 } });
+  });
+
+  it('valorise une perte Unite au prix a lunite et une perte Lot au prix du lot', async () => {
+    const product = { name: 'Heineken 33', salePrice: new Decimal(2000), unitSalePrice: new Decimal(700), referenceSalePrice: null };
+    (prisma.loss as any).findMany.mockResolvedValue([
+      { id: 'a', productId: 'p1', quantity: new Decimal(2), reason: null, sellAsUnit: true, createdAt: new Date(), product, createdByUser: null },
+      { id: 'b', productId: 'p1', quantity: new Decimal(1), reason: null, sellAsUnit: false, createdAt: new Date(), product, createdByUser: null },
+    ]);
+
+    const result = await service.list('est-1');
+
+    expect(result.map((l) => [l.unitSalePrice, l.estimatedValue, l.hasUnitPrice])).toEqual([
+      [700, 1400, true],
+      [2000, 2000, true],
     ]);
   });
 });

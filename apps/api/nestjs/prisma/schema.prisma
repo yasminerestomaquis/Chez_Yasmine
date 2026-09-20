@@ -682,6 +682,10 @@ model Loss {
   productId       String   @map("product_id")
   quantity        Decimal  @db.Decimal(12, 2)
   reason          String?
+  /// Perte valorisée au prix à l'unité (`Product.unitSalePrice`) plutôt qu'au
+  /// tarif du lot (`salePrice`) — produits vendus par lot ET à l'unité (ex.
+  /// Heineken 33). N'affecte que la valorisation, jamais la quantité retirée du stock.
+  sellAsUnit      Boolean  @default(false) @map("sell_as_unit")
   createdBy       String?  @map("created_by")
   createdAt       DateTime @default(now()) @map("created_at")
 
