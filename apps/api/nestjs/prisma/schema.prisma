@@ -686,6 +686,9 @@ model Loss {
   /// tarif du lot (`salePrice`) — produits vendus par lot ET à l'unité (ex.
   /// Heineken 33). N'affecte que la valorisation, jamais la quantité retirée du stock.
   sellAsUnit      Boolean  @default(false) @map("sell_as_unit")
+  /// N° de la commande (Achats) dont le lot est concerné — obligatoire pour un
+  /// produit à prix par casier ; nul pour les pertes antérieures.
+  orderNumber     Int?     @map("order_number")
   createdBy       String?  @map("created_by")
   createdAt       DateTime @default(now()) @map("created_at")
 

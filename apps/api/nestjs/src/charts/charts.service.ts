@@ -513,14 +513,30 @@ export class ChartsService {
     for (const product of products) {
       const gated = Boolean(product.category?.hasCasePricing || product.category?.hasVariablePricing);
       const validNumbers = product.category?.hasVariablePricing ? validMarketNumbers : validOrderNumbers;
+      const productLots: ProductStockLot[] = [];
+      let hiddenRemaining = 0;
       for (const lot of lotsByProduct.get(product.id) ?? []) {
         if (gated) {
-          if (lot.referenceNumber == null || !validNumbers.has(lot.referenceNumber)) continue;
-          allLots.push({ ...lot, code: `L${String(lot.referenceNumber).padStart(3, '0')}`, productId: product.id, productName: product.name });
+          if (lot.referenceNumber == null) {
+            hiddenRemaining += lot.remainingQuantity;
+            continue;
+          }
+          if (!validNumbers.has(lot.referenceNumber)) continue;
+          productLots.push({ ...lot, code: `L${String(lot.referenceNumber).padStart(3, '0')}`, productId: product.id, productName: product.name });
         } else {
-          allLots.push({ ...lot, productId: product.id, productName: product.name });
+          productLots.push({ ...lot, productId: product.id, productName: product.name });
         }
       }
+      // Le stock restant d'un lot sans N° de commande (entrée/correction manuelle,
+      // ex. « Ajustement suite au point… ») est rattaché au dernier lot visible
+      // du produit : la somme des lots reste égale au stock actuel (2026-09-20).
+      const target = productLots[productLots.length - 1];
+      if (target && hiddenRemaining > 0) {
+        target.remainingQuantity += hiddenRemaining;
+        target.consumedQuantity = target.receivedQuantity - target.remainingQuantity;
+        target.status = 'actif';
+      }
+      allLots.push(...productLots);
     }
     allLots.sort((a, b) => a.receivedAt.getTime() - b.receivedAt.getTime());
     const activeLots = allLots.filter((lot) => lot.status === 'actif');

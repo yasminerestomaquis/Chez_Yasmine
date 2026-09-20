@@ -22,6 +22,11 @@ export class LossesController {
     return this.losses.list(establishmentId);
   }
 
+  @Get('order-numbers/:productId')
+  orderNumbers(@Param('establishmentId') establishmentId: string, @Param('productId') productId: string) {
+    return this.losses.orderNumbers(establishmentId, productId);
+  }
+
   @Post()
   async create(@Req() request: Request, @Param('establishmentId') establishmentId: string, @Body() dto: CreateLossDto) {
     // Saisir une date (antidatage) exige losses.edit — sinon horodatage serveur.

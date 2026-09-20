@@ -17,6 +17,8 @@ DELETE /establishments/:establishmentId/losses/:lossId          (losses.edit —
 
 `sellAsUnit` (POST/PATCH, optionnel) : pour un produit avec `unitSalePrice`, `false` = Lot (retire quantité × taille du lot lue dans `Product.unit`, valorisé à `salePrice`), `true` = Unité (retire la quantité, valorisé à `unitSalePrice`). Ignoré sans prix à l'unité. Le listing renvoie `sellAsUnit` et `hasUnitPrice`.
 
+`orderNumber` (POST/PATCH) : obligatoire pour un produit dont la catégorie a `hasCasePricing` ; doit désigner une commande (Achats) contenant le produit. `GET .../losses/order-numbers/:productId` renvoie `{required, options, defaultOrderNumber}`. Le mouvement de stock 'loss' reçoit le motif `Commande n°X — …`, ce qui impute la perte au lot de cette commande.
+
 GET    /establishments/:establishmentId/cash/closings            (cash.manage)
 POST   /establishments/:establishmentId/cash/closings            (cash.manage)
 ```

@@ -1,4 +1,5 @@
 import '../api/api_client.dart';
+import '../common/order_number_field.dart';
 import 'stock_models.dart';
 
 /// Correspond à apps/api/nestjs/src/stock/stock.controller.ts.
@@ -42,6 +43,7 @@ class StockRepository {
     String? reason,
     String? id,
     int? marketNumber,
+    int? orderNumber,
   }) {
     return _api.post(
       '/establishments/$establishmentId/products/$productId/stock-movements',
@@ -51,7 +53,14 @@ class StockRepository {
         'quantity': quantity,
         if (reason != null && reason.isNotEmpty) 'reason': reason,
         'marketNumber': ?marketNumber,
+        'orderNumber': ?orderNumber,
       },
     );
+  }
+
+  /// N° de commande proposés (et défaut) pour un produit.
+  Future<OrderNumberChoices> orderNumbers(String productId) async {
+    final json = await _api.get('/establishments/$establishmentId/products/$productId/order-numbers') as Map<String, dynamic>;
+    return OrderNumberChoices.fromJson(json);
   }
 }

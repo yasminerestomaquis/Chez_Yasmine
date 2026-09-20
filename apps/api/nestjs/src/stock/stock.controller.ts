@@ -32,6 +32,12 @@ export class StockController {
     return this.stockMovements.listForProduct(establishmentId, productId);
   }
 
+  @Get('products/:productId/order-numbers')
+  @RequirePermissions('stock.view')
+  orderNumbers(@Param('establishmentId') establishmentId: string, @Param('productId') productId: string) {
+    return this.stockMovements.orderNumbers(establishmentId, productId);
+  }
+
   @Get('stock/alerts')
   @RequirePermissions('stock.view')
   listLowStockAlerts(@Param('establishmentId') establishmentId: string) {

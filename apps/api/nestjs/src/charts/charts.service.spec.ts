@@ -471,6 +471,26 @@ describe('ChartsService.stockLots', () => {
     });
   });
 
+  it('rattache le stock dun lot sans N° de commande au dernier lot visible', async () => {
+    const prisma = makePrismaMock();
+    const service = new ChartsService(prisma as unknown as PrismaService);
+    prisma.product.findMany.mockResolvedValue([
+      { id: 'p1', name: 'Beaufort 50', categoryId: 'c1', category: { name: 'Bieres', hasCasePricing: true, hasVariablePricing: false } },
+    ]);
+    prisma.stockMovement.findMany.mockResolvedValue([
+      { productId: 'p1', type: 'in', quantity: new Decimal(24), createdAt: new Date('2026-09-10T08:00:00Z'), reason: 'Commande n°1' },
+      { productId: 'p1', type: 'sale', quantity: new Decimal(17), createdAt: new Date('2026-09-11T09:00:00Z'), reason: null },
+      { productId: 'p1', type: 'in', quantity: new Decimal(1), createdAt: new Date('2026-09-20T09:00:00Z'), reason: 'Ajustement' },
+    ]);
+    prisma.purchase.findMany.mockResolvedValue([{ orderNumber: 1 }]);
+
+    const result = await service.stockLots('est-1', ['p1']);
+
+    expect(result.historyLots).toHaveLength(1);
+    expect(result.historyLots[0]).toMatchObject({ code: 'L001', receivedQuantity: 24, consumedQuantity: 16, remainingQuantity: 8 });
+    expect(result.totalActiveUnits).toBe(8);
+  });
+
   it('combines lots from several products of the same category, tagging each with its own product name', async () => {
     const prisma = makePrismaMock();
     const service = new ChartsService(prisma as unknown as PrismaService);

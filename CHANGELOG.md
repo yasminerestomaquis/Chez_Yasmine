@@ -2,6 +2,12 @@
 
 ## [Unreleased]
 
+### Ajouté (2026-09-20) — N° de la commande dans Pertes et Stock ; lots Graphiques cohérents
+- **Pertes** et **Stock** (Entrée, Sortie, Correction) : champ obligatoire « N° de la commande » pour les produits à prix par casier (Bières, Vins, Sucreries). Valeur par défaut : commande du dernier lot actif du produit (sinon lot récent, sinon dernière commande). Le serveur refuse une commande absente ou qui ne contient pas le produit. Nouvelles routes `GET .../losses/order-numbers/:productId` et `GET .../products/:id/order-numbers`, colonne `losses.order_number` (migration `20260920150000`, appliquée).
+- Le mouvement de stock porte le motif « Commande n°X » : la sortie/perte est imputée au lot de cette commande (puis FIFO pour le reste).
+- **Graphiques > Stock** : le stock d'une entrée/correction sans N° de commande est rattaché au dernier lot du produit (Beaufort 50 : Restant 8 comme le stock actuel) ; la colonne Consommé n'inclut plus les pertes (affichées dans Perdu).
+- Correction de données Youki Orange à exécuter : `supabase/fixes/2026-09-20_youki_orange_lot.sql`.
+
 ### Ajouté (2026-09-20) — Pertes : choix Lot / Unité
 - Pour les produits vendus par lot ET à l'unité (Heineken 33, Despé 33, Budweiser 33…), l'enregistrement (et la modification) d'une perte propose « Lot (3) — 2 000 FCFA » ou « Unité — 700 FCFA », comme la caisse.
 - **Stock** : Lot retire quantité × taille du lot (3 unités par lot) ; Unité retire la quantité. **Valorisation** : prix du lot ou prix à l'unité (listing, totaux, Accueil Mobile Money). Le mouvement de stock 'loss' porte les unités réellement retirées ; modification/suppression restituent le même nombre.

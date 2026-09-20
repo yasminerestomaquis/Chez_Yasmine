@@ -9,6 +9,7 @@ class Loss {
     this.unitSalePrice = 0,
     this.sellAsUnit = false,
     this.hasUnitPrice = false,
+    this.orderNumber,
     this.createdByName,
     required this.createdAt,
   });
@@ -29,6 +30,9 @@ class Loss {
   /// Le produit se vend par lot ET à l'unité (le choix Lot/Unité s'applique).
   final bool hasUnitPrice;
 
+  /// N° de la commande du lot concerné (produits à prix par casier) ; nul avant cette évolution.
+  final int? orderNumber;
+
   /// Nom complet de l'auteur (`UserProfile.fullName`) ; nul si inconnu.
   final String? createdByName;
   final DateTime createdAt;
@@ -43,6 +47,7 @@ class Loss {
         unitSalePrice: (json['unitSalePrice'] as num?)?.toDouble() ?? 0,
         sellAsUnit: json['sellAsUnit'] as bool? ?? false,
         hasUnitPrice: json['hasUnitPrice'] as bool? ?? false,
+        orderNumber: (json['orderNumber'] as num?)?.toInt(),
         createdByName: json['createdByName'] as String?,
         createdAt: DateTime.parse(json['createdAt'] as String),
       );

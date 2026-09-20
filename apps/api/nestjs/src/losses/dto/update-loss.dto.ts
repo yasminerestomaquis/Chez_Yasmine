@@ -1,4 +1,4 @@
-import { IsBoolean, IsDateString, IsNumber, IsOptional, IsString, IsUUID, Min } from 'class-validator';
+import { IsBoolean, IsDateString, IsInt, IsNumber, IsOptional, IsString, IsUUID, Min } from 'class-validator';
 
 /** Correction d'une perte déjà enregistrée : date, produit, quantité, motif — tous optionnels, seuls les champs fournis changent. */
 export class UpdateLossDto {
@@ -24,4 +24,10 @@ export class UpdateLossDto {
   @IsOptional()
   @IsBoolean()
   sellAsUnit?: boolean;
+
+  /** N° de la commande (Achats) — obligatoire pour un produit à prix par casier. */
+  @IsOptional()
+  @IsInt()
+  @Min(1)
+  orderNumber?: number;
 }

@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:uuid/uuid.dart';
 
 import '../api/api_client.dart';
+import '../common/order_number_field.dart';
 import '../sync/device_id.dart';
 import '../sync/pending_operation.dart';
 import '../sync/sync_queue_service.dart';
@@ -51,6 +52,7 @@ class _StockMovementDialogState extends State<_StockMovementDialog> {
   final _marketNumberController = TextEditingController();
   String _type = 'in';
   bool _isSubmitting = false;
+  int? _orderNumber;
 
   bool get _requiresMarketNumber => widget.hasVariablePricing && _type == 'in';
 
@@ -82,6 +84,7 @@ class _StockMovementDialogState extends State<_StockMovementDialog> {
         reason: reason,
         id: movementId,
         marketNumber: marketNumber,
+        orderNumber: _orderNumber,
       );
       if (!mounted) return;
       Navigator.of(context).pop(true);
@@ -108,6 +111,7 @@ class _StockMovementDialogState extends State<_StockMovementDialog> {
             'quantity': quantity,
             if (reason.isNotEmpty) 'reason': reason,
             'marketNumber': ?marketNumber,
+            'orderNumber': ?_orderNumber,
           },
           createdAt: DateTime.now(),
         ),
@@ -132,65 +136,75 @@ class _StockMovementDialogState extends State<_StockMovementDialog> {
       title: Text('Mouvement de stock — ${widget.productName}'),
       content: Form(
         key: _formKey,
-        child: Column(
-          mainAxisSize: MainAxisSize.min,
-          children: [
-            DropdownButtonFormField<String>(
-              initialValue: _type,
-              decoration: const InputDecoration(labelText: 'Type'),
-              // 'loss' est volontairement exclu ici depuis la Phase 12 : une perte
-              // passe désormais par l'écran « Pertes » (losses/), qui écrit à la
-              // fois le mouvement de stock et l'enregistrement comptable.
-              items: manualStockMovementTypeLabels.entries
-                  .map(
-                    (e) => DropdownMenuItem(value: e.key, child: Text(e.value)),
-                  )
-                  .toList(),
-              onChanged: (value) => setState(() => _type = value!),
-            ),
-            const SizedBox(height: 12),
-            TextFormField(
-              controller: _quantityController,
-              keyboardType: const TextInputType.numberWithOptions(
-                decimal: true,
+        child: SingleChildScrollView(
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              DropdownButtonFormField<String>(
+                initialValue: _type,
+                decoration: const InputDecoration(labelText: 'Type'),
+                // 'loss' est volontairement exclu ici depuis la Phase 12 : une perte
+                // passe désormais par l'écran « Pertes » (losses/), qui écrit à la
+                // fois le mouvement de stock et l'enregistrement comptable.
+                items: manualStockMovementTypeLabels.entries
+                    .map(
+                      (e) =>
+                          DropdownMenuItem(value: e.key, child: Text(e.value)),
+                    )
+                    .toList(),
+                onChanged: (value) => setState(() => _type = value!),
               ),
-              decoration: InputDecoration(
-                labelText: _type == 'adjustment'
-                    ? 'Nouvelle quantité totale *'
-                    : 'Quantité *',
-              ),
-              validator: (v) {
-                final value = double.tryParse(
-                  (v ?? '').trim().replaceAll(',', '.'),
-                );
-                if (value == null || value < 0) return 'Quantité invalide';
-                return null;
-              },
-            ),
-            if (_requiresMarketNumber) ...[
               const SizedBox(height: 12),
               TextFormField(
-                controller: _marketNumberController,
-                keyboardType: TextInputType.number,
-                decoration: const InputDecoration(
-                  labelText: 'N° de marché *',
-                  helperText: 'Doit correspondre à une dépense « Marché » déjà enregistrée',
+                controller: _quantityController,
+                keyboardType: const TextInputType.numberWithOptions(
+                  decimal: true,
+                ),
+                decoration: InputDecoration(
+                  labelText: _type == 'adjustment'
+                      ? 'Nouvelle quantité totale *'
+                      : 'Quantité *',
                 ),
                 validator: (v) {
-                  final value = int.tryParse((v ?? '').trim());
-                  if (value == null || value < 1) {
-                    return 'N° de marché invalide';
-                  }
+                  final value = double.tryParse(
+                    (v ?? '').trim().replaceAll(',', '.'),
+                  );
+                  if (value == null || value < 0) return 'Quantité invalide';
                   return null;
                 },
               ),
+              OrderNumberField(
+                productId: widget.productId,
+                loader: widget.repository.orderNumbers,
+                onChanged: (v) => _orderNumber = v,
+              ),
+              if (_requiresMarketNumber) ...[
+                const SizedBox(height: 12),
+                TextFormField(
+                  controller: _marketNumberController,
+                  keyboardType: TextInputType.number,
+                  decoration: const InputDecoration(
+                    labelText: 'N° de marché *',
+                    helperText: 'Doit correspondre à une dépense « Marché » déjà enregistrée',
+                  ),
+                  validator: (v) {
+                    final value = int.tryParse((v ?? '').trim());
+                    if (value == null || value < 1) {
+                      return 'N° de marché invalide';
+                    }
+                    return null;
+                  },
+                ),
+              ],
+              const SizedBox(height: 12),
+              TextFormField(
+                controller: _reasonController,
+                decoration: const InputDecoration(
+                  labelText: 'Motif (optionnel)',
+                ),
+              ),
             ],
-            const SizedBox(height: 12),
-            TextFormField(
-              controller: _reasonController,
-              decoration: const InputDecoration(labelText: 'Motif (optionnel)'),
-            ),
-          ],
+          ),
         ),
       ),
       actions: [

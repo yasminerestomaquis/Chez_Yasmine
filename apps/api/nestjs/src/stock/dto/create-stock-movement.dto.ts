@@ -31,4 +31,14 @@ export class CreateStockMovementDto {
   @IsInt()
   @Min(1)
   marketNumber?: number;
+
+  /**
+   * N° de la commande (Achats) — obligatoire pour Entrée/Sortie/Correction
+   * sur un produit à prix par casier (Bières, Vins, Sucreries) ; rattache le
+   * mouvement au lot de cette commande (motif « Commande n°X »).
+   */
+  @IsOptional()
+  @IsInt()
+  @Min(1)
+  orderNumber?: number;
 }

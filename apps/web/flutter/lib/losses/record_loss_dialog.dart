@@ -5,6 +5,7 @@ import 'package:uuid/uuid.dart';
 import '../api/api_client.dart';
 import '../catalog/catalog_repository.dart';
 import '../catalog/models.dart';
+import '../common/order_number_field.dart';
 import '../sync/device_id.dart';
 import '../sync/pending_operation.dart';
 import '../sync/sync_queue_service.dart';
@@ -51,6 +52,7 @@ class _RecordLossDialogState extends State<_RecordLossDialog> {
   Product? _selectedProduct;
   DateTime _date = DateTime.now();
   bool _sellAsUnit = false;
+  int? _orderNumber;
   bool _isSubmitting = false;
   String? _error;
 
@@ -108,6 +110,7 @@ class _RecordLossDialogState extends State<_RecordLossDialog> {
         reason: reason,
         createdAt: _sentDate,
         sellAsUnit: _sendSellAsUnit,
+        orderNumber: _orderNumber,
       );
       if (!mounted) return;
       Navigator.of(context).pop(true);
@@ -129,6 +132,7 @@ class _RecordLossDialogState extends State<_RecordLossDialog> {
             'reason': ?(reason.isEmpty ? null : reason),
             'createdAt': ?_sentDate?.toUtc().toIso8601String(),
             if (_sendSellAsUnit) 'sellAsUnit': true,
+            'orderNumber': ?_orderNumber,
           },
           createdAt: DateTime.now(),
         ),
@@ -186,6 +190,11 @@ class _RecordLossDialogState extends State<_RecordLossDialog> {
                   }),
                 );
               },
+            ),
+            OrderNumberField(
+              productId: _selectedProduct?.id,
+              loader: widget.repository.orderNumbers,
+              onChanged: (v) => _orderNumber = v,
             ),
             if (hasLotAndUnitPricing(_selectedProduct)) ...[
               const SizedBox(height: 12),

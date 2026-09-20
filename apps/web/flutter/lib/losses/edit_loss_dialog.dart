@@ -4,6 +4,7 @@ import 'package:intl/intl.dart';
 import '../api/api_client.dart';
 import '../catalog/catalog_repository.dart';
 import '../catalog/models.dart';
+import '../common/order_number_field.dart';
 import 'loss_models.dart';
 import 'loss_pricing_choice.dart';
 import 'losses_repository.dart';
@@ -49,6 +50,7 @@ class _EditLossDialogState extends State<_EditLossDialog> {
   late DateTime _date = widget.loss.createdAt.toLocal();
   late bool _sellAsUnit = widget.loss.sellAsUnit;
   List<Product> _loaded = const [];
+  int? _orderNumber;
   bool _isSubmitting = false;
   String? _error;
 
@@ -94,6 +96,7 @@ class _EditLossDialogState extends State<_EditLossDialog> {
         reason: _reasonController.text.trim(),
         createdAt: _date,
         sellAsUnit: _sellAsUnit && hasLotAndUnitPricing(_selectedProduct),
+        orderNumber: _orderNumber,
       );
       if (!mounted) return;
       Navigator.of(context).pop(true);
@@ -144,6 +147,12 @@ class _EditLossDialogState extends State<_EditLossDialog> {
                     }),
                   );
                 },
+              ),
+              OrderNumberField(
+                productId: _productId,
+                loader: widget.repository.orderNumbers,
+                initialValue: _productId == widget.loss.productId ? widget.loss.orderNumber : null,
+                onChanged: (v) => _orderNumber = v,
               ),
               if (hasLotAndUnitPricing(_selectedProduct)) ...[
                 const SizedBox(height: 12),

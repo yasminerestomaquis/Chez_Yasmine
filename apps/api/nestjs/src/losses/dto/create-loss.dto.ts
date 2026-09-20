@@ -1,4 +1,4 @@
-import { IsBoolean, IsDateString, IsNumber, IsOptional, IsString, IsUUID, Min } from 'class-validator';
+import { IsBoolean, IsDateString, IsInt, IsNumber, IsOptional, IsString, IsUUID, Min } from 'class-validator';
 
 export class CreateLossDto {
   /** Client-generated UUID — same idempotent-replay pattern as sales/stock movements (Phase 9). */
@@ -30,4 +30,10 @@ export class CreateLossDto {
   @IsOptional()
   @IsBoolean()
   sellAsUnit?: boolean;
+
+  /** N° de la commande (Achats) — obligatoire pour un produit à prix par casier. */
+  @IsOptional()
+  @IsInt()
+  @Min(1)
+  orderNumber?: number;
 }

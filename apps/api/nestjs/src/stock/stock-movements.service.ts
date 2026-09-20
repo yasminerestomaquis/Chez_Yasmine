@@ -2,6 +2,7 @@ import { BadRequestException, Injectable, NotFoundException } from '@nestjs/comm
 import { PrismaService } from '../prisma/prisma.service.js';
 import { ActivityNotifierService } from '../notifications/activity-notifier.service.js';
 import type { CreateStockMovementDto } from './dto/create-stock-movement.dto.js';
+import { orderNumberChoices, reasonWithOrder, resolveOrderNumber } from './order-numbers.js';
 import { applyStockMovement, isLowStock } from './stock-math.js';
 
 const MOVEMENT_TYPE_LABELS: Record<string, string> = { in: 'Entrée', out: 'Sortie', adjustment: 'Correction' };
@@ -16,7 +17,7 @@ export class StockMovementsService {
   private async getProductOrThrow(establishmentId: string, productId: string) {
     const product = await this.prisma.product.findFirst({
       where: { id: productId, establishmentId },
-      include: { category: { select: { hasVariablePricing: true } } },
+      include: { category: { select: { hasVariablePricing: true, hasCasePricing: true } } },
     });
     if (!product) {
       throw new NotFoundException('Produit introuvable pour cet établissement');
@@ -65,7 +66,9 @@ export class StockMovementsService {
         throw new BadRequestException(`Aucun marché n°${dto.marketNumber} enregistré pour cet établissement`);
       }
     }
-    const reason = this.resolveReason(dto, hasVariablePricing);
+    const orderNumber = await resolveOrderNumber(this.prisma, establishmentId, product, dto.orderNumber);
+    const reason =
+      orderNumber !== undefined ? reasonWithOrder(orderNumber, dto.reason) : this.resolveReason(dto, hasVariablePricing);
 
     let nextQuantity: number;
     try {
@@ -87,6 +90,12 @@ export class StockMovementsService {
       `${MOVEMENT_TYPE_LABELS[dto.type] ?? dto.type} — ${product.name} : ${dto.quantity}${dto.reason ? ` (${dto.reason})` : ''}`,
     );
     return movement;
+  }
+
+  /** N° de commande proposés (et valeur par défaut) pour le formulaire de mouvement. */
+  async orderNumbers(establishmentId: string, productId: string) {
+    await this.getProductOrThrow(establishmentId, productId);
+    return orderNumberChoices(this.prisma, establishmentId, productId);
   }
 
   async listForProduct(establishmentId: string, productId: string) {

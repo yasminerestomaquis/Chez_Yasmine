@@ -227,7 +227,7 @@ class _StockLotsTabState extends State<StockLotsTab> {
                 if (showProductColumn) DataCell(Text(lot.productName)),
                 DataCell(Text(_dayFormat.format(lot.receivedAt))),
                 DataCell(Text(_formatQuantity(lot.receivedQuantity))),
-                DataCell(Text(_formatQuantity(lot.consumedQuantity))),
+                DataCell(Text(_formatQuantity(lot.consumedQuantity - lot.lossQuantity))),
                 DataCell(Text(_formatQuantity(lot.lossQuantity))),
                 DataCell(Text(_formatQuantity(lot.remainingQuantity))),
                 DataCell(_statusBadge(lot)),

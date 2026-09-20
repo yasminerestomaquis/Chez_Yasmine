@@ -46,10 +46,19 @@ function parseReferenceNumber(reason?: string | null): number | null {
   return match ? Number(match[1]) : null;
 }
 
-/** Consomme `quantity` unités des lots les plus anciens en premier (FIFO), en place. */
-function consumeFifo(lots: WorkingLot[], quantity: number, isLoss: boolean): void {
+/**
+ * Consomme `quantity` unités des lots les plus anciens en premier (FIFO), en
+ * place. Si le mouvement porte un N° de commande (`preferredReference`, saisi
+ * dans Pertes/Stock — 2026-09-20), les lots de cette commande sont consommés
+ * d'abord ; le reste éventuel retombe sur l'ordre FIFO habituel.
+ */
+function consumeFifo(lots: WorkingLot[], quantity: number, isLoss: boolean, preferredReference: number | null = null): void {
   let remaining = quantity;
-  for (const lot of lots) {
+  const ordered =
+    preferredReference == null
+      ? lots
+      : [...lots.filter((lot) => lot.referenceNumber === preferredReference), ...lots.filter((lot) => lot.referenceNumber !== preferredReference)];
+  for (const lot of ordered) {
     if (remaining <= 0) break;
     const taken = Math.min(lot.remainingQuantity, remaining);
     lot.remainingQuantity -= taken;
@@ -103,7 +112,7 @@ export function computeFifoLots(movements: StockLotMovement[]): StockLot[] {
         runningTotal += movement.quantity;
         break;
       case 'out':
-        consumeFifo(lots, movement.quantity, false);
+        consumeFifo(lots, movement.quantity, false, parseReferenceNumber(movement.reason));
         runningTotal -= movement.quantity;
         break;
       case 'sale':
@@ -111,7 +120,7 @@ export function computeFifoLots(movements: StockLotMovement[]): StockLot[] {
         runningTotal -= movement.quantity;
         break;
       case 'loss':
-        consumeFifo(lots, movement.quantity, true);
+        consumeFifo(lots, movement.quantity, true, parseReferenceNumber(movement.reason));
         runningTotal -= movement.quantity;
         break;
       case 'adjustment': {
@@ -125,7 +134,7 @@ export function computeFifoLots(movements: StockLotMovement[]): StockLot[] {
             referenceNumber: parseReferenceNumber(movement.reason),
           });
         } else if (delta < 0) {
-          consumeFifo(lots, -delta, false);
+          consumeFifo(lots, -delta, false, parseReferenceNumber(movement.reason));
         }
         runningTotal = movement.quantity;
         break;

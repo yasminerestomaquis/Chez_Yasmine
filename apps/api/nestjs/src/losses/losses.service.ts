@@ -2,6 +2,7 @@ import { BadRequestException, Injectable, NotFoundException } from '@nestjs/comm
 import { PrismaService } from '../prisma/prisma.service.js';
 import { ActivityNotifierService } from '../notifications/activity-notifier.service.js';
 import { applyStockMovement } from '../stock/stock-math.js';
+import { orderNumberChoices, reasonWithOrder, resolveOrderNumber } from '../stock/order-numbers.js';
 import { lossStockUnits, lossUnitSalePrice } from '../reports/loss-revenue.js';
 import type { CreateLossDto } from './dto/create-loss.dto.js';
 import type { UpdateLossDto } from './dto/update-loss.dto.js';
@@ -32,7 +33,10 @@ export class LossesService {
       if (existing) return existing;
     }
 
-    const product = await this.prisma.product.findFirst({ where: { id: dto.productId, establishmentId } });
+    const product = await this.prisma.product.findFirst({
+      where: { id: dto.productId, establishmentId },
+      include: { category: { select: { hasCasePricing: true } } },
+    });
     if (!product) {
       throw new NotFoundException('Produit introuvable pour cet établissement');
     }
@@ -44,6 +48,8 @@ export class LossesService {
       throw new BadRequestException('La date de la perte ne peut pas être dans le futur');
     }
 
+    const orderNumber = await resolveOrderNumber(this.prisma, establishmentId, product, dto.orderNumber);
+    const movementReason = reasonWithOrder(orderNumber, dto.reason);
     const stockUnits = lossStockUnits(product, dto.quantity, sellAsUnit);
     let nextQuantity: number;
     try {
@@ -55,7 +61,7 @@ export class LossesService {
     const loss = await this.prisma.$transaction(async (tx) => {
       await tx.product.update({ where: { id: product.id }, data: { stockQuantity: nextQuantity } });
       await tx.stockMovement.create({
-        data: { productId: product.id, type: 'loss', quantity: stockUnits, reason: dto.reason, createdBy: userId, createdAt },
+        data: { productId: product.id, type: 'loss', quantity: stockUnits, reason: movementReason, createdBy: userId, createdAt },
       });
       return tx.loss.create({
         data: {
@@ -65,6 +71,7 @@ export class LossesService {
           quantity: dto.quantity,
           reason: dto.reason,
           sellAsUnit,
+          orderNumber,
           createdBy: userId,
           createdAt,
         },
@@ -122,10 +129,14 @@ export class LossesService {
     const reason = dto.reason !== undefined ? dto.reason : loss.reason;
     const createdAt = dto.createdAt ? new Date(dto.createdAt) : loss.createdAt;
 
-    const product = await this.prisma.product.findFirst({ where: { id: productId, establishmentId } });
+    const product = await this.prisma.product.findFirst({
+      where: { id: productId, establishmentId },
+      include: { category: { select: { hasCasePricing: true } } },
+    });
     if (!product) {
       throw new NotFoundException('Produit introuvable pour cet établissement');
     }
+    const orderNumber = await resolveOrderNumber(this.prisma, establishmentId, product, dto.orderNumber ?? loss.orderNumber);
     const sellAsUnit = (dto.sellAsUnit ?? loss.sellAsUnit) && product.unitSalePrice != null;
     const sameProduct = productId === loss.productId;
     const oldProduct = sameProduct
@@ -157,16 +168,16 @@ export class LossesService {
       if (movement) {
         await tx.stockMovement.update({
           where: { id: movement.id },
-          data: { productId: product.id, quantity: newUnits, reason, createdAt },
+          data: { productId: product.id, quantity: newUnits, reason: reasonWithOrder(orderNumber, reason), createdAt },
         });
       } else {
         await tx.stockMovement.create({
-          data: { productId: product.id, type: 'loss', quantity: newUnits, reason, createdBy: userId, createdAt },
+          data: { productId: product.id, type: 'loss', quantity: newUnits, reason: reasonWithOrder(orderNumber, reason), createdBy: userId, createdAt },
         });
       }
       return tx.loss.update({
         where: { id: lossId },
-        data: { productId: product.id, quantity, reason, sellAsUnit, createdAt },
+        data: { productId: product.id, quantity, reason, sellAsUnit, orderNumber: orderNumber ?? null, createdAt },
       });
     });
     await this.activityNotifier.notify(
@@ -205,6 +216,11 @@ export class LossesService {
     );
   }
 
+  /** N° de commande proposés (et valeur par défaut) pour l'enregistrement d'une perte. */
+  async orderNumbers(establishmentId: string, productId: string) {
+    return orderNumberChoices(this.prisma, establishmentId, productId);
+  }
+
   async list(establishmentId: string) {
     const losses = await this.prisma.loss.findMany({
       where: { establishmentId },
@@ -228,6 +244,7 @@ export class LossesService {
         reason: loss.reason,
         sellAsUnit: loss.sellAsUnit,
         hasUnitPrice: loss.product.unitSalePrice != null,
+        orderNumber: loss.orderNumber,
         unitSalePrice,
         estimatedValue: loss.quantity.toNumber() * unitSalePrice,
         createdByName: loss.createdByUser?.fullName ?? null,

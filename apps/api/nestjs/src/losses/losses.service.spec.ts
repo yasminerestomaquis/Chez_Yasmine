@@ -180,6 +180,28 @@ describe('LossesService - choix Lot / Unite (2026-09-20)', () => {
     expect((prisma.loss as any).create.mock.calls[0][0].data.sellAsUnit).toBe(false);
   });
 
+  it('refuse une perte sans N° de commande pour un produit a casier', async () => {
+    (prisma.product as any).findFirst.mockResolvedValue({
+      id: 'p1', name: 'Beaufort 50', stockQuantity: new Decimal(10), unitSalePrice: null, category: { hasCasePricing: true },
+    });
+
+    await expect(service.create('est-1', 'user-1', { id: 'l1', productId: 'p1', quantity: 1 })).rejects.toBeInstanceOf(BadRequestException);
+    expect(prisma.$transaction).not.toHaveBeenCalled();
+  });
+
+  it('rattache la perte a la commande choisie (colonne et motif du mouvement)', async () => {
+    (prisma.product as any).findFirst.mockResolvedValue({
+      id: 'p1', name: 'Beaufort 50', stockQuantity: new Decimal(10), unitSalePrice: null, category: { hasCasePricing: true },
+    });
+    (prisma as any).purchase = { findFirst: vi.fn().mockResolvedValue({ id: 'pu1' }) };
+    (prisma.loss as any).create.mockResolvedValue({ id: 'l1' });
+
+    await service.create('est-1', 'user-1', { id: 'l1', productId: 'p1', quantity: 1, reason: 'Casse', orderNumber: 1 });
+
+    expect((prisma.loss as any).create.mock.calls[0][0].data.orderNumber).toBe(1);
+    expect((prisma.stockMovement as any).create.mock.calls[0][0].data.reason).toBe('Commande n°1 — Casse');
+  });
+
   it('Lot (3) retire 3 unites par lot du stock, Unite en retire une seule', async () => {
     const heineken = { id: 'p1', name: 'Heineken 33', stockQuantity: new Decimal(20), unit: '3', unitSalePrice: new Decimal(700) };
     (prisma.product as any).findFirst.mockResolvedValue(heineken);
@@ -229,6 +251,8 @@ const existingLoss = {
   quantity: D(4),
   reason: 'Casse',
   createdBy: 'user-1',
+  sellAsUnit: false,
+  orderNumber: null,
   createdAt: new Date('2026-09-10T10:00:00Z'),
 };
 
@@ -263,7 +287,7 @@ describe('LossesService.update / remove (2026-09-20)', () => {
     });
     expect(prisma.loss.update).toHaveBeenCalledWith({
       where: { id: 'loss-1' },
-      data: { productId: 'p1', quantity: 5, reason: 'Périmé', createdAt: new Date('2026-09-12T08:00:00Z') },
+      data: { productId: 'p1', quantity: 5, reason: 'Périmé', sellAsUnit: false, orderNumber: null, createdAt: new Date('2026-09-12T08:00:00Z') },
     });
     expect(activityNotifierMock.notify).toHaveBeenCalledWith('est-1', 'user-2', 'Perte modifiée', expect.any(String));
   });
