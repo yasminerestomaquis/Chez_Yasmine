@@ -228,7 +228,7 @@ class _HomeDashboardState extends State<HomeDashboard> {
     _ModuleEntry(
       Icons.report_gmailerrorred_outlined,
       'Pertes',
-      (_) => LossesPage(establishmentId: widget.establishmentId),
+      (_) => LossesPage(establishmentId: widget.establishmentId, roleName: widget.roleName),
     ),
     _ModuleEntry(
       Icons.people_outline,

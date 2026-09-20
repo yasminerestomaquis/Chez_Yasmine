@@ -26,4 +26,24 @@ class LossesRepository {
       'reason': ?reason,
     });
   }
+
+  /// Correction d'une perte (permission `losses.edit`) : date, produit,
+  /// quantité, motif. Le serveur recalcule le stock en conséquence.
+  Future<void> updateLoss(
+    String lossId, {
+    required String productId,
+    required double quantity,
+    required String reason,
+    required DateTime createdAt,
+  }) {
+    return _api.patch('$_base/$lossId', body: {
+      'productId': productId,
+      'quantity': quantity,
+      'reason': reason,
+      'createdAt': createdAt.toUtc().toIso8601String(),
+    });
+  }
+
+  /// Supprime une perte et restitue sa quantité au stock (permission `losses.edit`).
+  Future<void> deleteLoss(String lossId) => _api.delete('$_base/$lossId');
 }

@@ -9,9 +9,9 @@ const activityNotifierMock = { notify: vi.fn() } as unknown as ActivityNotifierS
 
 function makePrismaMock() {
   const prisma: Record<string, unknown> = {
-    loss: { findFirst: vi.fn(), findMany: vi.fn(), create: vi.fn() },
+    loss: { findFirst: vi.fn(), findMany: vi.fn(), create: vi.fn(), update: vi.fn(), delete: vi.fn() },
     product: { findFirst: vi.fn(), update: vi.fn() },
-    stockMovement: { create: vi.fn() },
+    stockMovement: { create: vi.fn(), findFirst: vi.fn(), update: vi.fn(), delete: vi.fn() },
     $transaction: vi.fn(async (callback: (tx: unknown) => unknown) => callback(prisma)),
   };
   return prisma;
@@ -99,6 +99,7 @@ describe('LossesService.list', () => {
         reason: 'Casse',
         createdAt: new Date('2026-09-01'),
         product: { name: 'Bière', purchasePrice: new Decimal(400) },
+        createdByUser: { fullName: 'Awa Koné' },
       },
       {
         id: 'loss-2',
@@ -107,6 +108,7 @@ describe('LossesService.list', () => {
         reason: null,
         createdAt: new Date('2026-09-02'),
         product: { name: 'Glaçons', purchasePrice: null },
+        createdByUser: null,
       },
     ]);
 
@@ -120,6 +122,7 @@ describe('LossesService.list', () => {
         quantity: 3,
         reason: 'Casse',
         estimatedValue: 1200,
+        createdByName: 'Awa Koné',
         createdAt: new Date('2026-09-01'),
       },
       {
@@ -129,8 +132,100 @@ describe('LossesService.list', () => {
         quantity: 2,
         reason: null,
         estimatedValue: 0,
+        createdByName: null,
         createdAt: new Date('2026-09-02'),
       },
     ]);
+  });
+});
+
+const D = (n: number) => new Decimal(n);
+const existingLoss = {
+  id: 'loss-1',
+  productId: 'p1',
+  quantity: D(4),
+  reason: 'Casse',
+  createdBy: 'user-1',
+  createdAt: new Date('2026-09-10T10:00:00Z'),
+};
+
+describe('LossesService.update / remove (2026-09-20)', () => {
+  let prisma: ReturnType<typeof makePrismaMock>;
+  let service: LossesService;
+
+  beforeEach(() => {
+    vi.mocked(activityNotifierMock.notify).mockClear();
+    prisma = makePrismaMock();
+    service = new LossesService(prisma as unknown as PrismaService, activityNotifierMock);
+    (prisma.loss as any).findFirst.mockResolvedValue(existingLoss);
+    (prisma.stockMovement as any).findFirst.mockResolvedValue({ id: 'mv-1' });
+  });
+
+  it('throws NotFoundException for an unknown loss', async () => {
+    (prisma.loss as any).findFirst.mockResolvedValue(null);
+    await expect(service.update('est-1', 'u', 'x', { quantity: 1 })).rejects.toBeInstanceOf(NotFoundException);
+    await expect(service.remove('est-1', 'u', 'x')).rejects.toBeInstanceOf(NotFoundException);
+  });
+
+  it('same product: gives the old quantity back before applying the new one', async () => {
+    // stock 6 (déjà -4) ; nouvelle quantité 5 -> 6 + 4 - 5 = 5
+    (prisma.product as any).findFirst.mockResolvedValue({ id: 'p1', name: 'Poulet', stockQuantity: D(6) });
+
+    await service.update('est-1', 'user-2', 'loss-1', { quantity: 5, reason: 'Périmé', createdAt: '2026-09-12T08:00:00Z' });
+
+    expect(prisma.product.update).toHaveBeenCalledWith({ where: { id: 'p1' }, data: { stockQuantity: 5 } });
+    expect(prisma.stockMovement.update).toHaveBeenCalledWith({
+      where: { id: 'mv-1' },
+      data: { productId: 'p1', quantity: 5, reason: 'Périmé', createdAt: new Date('2026-09-12T08:00:00Z') },
+    });
+    expect(prisma.loss.update).toHaveBeenCalledWith({
+      where: { id: 'loss-1' },
+      data: { productId: 'p1', quantity: 5, reason: 'Périmé', createdAt: new Date('2026-09-12T08:00:00Z') },
+    });
+    expect(activityNotifierMock.notify).toHaveBeenCalledWith('est-1', 'user-2', 'Perte modifiée', expect.any(String));
+  });
+
+  it('same product: refuses a new quantity larger than the restored stock', async () => {
+    (prisma.product as any).findFirst.mockResolvedValue({ id: 'p1', name: 'Poulet', stockQuantity: D(1) });
+
+    await expect(service.update('est-1', 'u', 'loss-1', { quantity: 9 })).rejects.toBeInstanceOf(BadRequestException);
+    expect(prisma.$transaction).not.toHaveBeenCalled();
+  });
+
+  it('different product: restores the old product and decrements the new one', async () => {
+    (prisma.product as any).findFirst.mockImplementation(async ({ where }: { where: { id: string } }) =>
+      where.id === 'p2'
+        ? { id: 'p2', name: 'Bière', stockQuantity: D(10) }
+        : { id: 'p1', name: 'Poulet', stockQuantity: D(6) },
+    );
+
+    await service.update('est-1', 'u', 'loss-1', { productId: 'p2' });
+
+    expect(prisma.product.update).toHaveBeenCalledWith({ where: { id: 'p1' }, data: { stockQuantity: 10 } });
+    expect(prisma.product.update).toHaveBeenCalledWith({ where: { id: 'p2' }, data: { stockQuantity: 6 } });
+    expect(prisma.stockMovement.update).toHaveBeenCalledWith(
+      expect.objectContaining({ data: expect.objectContaining({ productId: 'p2', quantity: 4 }) }),
+    );
+  });
+
+  it('creates the loss movement when none can be found (legacy data)', async () => {
+    (prisma.stockMovement as any).findFirst.mockResolvedValue(null);
+    (prisma.product as any).findFirst.mockResolvedValue({ id: 'p1', name: 'Poulet', stockQuantity: D(6) });
+
+    await service.update('est-1', 'u', 'loss-1', { quantity: 2 });
+
+    expect(prisma.stockMovement.update).not.toHaveBeenCalled();
+    expect(prisma.stockMovement.create).toHaveBeenCalled();
+  });
+
+  it('remove: returns the quantity to stock and deletes the movement and the loss', async () => {
+    (prisma.product as any).findFirst.mockResolvedValue({ id: 'p1', name: 'Poulet', stockQuantity: D(6) });
+
+    await service.remove('est-1', 'user-3', 'loss-1');
+
+    expect(prisma.product.update).toHaveBeenCalledWith({ where: { id: 'p1' }, data: { stockQuantity: 10 } });
+    expect(prisma.stockMovement.delete).toHaveBeenCalledWith({ where: { id: 'mv-1' } });
+    expect(prisma.loss.delete).toHaveBeenCalledWith({ where: { id: 'loss-1' } });
+    expect(activityNotifierMock.notify).toHaveBeenCalledWith('est-1', 'user-3', 'Perte supprimée', expect.any(String));
   });
 });

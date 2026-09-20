@@ -937,7 +937,10 @@ class _ReportsPageState extends State<ReportsPage> {
           onTap: () => Navigator.of(context).push(
             MaterialPageRoute(
               builder: (_) =>
-                  LossesPage(establishmentId: widget.establishmentId),
+                  LossesPage(
+                    establishmentId: widget.establishmentId,
+                    roleName: widget.roleName,
+                  ),
             ),
           ),
         ),

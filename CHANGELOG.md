@@ -2,6 +2,12 @@
 
 ## [Unreleased]
 
+### Ajouté (2026-09-20) — Module Pertes : modifier/supprimer, listing par date avec totaux, auteur
+- Modifier (date, produit, quantité, motif) et supprimer une perte déjà enregistrée, pour le Super Administrateur, le Gérant et le Serveur — nouvelle permission `losses.edit` (`PATCH`/`DELETE .../losses/:lossId`). Le stock est recalculé (ancienne quantité restituée, nouvelle retirée, refus si insuffisant) et le mouvement de stock associé est corrigé ; la suppression remet la quantité en stock.
+- Listing des pertes filtré par date choisie (aujourd'hui par défaut, « Toutes les dates » possible), avec en gras au-dessus le nombre total de pertes et leur montant total.
+- Chaque ligne indique le nom de l'auteur de la perte.
+- Voir `docs/api/accounting.md`. 6 nouveaux tests NestJS (`LossesService.update/remove`), 8 nouveaux tests Flutter (`loss_filter_test.dart`).
+
 ### Modifié (2026-09-20) — Accueil : le filtre Date passe en sélection multiple
 - Le filtre « Date » de l'Accueil (aujourd'hui et les 6 jours précédents) ouvre désormais un dialogue à cases à cocher (bouton « Réinitialiser » = aujourd'hui seul). Toutes les statistiques — Total ventes, Espèces, Mobile Money, Commandes, Recettes boissons/plats et leur détail par mode de paiement — cumulent les dates cochées ; les libellés suivent (« aujourd'hui », « du lundi 14 septembre », « sur 3 jours »).
 - Le serveur ne résolvant qu'un intervalle continu, l'application interroge `summary`/`payment-category-breakdown` une fois par date cochée puis additionne (`mergeBreakdowns`/`mergeSummaries`, `lib/home/date_selection.dart`) — aucun changement d'API. Les alertes stock, état courant indépendant de la date, ne sont jamais additionnées.

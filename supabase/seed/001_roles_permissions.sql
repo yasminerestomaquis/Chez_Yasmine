@@ -24,7 +24,8 @@ insert into permissions (code, description) values
   ('settings.manage',   'Paramètres de l''établissement'),
   ('payroll.manage',    'Gérer les employés et le workflow de paie (préparer/valider/payer/annuler)'),
   ('payroll.view',      'Consulter les employés, la paie et son historique — sans les modifier'),
-  ('notifications.manage', 'Effacer toutes les notifications de l''organisation — réservé au Super Administrateur')
+  ('notifications.manage', 'Effacer toutes les notifications de l''organisation — réservé au Super Administrateur'),
+  ('losses.edit',       'Modifier (date, produit, quantité, motif) ou supprimer une perte déjà enregistrée')
 on conflict (code) do nothing;
 
 insert into roles (organization_id, name, is_system) values
@@ -51,7 +52,7 @@ select r.id, p.id
 from roles r
 cross join permissions p
 where r.is_system and r.name in ('Super Administrateur', 'Administrateur', 'Propriétaire')
-  and p.code not in ('notifications.manage', 'roles.manage')
+  and p.code not in ('notifications.manage', 'roles.manage', 'losses.edit')
 on conflict do nothing;
 
 -- notifications.manage : Super Administrateur uniquement (bouton "Effacer
@@ -69,6 +70,18 @@ insert into role_permissions (role_id, permission_id)
 select r.id, p.id
 from roles r
 join permissions p on p.code = 'roles.manage'
+where r.is_system and r.name = 'Super Administrateur'
+on conflict do nothing;
+
+-- losses.edit : Super Administrateur, Gérant et Serveur uniquement (décision
+-- utilisateur du 2026-09-20 — modifier/supprimer une perte déjà enregistrée,
+-- voir docs/api/accounting.md). Exclue de la règle générique ci-dessus :
+-- Administrateur/Propriétaire ne la portent pas ; le Gérant l'a déjà via sa
+-- propre règle « tout sauf », listée ici pour le Super Administrateur seul.
+insert into role_permissions (role_id, permission_id)
+select r.id, p.id
+from roles r
+join permissions p on p.code = 'losses.edit'
 where r.is_system and r.name = 'Super Administrateur'
 on conflict do nothing;
 
@@ -128,7 +141,7 @@ on conflict do nothing;
 insert into role_permissions (role_id, permission_id)
 select r.id, p.id
 from roles r
-join permissions p on p.code in ('pos.sell', 'tables.manage', 'products.view', 'reports.view', 'purchases.view', 'stock.view', 'losses.manage', 'pos.correct')
+join permissions p on p.code in ('pos.sell', 'tables.manage', 'products.view', 'reports.view', 'purchases.view', 'stock.view', 'losses.manage', 'losses.edit', 'pos.correct')
 where r.is_system and r.name = 'Serveur'
 on conflict do nothing;
 

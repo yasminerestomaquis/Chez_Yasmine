@@ -12,6 +12,8 @@ DELETE /establishments/:establishmentId/expenses/:expenseId      (expenses.manag
 
 GET    /establishments/:establishmentId/losses                  (losses.manage)
 POST   /establishments/:establishmentId/losses                  (losses.manage)
+PATCH  /establishments/:establishmentId/losses/:lossId          (losses.edit — date, produit, quantité, motif)
+DELETE /establishments/:establishmentId/losses/:lossId          (losses.edit — restitue la quantité au stock)
 
 GET    /establishments/:establishmentId/cash/closings            (cash.manage)
 POST   /establishments/:establishmentId/cash/closings            (cash.manage)
@@ -31,6 +33,11 @@ CRUD simple (`label`, `category?`, `amount`, `expenseDate?` — par défaut aujo
 - `LossesService.create` est le seul chemin restant : il décrémente le stock, écrit le `StockMovement` (`type: 'loss'`) **et** un enregistrement `Loss` (quantité, motif) dans une seule transaction. Idempotent (id client réutilisé, même mécanisme que ventes/mouvements de stock, Phase 9).
 - `LossesService.list` calcule une `estimatedValue` (`quantity * purchasePrice`, 0 si le produit n'a pas de prix d'achat renseigné) — c'est la première fois que `purchasePrice` (Phase 5) sert à autre chose qu'un champ d'affichage.
 - Le dialogue de saisie manuelle de stock (`lib/stock/stock_movement_dialog.dart`) n'affiche plus « Perte » dans son sélecteur de type ; un nouvel écran dédié (`lib/losses/`) le remplace, avec un sélecteur de produit.
+
+**Modifier/supprimer une perte, listing par date, auteur (décision actée 2026-09-20)** :
+- Nouvelle permission **`losses.edit`** (Super Administrateur, Gérant, Serveur uniquement — Administrateur/Propriétaire/Magasinier ne l'ont pas ; exclue de la règle « accès complet », réglable ensuite dans « Gestion des permissions »). Sur `PATCH`/`DELETE`, elle remplace `losses.manage` de la classe (`getAllAndOverride`). Rejouée en production : vérifié, seuls ces 3 rôles la portent.
+- `PATCH` change date, produit, quantité et/ou motif. Le stock suit dans une transaction : l'ancienne quantité est restituée au produit d'origine, la nouvelle est retirée du produit choisi (`applyStockMovement`, refus 400 si stock insuffisant), et le `StockMovement` de type `loss` correspondant est mis à jour (produit, quantité, motif, date) pour que les lots FIFO de Graphiques > Stock restent cohérents. `Loss` et son mouvement n'ont pas de clé étrangère commune : ils sont retrouvés par produit + quantité + auteur + horodatage à ±10 s (créés dans la même transaction) ; si aucun mouvement n'est retrouvé (données anciennes), un nouveau est créé. `DELETE` restitue la quantité au stock et supprime les deux enregistrements. Une notification d'activité est émise (« Perte modifiée »/« Perte supprimée »).
+- Flutter (`lib/losses/`) : la liste des pertes se filtre par **date choisie** (aujourd'hui par défaut, icône calendrier, « Toutes les dates » pour tout voir) ; au-dessus, en gras, le **nombre total de pertes** et le **montant total** du jour affiché (`lossesOnDay`/`lossTotals`, logique pure). Chaque ligne indique **l'auteur** (`createdByName`, `UserProfile.fullName` renvoyé par `GET .../losses`). Icônes modifier/supprimer visibles pour les rôles portant `losses.edit` (`canEditLosses`, comparaison par nom de rôle comme `canRefundSale`).
 
 **Accès accordé au rôle Serveur (décision actée 2026-09-15)** : `losses.manage` ajouté sur demande explicite de l'utilisateur — contrairement à products/stock/purchases, il n'existe pas de `losses.view` séparée (`LossesController` gate `GET`/`POST` avec la même permission), donc un accès en lecture seule n'était pas possible ici : l'octroi est complet (consultation **et** enregistrement d'une perte). `CatalogRepository.listProducts` (sélecteur de produit du dialogue de saisie) fonctionne déjà pour ce rôle via `products.view`, déjà accordé. Rejoué en production (additif, `on conflict do nothing` suffit ici — pas de retrait à faire comme pour `products.manage`/Gérant).
 
