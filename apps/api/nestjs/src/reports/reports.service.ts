@@ -4,6 +4,7 @@ import { PrismaService } from '../prisma/prisma.service.js';
 import { effectiveUnitCost } from '../catalog/product-cost.util.js';
 import { StockMovementsService } from '../stock/stock-movements.service.js';
 import type { ReportQueryDto } from './dto/report-query.dto.js';
+import { lossRevenueByGroup } from './loss-revenue.js';
 
 export interface ReportRange {
   from: Date;
@@ -187,6 +188,11 @@ export class ReportsService {
    * « Marché » dans ChartsService. Les paiements Carte/Crédit existants
    * (anciennes ventes, module Clients) ne comptent dans aucun des deux
    * totaux demandés (Espèces/Mobile Money uniquement).
+   *
+   * Les pertes de la période (valorisées au prix de vente) s'ajoutent, dans le
+   * groupe Boissons/Plats de leur produit, à Mobile Money uniquement — donc
+   * aussi au total des ventes — jamais à Espèces (demande utilisateur du
+   * 2026-09-20, voir docs/api/reports.md).
    */
   async paymentCategoryBreakdown(establishmentId: string, query: ReportQueryDto) {
     const { from, to } = this.resolveRange(query);
@@ -204,6 +210,24 @@ export class ReportsService {
         },
       },
     });
+
+    // Pertes de la période (date de la perte, éventuellement saisie), valorisées
+    // au prix de vente : comptées côté Mobile Money uniquement, dans le groupe
+    // Boissons/Plats de leur produit — jamais en Espèces (voir loss-revenue.ts).
+    const losses = await this.prisma.loss.findMany({
+      where: { establishmentId, createdAt: { gte: from, lte: to } },
+      select: {
+        quantity: true,
+        product: {
+          select: {
+            salePrice: true,
+            referenceSalePrice: true,
+            category: { select: { hasCasePricing: true, hasVariablePricing: true, isBeverage: true } },
+          },
+        },
+      },
+    });
+    const lossRevenue = lossRevenueByGroup(losses);
 
     let cashRevenue = 0;
     let mobileMoneyRevenue = 0;
@@ -241,10 +265,18 @@ export class ReportsService {
       }
     }
 
+    const lossesRevenue = lossRevenue.boissons + lossRevenue.plats;
+    mobileMoneyRevenue += lossesRevenue;
+    boissonsRevenue += lossRevenue.boissons;
+    platsRevenue += lossRevenue.plats;
+    boissonsMobileMoney += lossRevenue.boissons;
+    platsMobileMoney += lossRevenue.plats;
+
     return {
       from,
       to,
       totalRevenue: cashRevenue + mobileMoneyRevenue,
+      lossesRevenue,
       cashRevenue,
       mobileMoneyRevenue,
       boissonsRevenue,

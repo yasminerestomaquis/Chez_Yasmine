@@ -145,6 +145,10 @@ Retirer une permission à un rôle non concerné (ni `users.manage` ni `roles.ma
 
 Aucune migration Prisma : le regroupement affiché (Catalogue, Stock, Caisse...) est calculé côté Flutter à partir du préfixe de `permission.code` (`products.manage` → Catalogue) via une fonction pure testable, la description existante de la permission servant de libellé de ligne — évite une colonne dédiée pour une donnée de présentation entièrement dérivable de la convention de nommage déjà en place.
 
+### Module Graphiques dans la matrice (2026-09-20)
+
+Les 16 permissions `charts.*` (voir `docs/api/charts.md`) se regroupent sous un module **Graphiques** à quatre sous-modules — Recettes, Bénéfices, Stock, Dépenses. Pour ces codes uniquement, la clé de regroupement n'est pas le seul préfixe `charts` mais `charts.<sous-module>` (segment avant le premier `_`, `modulePrefixOf`), et les lignes suivent l'ordre naturel des graphiques (journalier, par catégorie, par produit, top, mensuel ; Stock : détail puis épuisés) plutôt que l'ordre alphabétique des codes (`_sortedChartPermissions`).
+
 ### `grant`/`revoke` idempotents
 
 `grant` utilise `prisma.rolePermission.createMany({ data: [...], skipDuplicates: true })` (équivalent `ON CONFLICT DO NOTHING`) plutôt qu'une vérification d'existence puis création — cocher une case déjà cochée ne renvoie pas d'erreur. `revoke` (`deleteMany`) est par nature idempotent (décocher une case déjà décochée ne fait rien).

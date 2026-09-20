@@ -19,6 +19,13 @@ class ChartsRepository {
     return query;
   }
 
+  /// Codes `charts.*` accordés à l'utilisateur courant (voir
+  /// `ChartsController.myPermissions`) — l'écran Graphiques masque les autres.
+  Future<Set<String>> getMyPermissions() async {
+    final json = await _api.get('$_base/permissions') as Map<String, dynamic>;
+    return (json['permissions'] as List<dynamic>).cast<String>().toSet();
+  }
+
   Future<WeeklyChart> getWeekly({
     required String metric,
     String? weekStart,

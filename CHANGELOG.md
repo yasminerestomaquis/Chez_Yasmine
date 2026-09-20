@@ -2,6 +2,15 @@
 
 ## [Unreleased]
 
+### Modifié (2026-09-20) — Accueil : les pertes comptent côté Mobile Money, par catégorie
+- Une perte enregistrée à une date précise s'ajoute, à son prix de vente, au groupe Boissons ou Plats de son produit et **uniquement côté Mobile Money** : Total ventes, Mobile Money, Boissons/Plats (recettes) et Boissons/Plats Mobile Money l'incluent ; Espèces, Boissons Espèces et Plats Espèces jamais. `GET .../reports/payment-category-breakdown` renvoie aussi `lossesRevenue`. Le bénéfice net de Rapports est inchangé (pertes au coût).
+- Voir `docs/api/reports.md`. Nouveaux tests : 3 (`loss-revenue`) + 2 (`paymentCategoryBreakdown`).
+
+### Ajouté (2026-09-20) — Graphiques dans « Gestion des permissions » ; Pertes au prix de vente et date de saisie
+- **Permissions par graphique** : nouveau module Graphiques dans la matrice (Recettes, Bénéfices, Stock, Dépenses — 16 permissions `charts.*`). Elles remplacent `reports.view` sur les routes de Graphiques (nouvelle route `GET .../charts/permissions`) ; l'écran masque les graphiques refusés. Tous les rôles qui avaient `reports.view` les reçoivent (production comprise) : aucun changement tant qu'on ne retire rien. Voir `docs/api/charts.md`, `docs/api/users.md`.
+- **Pertes** : le listing valorise chaque perte au prix de vente du produit (prix de référence pour Gbêlê) au lieu du prix d'achat, et le montre sur la ligne. Champ **Date** à l'enregistrement pour Super Administrateur/Gérant/Serveur (`losses.edit`, contrôlé côté serveur, y compris en file hors ligne). Voir `docs/api/accounting.md`.
+- Tests : 4 NestJS (`chart-permissions`) + 5 (`LossesService`, prix de vente et date), 4 Flutter (regroupement Graphiques, `Loss.unitSalePrice`, codes).
+
 ### Ajouté (2026-09-20) — Module Pertes : modifier/supprimer, listing par date avec totaux, auteur
 - Modifier (date, produit, quantité, motif) et supprimer une perte déjà enregistrée, pour le Super Administrateur, le Gérant et le Serveur — nouvelle permission `losses.edit` (`PATCH`/`DELETE .../losses/:lossId`). Le stock est recalculé (ancienne quantité restituée, nouvelle retirée, refus si insuffisant) et le mouvement de stock associé est corrigé ; la suppression remet la quantité en stock.
 - Listing des pertes filtré par date choisie (aujourd'hui par défaut, « Toutes les dates » possible), avec en gras au-dessus le nombre total de pertes et leur montant total.

@@ -90,7 +90,7 @@ describe('LossesService.list', () => {
     service = new LossesService(prisma as unknown as PrismaService, activityNotifierMock);
   });
 
-  it('computes estimatedValue from quantity * purchasePrice, defaulting to 0 when purchasePrice is unset', async () => {
+  it('computes estimatedValue from quantity * SALE price, falling back to the reference sale price, then 0 (2026-09-20)', async () => {
     (prisma.loss as any).findMany.mockResolvedValue([
       {
         id: 'loss-1',
@@ -98,7 +98,7 @@ describe('LossesService.list', () => {
         quantity: new Decimal(3),
         reason: 'Casse',
         createdAt: new Date('2026-09-01'),
-        product: { name: 'Bière', purchasePrice: new Decimal(400) },
+        product: { name: 'Bière', salePrice: new Decimal(500), referenceSalePrice: null },
         createdByUser: { fullName: 'Awa Koné' },
       },
       {
@@ -107,7 +107,7 @@ describe('LossesService.list', () => {
         quantity: new Decimal(2),
         reason: null,
         createdAt: new Date('2026-09-02'),
-        product: { name: 'Glaçons', purchasePrice: null },
+        product: { name: 'Gbêlê', salePrice: null, referenceSalePrice: new Decimal(4000) },
         createdByUser: null,
       },
     ]);
@@ -121,17 +121,19 @@ describe('LossesService.list', () => {
         productName: 'Bière',
         quantity: 3,
         reason: 'Casse',
-        estimatedValue: 1200,
+        unitSalePrice: 500,
+        estimatedValue: 1500,
         createdByName: 'Awa Koné',
         createdAt: new Date('2026-09-01'),
       },
       {
         id: 'loss-2',
         productId: 'p2',
-        productName: 'Glaçons',
+        productName: 'Gbêlê',
         quantity: 2,
         reason: null,
-        estimatedValue: 0,
+        unitSalePrice: 4000,
+        estimatedValue: 8000,
         createdByName: null,
         createdAt: new Date('2026-09-02'),
       },
@@ -227,5 +229,43 @@ describe('LossesService.update / remove (2026-09-20)', () => {
     expect(prisma.stockMovement.delete).toHaveBeenCalledWith({ where: { id: 'mv-1' } });
     expect(prisma.loss.delete).toHaveBeenCalledWith({ where: { id: 'loss-1' } });
     expect(activityNotifierMock.notify).toHaveBeenCalledWith('est-1', 'user-3', 'Perte supprimée', expect.any(String));
+  });
+});
+
+describe('LossesService.create — date saisie (2026-09-20)', () => {
+  let prisma: ReturnType<typeof makePrismaMock>;
+  let service: LossesService;
+
+  beforeEach(() => {
+    vi.mocked(activityNotifierMock.notify).mockClear();
+    prisma = makePrismaMock();
+    service = new LossesService(prisma as unknown as PrismaService, activityNotifierMock);
+    (prisma.product as any).findFirst.mockResolvedValue({ id: 'p1', name: 'Poulet', stockQuantity: new Decimal(10) });
+    (prisma.loss as any).create.mockResolvedValue({ id: 'loss-1' });
+  });
+
+  it('applique la date fournie à la perte ET à son mouvement de stock', async () => {
+    await service.create('est-1', 'user-1', { productId: 'p1', quantity: 2, createdAt: '2026-09-10T08:00:00Z' });
+
+    const date = new Date('2026-09-10T08:00:00Z');
+    expect(prisma.stockMovement.create).toHaveBeenCalledWith({
+      data: expect.objectContaining({ createdAt: date }),
+    });
+    expect(prisma.loss.create).toHaveBeenCalledWith({ data: expect.objectContaining({ createdAt: date }) });
+  });
+
+  it('laisse le horodatage serveur quand aucune date est fournie', async () => {
+    await service.create('est-1', 'user-1', { productId: 'p1', quantity: 2 });
+
+    expect(prisma.loss.create).toHaveBeenCalledWith({ data: expect.objectContaining({ createdAt: undefined }) });
+  });
+
+  it('refuse une date dans le futur', async () => {
+    const future = new Date(Date.now() + 3 * 24 * 3600 * 1000).toISOString();
+
+    await expect(service.create('est-1', 'user-1', { productId: 'p1', quantity: 2, createdAt: future })).rejects.toBeInstanceOf(
+      BadRequestException,
+    );
+    expect(prisma.$transaction).not.toHaveBeenCalled();
   });
 });

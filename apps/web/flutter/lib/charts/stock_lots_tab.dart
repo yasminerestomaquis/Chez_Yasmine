@@ -38,9 +38,12 @@ class _StockPalette {
 /// représentent l'état COURANT du stock, pas une période — un lot reçu il y
 /// a plusieurs années peut rester actif aujourd'hui.
 class StockLotsTab extends StatefulWidget {
-  const StockLotsTab({super.key, required this.establishmentId});
+  const StockLotsTab({super.key, required this.establishmentId, required this.allowed});
 
   final String establishmentId;
+
+  /// Codes `charts.*` accordés (voir `GraphiquesPage`).
+  final Set<String> allowed;
 
   @override
   State<StockLotsTab> createState() => _StockLotsTabState();
@@ -64,11 +67,14 @@ class _StockLotsTabState extends State<StockLotsTab> {
   Future<StockLotsChart>? _lotsFuture;
   Future<List<OutOfStockProduct>>? _outOfStockFuture;
 
+  bool get _canLots => widget.allowed.contains('charts.stock_lots');
+  bool get _canOutOfStock => widget.allowed.contains('charts.stock_out');
+
   @override
   void initState() {
     super.initState();
-    _loadProducts();
-    _loadOutOfStock();
+    if (_canLots) _loadProducts();
+    if (_canOutOfStock) _loadOutOfStock();
   }
 
   /// Aucune catégorie cochée ("Toutes") : tous les produits du catalogue,
@@ -316,9 +322,12 @@ class _StockLotsTabState extends State<StockLotsTab> {
   Widget build(BuildContext context) {
     return Container(
       color: _StockPalette.background,
-      child: ListView(
+      child: !_canLots && !_canOutOfStock
+          ? const Center(child: Text('Aucun graphique autorisé pour votre rôle dans cette section.'))
+          : ListView(
         padding: const EdgeInsets.all(16),
         children: [
+          if (_canLots)
           Card(
             shape: RoundedRectangleBorder(
               borderRadius: BorderRadius.circular(12),
@@ -440,6 +449,7 @@ class _StockLotsTabState extends State<StockLotsTab> {
               ),
             ),
           ),
+          if (_canOutOfStock)
           Card(
             margin: const EdgeInsets.only(top: 16),
             shape: RoundedRectangleBorder(

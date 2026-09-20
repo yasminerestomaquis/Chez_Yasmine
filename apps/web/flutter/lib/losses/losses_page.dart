@@ -39,7 +39,12 @@ class _LossesPageState extends State<LossesPage> {
   void _reload() => setState(() => _future = _repository.listLosses());
 
   Future<void> _openRecordDialog() async {
-    final recorded = await showRecordLossDialog(context, repository: _repository, catalogRepository: _catalog);
+    final recorded = await showRecordLossDialog(
+      context,
+      repository: _repository,
+      catalogRepository: _catalog,
+      allowDateEntry: _canEdit,
+    );
     if (recorded == true) _reload();
   }
 
@@ -148,7 +153,7 @@ class _LossesPageState extends State<LossesPage> {
                       style: const TextStyle(fontWeight: FontWeight.bold),
                     ),
                     Text(
-                      'Montant total des pertes : ${formatAmount(totals.totalValue)} FCFA',
+                      'Montant total des pertes (au prix de vente) : ${formatAmount(totals.totalValue)} FCFA',
                       style: const TextStyle(fontWeight: FontWeight.bold),
                     ),
                   ],
@@ -171,6 +176,7 @@ class _LossesPageState extends State<LossesPage> {
                               subtitle: Text(
                                 '${loss.reason != null && loss.reason!.isNotEmpty ? '${loss.reason} — ' : ''}'
                                 '${dateFormat.format(loss.createdAt.toLocal())}\n'
+                                'Prix de vente : ${formatAmount(loss.unitSalePrice)} FCFA — '
                                 'Par ${loss.createdByName ?? 'auteur inconnu'}',
                               ),
                               isThreeLine: true,

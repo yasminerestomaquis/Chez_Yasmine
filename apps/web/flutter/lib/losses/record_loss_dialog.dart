@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'package:intl/intl.dart';
 import 'package:uuid/uuid.dart';
 
 import '../api/api_client.dart';
@@ -14,18 +15,28 @@ Future<bool?> showRecordLossDialog(
   BuildContext context, {
   required LossesRepository repository,
   required CatalogRepository catalogRepository,
+  bool allowDateEntry = false,
 }) {
   return showDialog<bool>(
     context: context,
-    builder: (_) => _RecordLossDialog(repository: repository, catalogRepository: catalogRepository),
+    builder: (_) => _RecordLossDialog(
+      repository: repository,
+      catalogRepository: catalogRepository,
+      allowDateEntry: allowDateEntry,
+    ),
   );
 }
 
 class _RecordLossDialog extends StatefulWidget {
-  const _RecordLossDialog({required this.repository, required this.catalogRepository});
+  const _RecordLossDialog({required this.repository, required this.catalogRepository, required this.allowDateEntry});
 
   final LossesRepository repository;
   final CatalogRepository catalogRepository;
+
+  /// Champ Date de la perte, réservé aux porteurs de `losses.edit` (Super
+  /// Administrateur/Gérant/Serveur, demande utilisateur du 2026-09-20) — le
+  /// serveur refuse une date envoyée par un autre rôle.
+  final bool allowDateEntry;
 
   @override
   State<_RecordLossDialog> createState() => _RecordLossDialogState();
@@ -37,6 +48,7 @@ class _RecordLossDialogState extends State<_RecordLossDialog> {
   final _reasonController = TextEditingController();
   late final Future<List<Product>> _products = widget.catalogRepository.listProducts();
   Product? _selectedProduct;
+  DateTime _date = DateTime.now();
   bool _isSubmitting = false;
   String? _error;
 
@@ -45,6 +57,29 @@ class _RecordLossDialogState extends State<_RecordLossDialog> {
     _quantityController.dispose();
     _reasonController.dispose();
     super.dispose();
+  }
+
+  /// Date envoyée : seulement si le champ est proposé et différent d'aujourd'hui
+  /// (sinon horodatage serveur, comportement inchangé).
+  DateTime? get _sentDate => widget.allowDateEntry && !_isToday ? _date : null;
+
+  bool get _isToday {
+    final now = DateTime.now();
+    return _date.year == now.year && _date.month == now.month && _date.day == now.day;
+  }
+
+  Future<void> _pickDate() async {
+    final picked = await showDatePicker(
+      context: context,
+      initialDate: _date,
+      firstDate: DateTime(2020),
+      lastDate: DateTime.now(),
+      helpText: 'Date de la perte',
+    );
+    if (picked == null) return;
+    // Heure courante conservée : seule la date change.
+    final now = DateTime.now();
+    setState(() => _date = DateTime(picked.year, picked.month, picked.day, now.hour, now.minute, now.second));
   }
 
   Future<void> _submit() async {
@@ -67,6 +102,7 @@ class _RecordLossDialogState extends State<_RecordLossDialog> {
         productId: _selectedProduct!.id,
         quantity: quantity,
         reason: reason,
+        createdAt: _sentDate,
       );
       if (!mounted) return;
       Navigator.of(context).pop(true);
@@ -86,6 +122,7 @@ class _RecordLossDialogState extends State<_RecordLossDialog> {
             'productId': _selectedProduct!.id,
             'quantity': quantity,
             'reason': ?(reason.isEmpty ? null : reason),
+            'createdAt': ?_sentDate?.toUtc().toIso8601String(),
           },
           createdAt: DateTime.now(),
         ),
@@ -113,6 +150,14 @@ class _RecordLossDialogState extends State<_RecordLossDialog> {
         child: Column(
           mainAxisSize: MainAxisSize.min,
           children: [
+            if (widget.allowDateEntry) ...[
+              OutlinedButton.icon(
+                onPressed: _pickDate,
+                icon: const Icon(Icons.calendar_today_outlined, size: 18),
+                label: Text('Date : ${DateFormat('dd/MM/yyyy').format(_date)}'),
+              ),
+              const SizedBox(height: 12),
+            ],
             FutureBuilder<List<Product>>(
               future: _products,
               builder: (context, snapshot) {

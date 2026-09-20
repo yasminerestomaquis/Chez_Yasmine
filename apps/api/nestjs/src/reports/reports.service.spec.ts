@@ -234,6 +234,7 @@ describe('ReportsService.paymentCategoryBreakdown', () => {
   beforeEach(() => {
     prisma = makePrismaMock();
     stockMovements = makeStockMovementsMock();
+    (prisma.loss as any).findMany.mockResolvedValue([]);
     service = new ReportsService(prisma as unknown as PrismaService, stockMovements as unknown as StockMovementsService);
   });
 
@@ -302,6 +303,58 @@ describe('ReportsService.paymentCategoryBreakdown', () => {
     expect(result.boissonsRevenue).toBe(700);
     expect(result.platsRevenue).toBe(0);
     expect(result.boissonsMobileMoney).toBeCloseTo(700);
+  });
+
+  it('ajoute les pertes (au prix de vente) côté Mobile Money uniquement, par groupe Boissons/Plats (2026-09-20)', async () => {
+    (prisma.sale as any).findMany.mockResolvedValue([
+      {
+        payments: [{ method: 'cash', amount: new Decimal(1000) }],
+        items: [
+          { quantity: new Decimal(1), unitPrice: new Decimal(1000), product: { category: { hasCasePricing: true, hasVariablePricing: false, isBeverage: false } } },
+        ],
+      },
+    ]);
+    (prisma.loss as any).findMany.mockResolvedValue([
+      // Gbêlê (boisson hors casier) : 2 × prix de référence 4000
+      {
+        quantity: new Decimal(2),
+        product: { salePrice: null, referenceSalePrice: new Decimal(4000), category: { hasCasePricing: false, hasVariablePricing: false, isBeverage: true } },
+      },
+      // Plat : 1 × 1500
+      {
+        quantity: new Decimal(1),
+        product: { salePrice: new Decimal(1500), referenceSalePrice: null, category: { hasCasePricing: false, hasVariablePricing: true, isBeverage: false } },
+      },
+    ]);
+
+    const result = await service.paymentCategoryBreakdown('est-1', {});
+
+    // Mobile Money : uniquement les pertes ; Espèces : inchangé.
+    expect(result.mobileMoneyRevenue).toBe(9500);
+    expect(result.cashRevenue).toBe(1000);
+    expect(result.totalRevenue).toBe(10500);
+    expect(result.boissonsRevenue).toBe(9000);
+    expect(result.platsRevenue).toBe(1500);
+    expect(result.boissonsMobileMoney).toBeCloseTo(8000);
+    expect(result.platsMobileMoney).toBe(1500);
+    expect(result.boissonsCash).toBeCloseTo(1000);
+    expect(result.platsCash).toBe(0);
+    expect(result.lossesRevenue).toBe(9500);
+  });
+
+  it('requête les pertes de la période choisie pour cet établissement', async () => {
+    (prisma.sale as any).findMany.mockResolvedValue([]);
+
+    await service.paymentCategoryBreakdown('est-1', { from: '2026-09-10T00:00:00Z', to: '2026-09-10T23:59:59Z' });
+
+    expect(prisma.loss.findMany).toHaveBeenCalledWith(
+      expect.objectContaining({
+        where: {
+          establishmentId: 'est-1',
+          createdAt: { gte: new Date('2026-09-10T00:00:00Z'), lte: new Date('2026-09-10T23:59:59Z') },
+        },
+      }),
+    );
   });
 
   it('excludes card/credit payments from cash/mobile-money totals', async () => {

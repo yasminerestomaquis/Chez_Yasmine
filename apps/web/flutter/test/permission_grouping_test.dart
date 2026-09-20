@@ -139,4 +139,52 @@ void main() {
       ]);
     });
   });
+
+  group('Graphiques (2026-09-20) — une permission par graphique', () {
+    PermissionInfo p(String code) => PermissionInfo(code: code, description: code);
+
+    test('les codes charts.* se regroupent en module Graphiques avec 4 sous-modules', () {
+      expect(moduleNameFor('charts.revenue_daily'), 'Graphiques');
+      expect(subModuleNameFor('charts.revenue_daily'), 'Recettes');
+      expect(subModuleNameFor('charts.profit_top'), 'Bénéfices');
+      expect(subModuleNameFor('charts.stock_lots'), 'Stock');
+      expect(subModuleNameFor('charts.expenses_monthly'), 'Dépenses');
+    });
+
+    test('un seul module Graphiques, sous-modules dans l ordre Recettes, Bénéfices, Stock, Dépenses', () {
+      final groups = groupPermissionsByModule([
+        p('charts.expenses_top'),
+        p('charts.stock_out'),
+        p('charts.profit_daily'),
+        p('charts.revenue_daily'),
+      ]);
+
+      expect(groups, hasLength(1));
+      expect(groups.single.name, 'Graphiques');
+      expect(groups.single.subModules.map((s) => s.name).toList(), [
+        'Recettes',
+        'Bénéfices',
+        'Stock',
+        'Dépenses',
+      ]);
+    });
+
+    test('les graphiques d un sous-module suivent l ordre naturel, pas l ordre alphabétique', () {
+      final groups = groupPermissionsByModule([
+        p('charts.revenue_by_category'),
+        p('charts.revenue_by_product'),
+        p('charts.revenue_daily'),
+        p('charts.revenue_monthly'),
+        p('charts.revenue_top'),
+      ]);
+
+      expect(groups.single.subModules.single.permissions.map((x) => x.code).toList(), [
+        'charts.revenue_daily',
+        'charts.revenue_by_category',
+        'charts.revenue_by_product',
+        'charts.revenue_top',
+        'charts.revenue_monthly',
+      ]);
+    });
+  });
 }

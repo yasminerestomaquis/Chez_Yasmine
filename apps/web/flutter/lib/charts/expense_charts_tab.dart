@@ -31,10 +31,13 @@ class _ExpensePalette {
 /// ici. Piloté par le même filtre Année que Recettes/Bénéfices (voir
 /// `GraphiquesPage`), contrairement à Stock.
 class ExpenseChartsTab extends StatefulWidget {
-  const ExpenseChartsTab({super.key, required this.establishmentId, required this.year});
+  const ExpenseChartsTab({super.key, required this.establishmentId, required this.year, required this.allowed});
 
   final String establishmentId;
   final int year;
+
+  /// Codes `charts.*` accordés (voir `GraphiquesPage`).
+  final Set<String> allowed;
 
   @override
   State<ExpenseChartsTab> createState() => _ExpenseChartsTabState();
@@ -66,6 +69,8 @@ class _ExpenseChartsTabState extends State<ExpenseChartsTab> {
     return now.year == year ? now : DateTime(year, 1, 15);
   }
 
+  bool _can(String kind) => widget.allowed.contains('charts.expenses_$kind');
+
   String get _weekStartParam => _weekAnchor.toIso8601String().split('T').first;
 
   String get _topFrom => (_topMonth == null ? DateTime(widget.year, 1, 1) : DateTime(widget.year, _topMonth! + 1, 1))
@@ -77,12 +82,14 @@ class _ExpenseChartsTabState extends State<ExpenseChartsTab> {
       .toIso8601String();
 
   void _reloadTotal() {
+    if (!_can('daily')) return;
     final future = _charts.getExpensesWeekly(weekStart: _weekStartParam);
     future.ignore();
     setState(() => _totalFuture = future);
   }
 
   void _reloadByCategory() {
+    if (!_can('by_category')) return;
     final future = _charts.getExpensesWeeklyByCategory(
       weekStart: _weekStartParam,
       categories: _selectedCategories,
@@ -103,6 +110,7 @@ class _ExpenseChartsTabState extends State<ExpenseChartsTab> {
   }
 
   void _reloadTop() {
+    if (!_can('top')) return;
     final future = _charts.getExpensesTop(from: _topFrom, to: _topTo);
     future.ignore();
     setState(() => _topFuture = future);
@@ -175,9 +183,13 @@ class _ExpenseChartsTabState extends State<ExpenseChartsTab> {
 
   @override
   Widget build(BuildContext context) {
+    if (!['daily', 'by_category', 'top', 'monthly'].any(_can)) {
+      return const Center(child: Text('Aucun graphique autorisé pour votre rôle dans cette section.'));
+    }
     return ListView(
       padding: const EdgeInsets.all(16),
       children: [
+        if (_can('daily'))
         _card(
           title: 'Dépenses journalières totales',
           controls: [_pickWeekButton()],
@@ -206,9 +218,11 @@ class _ExpenseChartsTabState extends State<ExpenseChartsTab> {
             );
           }),
         ),
+        if (_can('by_category'))
         _card(
           title: 'Dépenses journalières totales par catégorie',
           controls: [
+            if (!_can('daily')) _pickWeekButton(),
             Wrap(
               spacing: 8,
               runSpacing: 4,
@@ -243,6 +257,7 @@ class _ExpenseChartsTabState extends State<ExpenseChartsTab> {
             );
           }),
         ),
+        if (_can('top'))
         _card(
           title: 'Top dépenses',
           controls: [
@@ -263,6 +278,7 @@ class _ExpenseChartsTabState extends State<ExpenseChartsTab> {
             (chart) => RankingBarChartWidget(items: chart.items, color: _ExpensePalette.top),
           ),
         ),
+        if (_can('monthly'))
         _card(
           title: 'Dépenses mensuelles',
           child: _futureChart(

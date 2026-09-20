@@ -1,5 +1,8 @@
 import 'package:flutter/material.dart';
 
+import '../api/api_client.dart';
+import 'charts_repository.dart';
+import 'chart_models_permissions.dart';
 import 'expense_charts_tab.dart';
 import 'metric_charts_tab.dart';
 import 'stock_lots_tab.dart';
@@ -22,6 +25,15 @@ class GraphiquesPage extends StatefulWidget {
 
 class _GraphiquesPageState extends State<GraphiquesPage> {
   late int _year = DateTime.now().year;
+
+  /// Graphiques autorisés au rôle courant (`charts.*`, voir « Gestion des
+  /// permissions »). En cas d'échec du chargement (hors ligne, erreur), tous
+  /// sont proposés : le serveur refuse de toute façon ceux qui ne sont pas
+  /// accordés, chaque graphique affichant alors son propre message d'erreur.
+  late final Future<Set<String>> _permissions = ChartsRepository(
+    ApiClient(),
+    widget.establishmentId,
+  ).getMyPermissions().catchError((_) => allChartPermissions);
 
   static const _recettesTitles = ChartTitles(
     dailyTotal: 'Recettes journalières totales',
@@ -60,6 +72,25 @@ class _GraphiquesPageState extends State<GraphiquesPage> {
     final currentYear = DateTime.now().year;
     final years = [for (var y = currentYear; y >= currentYear - 5; y--) y];
 
+    return FutureBuilder<Set<String>>(
+      future: _permissions,
+      builder: (context, snapshot) {
+        if (snapshot.connectionState != ConnectionState.done) {
+          return Scaffold(
+            appBar: AppBar(title: const Text('Graphiques')),
+            body: const Center(child: CircularProgressIndicator()),
+          );
+        }
+        return _buildTabs(context, snapshot.data ?? allChartPermissions, years);
+      },
+    );
+  }
+
+  Widget _buildTabs(
+    BuildContext context,
+    Set<String> allowed,
+    List<int> years,
+  ) {
     return DefaultTabController(
       length: 4,
       child: Scaffold(
@@ -73,7 +104,10 @@ class _GraphiquesPageState extends State<GraphiquesPage> {
                   value: _year,
                   dropdownColor: Theme.of(context).colorScheme.surface,
                   underline: const SizedBox.shrink(),
-                  items: [for (final y in years) DropdownMenuItem(value: y, child: Text('$y'))],
+                  items: [
+                    for (final y in years)
+                      DropdownMenuItem(value: y, child: Text('$y')),
+                  ],
                   onChanged: (value) {
                     if (value != null) setState(() => _year = value);
                   },
@@ -82,7 +116,12 @@ class _GraphiquesPageState extends State<GraphiquesPage> {
             ),
           ],
           bottom: const TabBar(
-            tabs: [Tab(text: 'Recettes'), Tab(text: 'Bénéfices'), Tab(text: 'Stock'), Tab(text: 'Dépenses')],
+            tabs: [
+              Tab(text: 'Recettes'),
+              Tab(text: 'Bénéfices'),
+              Tab(text: 'Stock'),
+              Tab(text: 'Dépenses'),
+            ],
           ),
         ),
         body: TabBarView(
@@ -92,6 +131,8 @@ class _GraphiquesPageState extends State<GraphiquesPage> {
               establishmentId: widget.establishmentId,
               year: _year,
               metric: 'revenue',
+              permissionKey: 'revenue',
+              allowed: allowed,
               titles: _recettesTitles,
               palette: _recettesPalette,
             ),
@@ -100,16 +141,22 @@ class _GraphiquesPageState extends State<GraphiquesPage> {
               establishmentId: widget.establishmentId,
               year: _year,
               metric: 'profit',
+              permissionKey: 'profit',
+              allowed: allowed,
               titles: _beneficesTitles,
               palette: _beneficesPalette,
             ),
             // Pas de clé liée à `_year` : voir la doc de classe, cet onglet
             // représente l'état courant du stock, pas une période.
-            StockLotsTab(establishmentId: widget.establishmentId),
+            StockLotsTab(
+              establishmentId: widget.establishmentId,
+              allowed: allowed,
+            ),
             ExpenseChartsTab(
               key: ValueKey('depenses-$_year'),
               establishmentId: widget.establishmentId,
               year: _year,
+              allowed: allowed,
             ),
           ],
         ),

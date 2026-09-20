@@ -18,12 +18,19 @@ class LossesRepository {
   /// `id` généré par l'appelant (plutôt qu'ici) pour qu'il puisse être réutilisé
   /// comme clé d'idempotence de la file hors ligne si la requête échoue par
   /// coupure réseau — voir `record_loss_dialog.dart`.
-  Future<void> recordLoss({required String id, required String productId, required double quantity, String? reason}) {
+  Future<void> recordLoss({
+    required String id,
+    required String productId,
+    required double quantity,
+    String? reason,
+    DateTime? createdAt,
+  }) {
     return _api.post(_base, body: {
       'id': id,
       'productId': productId,
       'quantity': quantity,
       'reason': ?reason,
+      'createdAt': ?createdAt?.toUtc().toIso8601String(),
     });
   }
 

@@ -39,6 +39,10 @@ const Map<String, String> _prefixToModule = {
   'credits': 'Clients',
   'products': 'Catalogue',
   'reports': 'Rapports',
+  'charts.revenue': 'Graphiques',
+  'charts.profit': 'Graphiques',
+  'charts.stock': 'Graphiques',
+  'charts.expenses': 'Graphiques',
   'cash': 'Clôture de caisse',
   'notifications': 'Notifications',
   'settings': 'Paramètres',
@@ -58,6 +62,10 @@ const Map<String, String> _prefixToSubModule = {
   'credits': 'Crédits',
   'products': 'Catalogue',
   'reports': 'Rapports',
+  'charts.revenue': 'Recettes',
+  'charts.profit': 'Bénéfices',
+  'charts.stock': 'Stock',
+  'charts.expenses': 'Dépenses',
   'cash': 'Ouverture / clôture',
   'notifications': 'Notifications',
   'settings': 'Paramètres',
@@ -79,6 +87,10 @@ const List<String> _prefixOrder = [
   'credits',
   'products',
   'reports',
+  'charts.revenue',
+  'charts.profit',
+  'charts.stock',
+  'charts.expenses',
   'cash',
   'notifications',
   'settings',
@@ -86,7 +98,17 @@ const List<String> _prefixOrder = [
   'roles',
 ];
 
-String modulePrefixOf(String code) => code.split('.').first;
+/// Clé de regroupement d'un code : son préfixe (`products.manage` ->
+/// `products`), sauf pour les graphiques (`charts.revenue_daily` ->
+/// `charts.revenue`) où le sous-module (Recettes, Bénéfices, Stock, Dépenses)
+/// est le segment avant le premier `_` — une permission par graphique,
+/// décision utilisateur du 2026-09-20.
+String modulePrefixOf(String code) {
+  final prefix = code.split('.').first;
+  if (prefix != 'charts') return prefix;
+  final rest = code.length > 7 ? code.substring(7) : '';
+  return 'charts.${rest.split('_').first}';
+}
 
 /// Module affiché pour un code de permission — un préfixe inconnu (une
 /// permission ajoutée sans mettre à jour cette table) retombe sur son
@@ -104,6 +126,29 @@ String subModuleNameFor(String code) {
 
 String _capitalize(String s) =>
     s.isEmpty ? s : '${s[0].toUpperCase()}${s.substring(1)}';
+
+/// Ordre naturel des graphiques d'un sous-module (journalier, par catégorie,
+/// par produit, top, mensuel ; Stock : détail puis épuisés) plutôt que
+/// l'ordre alphabétique des codes renvoyé par l'API.
+const List<String> _chartKindOrder = [
+  'daily',
+  'by_category',
+  'by_product',
+  'top',
+  'monthly',
+  'lots',
+  'out',
+];
+
+List<PermissionInfo> _sortedChartPermissions(List<PermissionInfo> items) {
+  int rank(PermissionInfo p) {
+    final kind = p.code.substring(p.code.indexOf('_') + 1);
+    final index = _chartKindOrder.indexOf(kind);
+    return index == -1 ? _chartKindOrder.length : index;
+  }
+
+  return [...items]..sort((a, b) => rank(a).compareTo(rank(b)));
+}
 
 /// Groupe une liste de permissions en modules puis sous-modules, dans
 /// l'ordre stable de [_prefixOrder] (les préfixes inconnus sont ajoutés à la
@@ -126,7 +171,9 @@ List<PermissionModuleGroup> groupPermissionsByModule(
 
   final subModulesByModule = <String, List<PermissionSubModuleGroup>>{};
   for (final prefix in orderedPrefixes) {
-    final modulePermissions = byPrefix[prefix]!;
+    final modulePermissions = prefix.startsWith('charts.')
+        ? _sortedChartPermissions(byPrefix[prefix]!)
+        : byPrefix[prefix]!;
     final moduleName = _prefixToModule[prefix] ?? _capitalize(prefix);
     final subModuleName = _prefixToSubModule[prefix] ?? _capitalize(prefix);
     subModulesByModule

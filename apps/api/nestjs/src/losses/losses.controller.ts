@@ -1,5 +1,6 @@
-import { Body, Controller, Delete, Get, HttpCode, HttpStatus, Param, Patch, Post, Req, UseGuards } from '@nestjs/common';
+import { Body, Controller, Delete, ForbiddenException, Get, HttpCode, HttpStatus, Param, Patch, Post, Req, UseGuards } from '@nestjs/common';
 import type { Request } from 'express';
+import { AuthorizationService } from '../auth/authorization.service.js';
 import { PermissionsGuard } from '../auth/permissions.guard.js';
 import { RequirePermissions } from '../auth/permissions.decorator.js';
 import { SupabaseJwtGuard } from '../auth/supabase-jwt.guard.js';
@@ -11,7 +12,10 @@ import { LossesService } from './losses.service.js';
 @UseGuards(SupabaseJwtGuard, PermissionsGuard)
 @RequirePermissions('losses.manage')
 export class LossesController {
-  constructor(private readonly losses: LossesService) {}
+  constructor(
+    private readonly losses: LossesService,
+    private readonly authorization: AuthorizationService,
+  ) {}
 
   @Get()
   list(@Param('establishmentId') establishmentId: string) {
@@ -19,7 +23,14 @@ export class LossesController {
   }
 
   @Post()
-  create(@Req() request: Request, @Param('establishmentId') establishmentId: string, @Body() dto: CreateLossDto) {
+  async create(@Req() request: Request, @Param('establishmentId') establishmentId: string, @Body() dto: CreateLossDto) {
+    // Saisir une date (antidatage) exige losses.edit — sinon horodatage serveur.
+    if (dto.createdAt) {
+      const allowed = await this.authorization.hasAllPermissions(request.user!.sub, establishmentId, ['losses.edit']);
+      if (!allowed) {
+        throw new ForbiddenException('Permission(s) manquante(s) : losses.edit (saisie de la date)');
+      }
+    }
     return this.losses.create(establishmentId, request.user!.sub, dto);
   }
 

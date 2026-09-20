@@ -75,4 +75,18 @@ void main() {
     expect(Loss.fromJson({...base, 'createdByName': 'Awa Koné'}).createdByName, 'Awa Koné');
     expect(Loss.fromJson(base).createdByName, isNull);
   });
+
+  test('Loss.fromJson lit le prix de vente unitaire (0 par défaut)', () {
+    final base = {
+      'id': 'l1',
+      'productId': 'p',
+      'productName': 'Gbêlê',
+      'quantity': 1.5,
+      'estimatedValue': 6000,
+      'createdAt': '2026-09-14T10:00:00.000Z',
+    };
+
+    expect(Loss.fromJson({...base, 'unitSalePrice': 4000}).unitSalePrice, 4000);
+    expect(Loss.fromJson(base).unitSalePrice, 0);
+  });
 }

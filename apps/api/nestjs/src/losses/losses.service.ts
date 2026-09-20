@@ -8,6 +8,9 @@ import type { UpdateLossDto } from './dto/update-loss.dto.js';
 /** `Loss` et son `StockMovement` 'loss' sont créés dans la même transaction (sans clé étrangère entre eux) : ils se retrouvent par produit/quantité/auteur et un horodatage à quelques secondes près. */
 const MOVEMENT_MATCH_WINDOW_MS = 10_000;
 
+/** Tolérance sur une date de perte saisie (fuseaux horaires) : au plus 24 h dans le futur. */
+const MAX_FUTURE_MS = 24 * 60 * 60 * 1000;
+
 @Injectable()
 export class LossesService {
   constructor(
@@ -33,6 +36,11 @@ export class LossesService {
       throw new NotFoundException('Produit introuvable pour cet établissement');
     }
 
+    const createdAt = dto.createdAt ? new Date(dto.createdAt) : undefined;
+    if (createdAt && createdAt.getTime() > Date.now() + MAX_FUTURE_MS) {
+      throw new BadRequestException('La date de la perte ne peut pas être dans le futur');
+    }
+
     let nextQuantity: number;
     try {
       nextQuantity = applyStockMovement(product.stockQuantity.toNumber(), { type: 'loss', quantity: dto.quantity });
@@ -43,10 +51,10 @@ export class LossesService {
     const loss = await this.prisma.$transaction(async (tx) => {
       await tx.product.update({ where: { id: product.id }, data: { stockQuantity: nextQuantity } });
       await tx.stockMovement.create({
-        data: { productId: product.id, type: 'loss', quantity: dto.quantity, reason: dto.reason, createdBy: userId },
+        data: { productId: product.id, type: 'loss', quantity: dto.quantity, reason: dto.reason, createdBy: userId, createdAt },
       });
       return tx.loss.create({
-        data: { id: dto.id, establishmentId, productId: product.id, quantity: dto.quantity, reason: dto.reason, createdBy: userId },
+        data: { id: dto.id, establishmentId, productId: product.id, quantity: dto.quantity, reason: dto.reason, createdBy: userId, createdAt },
       });
     });
     await this.activityNotifier.notify(
@@ -185,20 +193,28 @@ export class LossesService {
     const losses = await this.prisma.loss.findMany({
       where: { establishmentId },
       include: {
-        product: { select: { name: true, purchasePrice: true } },
+        product: { select: { name: true, salePrice: true, referenceSalePrice: true } },
         createdByUser: { select: { fullName: true } },
       },
       orderBy: { createdAt: 'desc' },
     });
-    return losses.map((loss) => ({
-      id: loss.id,
-      productId: loss.productId,
-      productName: loss.product.name,
-      quantity: loss.quantity.toNumber(),
-      reason: loss.reason,
-      estimatedValue: loss.quantity.toNumber() * (loss.product.purchasePrice?.toNumber() ?? 0),
-      createdByName: loss.createdByUser?.fullName ?? null,
-      createdAt: loss.createdAt,
-    }));
+    return losses.map((loss) => {
+      // Prix de vente du produit (décision utilisateur du 2026-09-20, en
+      // remplacement du prix d'achat) ; un produit dont le prix se saisit à
+      // chaque vente (`salePrice` nul, ex. Gbêlê) retombe sur son prix de
+      // vente de référence, sinon 0.
+      const unitSalePrice = loss.product.salePrice?.toNumber() ?? loss.product.referenceSalePrice?.toNumber() ?? 0;
+      return {
+        id: loss.id,
+        productId: loss.productId,
+        productName: loss.product.name,
+        quantity: loss.quantity.toNumber(),
+        reason: loss.reason,
+        unitSalePrice,
+        estimatedValue: loss.quantity.toNumber() * unitSalePrice,
+        createdByName: loss.createdByUser?.fullName ?? null,
+        createdAt: loss.createdAt,
+      };
+    });
   }
 }

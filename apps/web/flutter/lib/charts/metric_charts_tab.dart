@@ -72,6 +72,8 @@ class MetricChartsTab extends StatefulWidget {
     required this.establishmentId,
     required this.year,
     required this.metric,
+    required this.permissionKey,
+    required this.allowed,
     required this.titles,
     required this.palette,
   });
@@ -79,6 +81,13 @@ class MetricChartsTab extends StatefulWidget {
   final String establishmentId;
   final int year;
   final String metric;
+
+  /// `revenue` ou `profit` — préfixe des permissions `charts.<clé>_<graphique>`.
+  final String permissionKey;
+
+  /// Codes `charts.*` accordés (voir `GraphiquesPage`) : un graphique non
+  /// autorisé n'est ni affiché ni interrogé.
+  final Set<String> allowed;
   final ChartTitles titles;
   final ChartPalette palette;
 
@@ -149,6 +158,8 @@ class _MetricChartsTabState extends State<MetricChartsTab> {
     return now.year == year ? now : DateTime(year, 1, 15);
   }
 
+  bool _can(String kind) => widget.allowed.contains('charts.${widget.permissionKey}_$kind');
+
   String get _weekStartParam => _weekAnchor.toIso8601String().split('T').first;
 
   String get _topFrom =>
@@ -181,6 +192,7 @@ class _MetricChartsTabState extends State<MetricChartsTab> {
   }
 
   void _reloadTotal() {
+    if (!_can('daily')) return;
     final future = _charts.getWeekly(
       metric: widget.metric,
       weekStart: _weekStartParam,
@@ -190,6 +202,7 @@ class _MetricChartsTabState extends State<MetricChartsTab> {
   }
 
   void _reloadByCategory() {
+    if (!_can('by_category')) return;
     final future = _charts.getWeeklyByCategory(
       metric: widget.metric,
       weekStart: _weekStartParam,
@@ -211,6 +224,7 @@ class _MetricChartsTabState extends State<MetricChartsTab> {
   }
 
   void _reloadByProduct() {
+    if (!_can('by_product')) return;
     final future = _charts.getWeeklyByProduct(
       metric: widget.metric,
       weekStart: _weekStartParam,
@@ -221,6 +235,7 @@ class _MetricChartsTabState extends State<MetricChartsTab> {
   }
 
   void _reloadTop() {
+    if (!_can('top')) return;
     final future = _charts.getTop(
       metric: widget.metric,
       from: _topFrom,
@@ -307,9 +322,13 @@ class _MetricChartsTabState extends State<MetricChartsTab> {
 
   @override
   Widget build(BuildContext context) {
+    if (!['daily', 'by_category', 'by_product', 'top', 'monthly'].any(_can)) {
+      return const Center(child: Text('Aucun graphique autorisé pour votre rôle dans cette section.'));
+    }
     return ListView(
       padding: const EdgeInsets.all(16),
       children: [
+        if (_can('daily'))
         _card(
           title: widget.titles.dailyTotal,
           controls: [_pickWeekButton()],
@@ -341,9 +360,11 @@ class _MetricChartsTabState extends State<MetricChartsTab> {
             );
           }),
         ),
+        if (_can('by_category'))
         _card(
           title: widget.titles.dailyByCategory,
           controls: [
+            if (!_can('daily')) _pickWeekButton(),
             if (_categories.isEmpty)
               const Text('Aucune catégorie au catalogue')
             else
@@ -384,9 +405,11 @@ class _MetricChartsTabState extends State<MetricChartsTab> {
             );
           }),
         ),
+        if (_can('by_product'))
         _card(
           title: widget.titles.dailyByProduct,
           controls: [
+            if (!_can('daily') && !_can('by_category')) _pickWeekButton(),
             if (_products.isNotEmpty)
               DropdownButton<String?>(
                 value: _productId,
@@ -413,6 +436,7 @@ class _MetricChartsTabState extends State<MetricChartsTab> {
             ),
           ),
         ),
+        if (_can('top'))
         _card(
           title: widget.titles.top,
           controls: [
@@ -440,6 +464,7 @@ class _MetricChartsTabState extends State<MetricChartsTab> {
             ),
           ),
         ),
+        if (_can('monthly'))
         _card(
           title: widget.titles.monthly,
           child: _futureChart(

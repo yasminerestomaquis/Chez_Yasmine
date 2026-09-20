@@ -20,6 +20,22 @@ GET /establishments/:establishmentId/charts/expenses/top?from=&to=
 
 `metric` est obligatoire sur les routes Recettes/Bénéfices : `revenue` ou `profit`. `stock-lots` et les routes `expenses/*` n'ont pas de `metric` — une seule grandeur possible dans chaque cas (voir leurs sections dédiées).
 
+## Permissions par graphique (décision actée 2026-09-20)
+
+`reports.view` ne gate plus ce module : **une permission par graphique** (`charts.<sous-module>_<graphique>`, 16 au total), affichées dans « Gestion des permissions » (module Utilisateurs) sous **Graphiques** > Recettes / Bénéfices / Stock / Dépenses :
+
+| Sous-module | Permissions |
+|---|---|
+| Recettes (5) | `charts.revenue_daily`, `_by_category`, `_by_product`, `_top`, `_monthly` |
+| Bénéfices (5) | `charts.profit_daily`, `_by_category`, `_by_product`, `_top`, `_monthly` |
+| Stock (2) | `charts.stock_lots` (Détail d'un produit), `charts.stock_out` (Top des produits épuisés) |
+| Dépenses (4) | `charts.expenses_daily`, `_by_category`, `_top`, `_monthly` |
+
+- **Serveur** : `PermissionsGuard` ne sait gater qu'un code statique par route alors que le code dépend ici du paramètre `metric` (Recettes/Bénéfices) ; `ChartsController` vérifie donc la permission dans chaque méthode (`AuthorizationService`, liste canonique dans `src/charts/chart-permissions.ts`). Un non-membre de l'établissement n'a aucun code, donc est refusé partout. Nouvelle route `GET .../charts/permissions` : renvoie les codes `charts.*` de l'appelant.
+- **Migration sans changement de comportement** : tout rôle qui portait `reports.view` reçoit les 16 permissions (seed + production : Administrateur, Caissier, Comptable, Gérant, Propriétaire, Serveur, Super Administrateur — 16 chacun). Rien ne change tant qu'un graphique n'est pas refusé explicitement ; noter que le Serveur (qui a `reports.view` pour les cartes de l'Accueil) garde donc l'accès aux graphiques jusqu'à ce qu'on le lui retire dans la matrice.
+- **Flutter** : `GraphiquesPage` charge `/charts/permissions` et passe l'ensemble aux onglets ; un graphique refusé n'est ni affiché ni interrogé, une section sans aucun graphique autorisé affiche un message. Si le chargement échoue (hors ligne), tous sont proposés — le serveur refuse de toute façon. Si « journalier » est refusé, le sélecteur de semaine (qui s'y trouvait) apparaît dans le graphique autorisé suivant.
+- **Effet de bord voulu** : la courbe hebdomadaire de Rapports (`getWeekly(revenue)`) exige désormais `charts.revenue_daily` ; elle est déjà non bloquante côté Flutter.
+
 ## Définitions retenues (à lire avant toute autre chose)
 
 - **Recettes** = chiffre d'affaires ligne à ligne (`SaleItem.quantity × SaleItem.unitPrice`), jamais réduit par une remise (les remises ne sont enregistrées qu'au niveau de la vente entière, pas par ligne, voir `docs/api/pos.md`). Même le graphique "total" sans filtre additionne ces lignes plutôt que `Sale.total`, précisément pour que la somme des graphiques par catégorie/par produit reconcilie toujours avec le total journalier. Conséquence assumée : ce total peut légèrement différer du "chiffre d'affaires" affiché dans le module **Rapports** (qui utilise `Sale.total`, net de remise) — un choix de cohérence interne à ce module plutôt qu'un alignement strict avec Rapports.

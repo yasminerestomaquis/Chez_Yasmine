@@ -125,11 +125,24 @@ export class SyncService {
       case 'expense':
         return this.expenses.create(establishmentId, userId, { ...(operation.payload as object), id: operation.id } as any);
       case 'loss':
-        return this.losses.create(establishmentId, userId, { ...(operation.payload as object), id: operation.id } as any);
+        return this.dispatchLoss(establishmentId, userId, operation);
       case 'purchase':
         return this.purchases.create(establishmentId, userId, { ...(operation.payload as object), id: operation.id } as any);
       case 'cash_closing':
         return this.cash.close(establishmentId, userId, { ...(operation.payload as object), id: operation.id } as any);
     }
+  }
+
+  /** La date saisie d'une perte (antidatage) n'est conservée que si l'auteur porte `losses.edit`, comme sur la route HTTP ; sinon elle est ignorée (horodatage serveur). */
+  private async dispatchLoss(establishmentId: string, userId: string, operation: SyncOperationDto): Promise<unknown> {
+    const { createdAt, ...rest } = operation.payload as { createdAt?: string };
+    const mayBackdate = createdAt
+      ? await this.authorization.hasAllPermissions(userId, establishmentId, ['losses.edit'])
+      : false;
+    return this.losses.create(establishmentId, userId, {
+      ...rest,
+      ...(mayBackdate ? { createdAt } : {}),
+      id: operation.id,
+    } as any);
   }
 }

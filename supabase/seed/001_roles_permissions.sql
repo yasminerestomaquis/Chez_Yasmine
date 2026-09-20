@@ -25,7 +25,23 @@ insert into permissions (code, description) values
   ('payroll.manage',    'Gérer les employés et le workflow de paie (préparer/valider/payer/annuler)'),
   ('payroll.view',      'Consulter les employés, la paie et son historique — sans les modifier'),
   ('notifications.manage', 'Effacer toutes les notifications de l''organisation — réservé au Super Administrateur'),
-  ('losses.edit',       'Modifier (date, produit, quantité, motif) ou supprimer une perte déjà enregistrée')
+  ('losses.edit',       'Modifier (date, produit, quantité, motif) ou supprimer une perte déjà enregistrée'),
+  ('charts.revenue_daily', 'Recettes journalières totales'),
+  ('charts.revenue_by_category', 'Recettes journalières totales par catégorie'),
+  ('charts.revenue_by_product', 'Recettes journalières totales par produit'),
+  ('charts.revenue_top', 'Top recettes'),
+  ('charts.revenue_monthly', 'Recettes mensuelles'),
+  ('charts.profit_daily', 'Bénéfices journaliers totaux'),
+  ('charts.profit_by_category', 'Bénéfices journaliers totaux par catégorie'),
+  ('charts.profit_by_product', 'Bénéfices journaliers totaux par produit'),
+  ('charts.profit_top', 'Top bénéfices'),
+  ('charts.profit_monthly', 'Bénéfices mensuels'),
+  ('charts.stock_lots', 'Détail d''un produit (lots actifs et historique)'),
+  ('charts.stock_out', 'Top des produits épuisés'),
+  ('charts.expenses_daily', 'Dépenses journalières totales'),
+  ('charts.expenses_by_category', 'Dépenses journalières totales par catégorie'),
+  ('charts.expenses_top', 'Top dépenses'),
+  ('charts.expenses_monthly', 'Dépenses mensuelles')
 on conflict (code) do nothing;
 
 insert into roles (organization_id, name, is_system) values
@@ -176,4 +192,18 @@ select r.id, p.id
 from roles r
 join permissions p on p.code in ('payroll.manage', 'payroll.view')
 where r.is_system and r.name = 'Comptable'
+on conflict do nothing;
+
+-- Graphiques (2026-09-20) : une permission par graphique (`charts.*`), qui
+-- remplace `reports.view` sur les routes du module (voir
+-- apps/api/nestjs/src/charts/chart-permissions.ts). Tout rôle qui portait
+-- `reports.view` reçoit les 16 permissions : rien ne change tant qu'un
+-- graphique n'est pas explicitement refusé à un rôle dans « Gestion des
+-- permissions ». À exécuter après toutes les attributions ci-dessus.
+insert into role_permissions (role_id, permission_id)
+select rp.role_id, c.id
+from role_permissions rp
+join permissions v on v.id = rp.permission_id and v.code = 'reports.view'
+cross join permissions c
+where c.code like 'charts.%'
 on conflict do nothing;
