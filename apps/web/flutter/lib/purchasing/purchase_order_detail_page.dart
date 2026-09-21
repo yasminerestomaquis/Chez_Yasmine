@@ -196,6 +196,21 @@ class _PurchaseOrderDetailPageState extends State<PurchaseOrderDetailPage> {
 
   /// Valide une commande en attente (« Créer la commande ») : le stock entre à ce moment.
   Future<void> _confirmPending() async {
+    final confirmed = await showDialog<bool>(
+      context: context,
+      builder: (context) => AlertDialog(
+        title: const Text('Valider cette commande ?'),
+        content: Text(
+          'La commande n°${_purchase.orderNumber} passera de « En attente » à « Validée » : '
+          '${_purchase.totalCases.toStringAsFixed(0)} casier(s) entreront en stock.',
+        ),
+        actions: [
+          TextButton(onPressed: () => Navigator.of(context).pop(false), child: const Text('Annuler')),
+          FilledButton(onPressed: () => Navigator.of(context).pop(true), child: const Text('Valider')),
+        ],
+      ),
+    );
+    if (confirmed != true || !mounted) return;
     setState(() => _isBusy = true);
     try {
       final updated = await widget.repository.updatePurchase(
@@ -206,7 +221,7 @@ class _PurchaseOrderDetailPageState extends State<PurchaseOrderDetailPage> {
       if (!mounted) return;
       setState(() => _purchase = updated);
       ScaffoldMessenger.of(context)
-          .showSnackBar(const SnackBar(content: Text('Commande créée : le stock a été mis à jour.')));
+          .showSnackBar(const SnackBar(content: Text('Commande validée : le stock a été mis à jour.')));
     } on ApiException catch (e) {
       if (!mounted) return;
       ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text(e.message)));
@@ -269,7 +284,7 @@ class _PurchaseOrderDetailPageState extends State<PurchaseOrderDetailPage> {
 
     return Scaffold(
       appBar: AppBar(
-        title: Text('Commande n°${_purchase.orderNumber}${_purchase.isPending ? ' (en attente)' : ''}'),
+        title: Text('Commande n°${_purchase.orderNumber}'),
         actions: widget.readOnly
             ? const []
             : _isEditing
@@ -283,11 +298,6 @@ class _PurchaseOrderDetailPageState extends State<PurchaseOrderDetailPage> {
                 ),
               ]
             : [
-                if (_purchase.isPending)
-                  TextButton(
-                    onPressed: _isBusy ? null : _confirmPending,
-                    child: const Text('Créer la commande', style: TextStyle(color: Colors.white)),
-                  ),
                 IconButton(
                   tooltip: 'Modifier',
                   icon: const Icon(Icons.edit_outlined),
@@ -445,6 +455,20 @@ class _PurchaseOrderDetailPageState extends State<PurchaseOrderDetailPage> {
                     ),
                   ],
                 ),
+                if (!_isEditing && !widget.readOnly && _purchase.isPending) ...[
+                  const SizedBox(height: 12),
+                  Text(
+                    'Commande en attente : aucune entrée de stock tant qu'elle n'est pas validée.',
+                    style: TextStyle(color: Colors.orange.shade800),
+                    textAlign: TextAlign.center,
+                  ),
+                  const SizedBox(height: 8),
+                  FilledButton.icon(
+                    onPressed: _isBusy ? null : _confirmPending,
+                    icon: const Icon(Icons.check_circle_outline),
+                    label: const Text('Valider la commande'),
+                  ),
+                ],
                 if (_isEditing) ...[
                   const SizedBox(height: 12),
                   FilledButton(

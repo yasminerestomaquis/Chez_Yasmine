@@ -4,7 +4,7 @@
 
 ### Ajouté (2026-09-20) — Achats : bouton « En attente » (projection de commande)
 - Dans « Liste de commandes », le bouton **En attente** enregistre la commande sans validation : `POST .../purchases` avec `status: 'pending'`. **Aucune entrée de stock** (ni mouvement, ni lot Graphiques) tant qu'elle n'est pas confirmée.
-- **Créer la commande** valide une commande en attente (depuis le détail de la commande dans l'Historique : `PATCH .../purchases/:id` avec `confirm: true`) : le stock entre alors, avec le motif « Commande n°X ».
+- **Créer la commande** valide une commande en attente (via le bouton **Valider la commande** du détail (Historique) : `PATCH .../purchases/:id` avec `confirm: true`) : le stock entre alors, avec le motif « Commande n°X ».
 - L'Historique distingue les commandes **Validée** (vert) et **En attente** (orange). Une commande en attente se modifie et se supprime sans effet sur le stock ; elle n'apparaît pas dans les N° de commande proposés par Pertes/Stock ni dans les lots.
 - Tests : 4 NestJS (`PurchasesService`, commande en attente).
 
