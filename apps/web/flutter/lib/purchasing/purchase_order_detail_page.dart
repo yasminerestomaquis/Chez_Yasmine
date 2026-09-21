@@ -458,7 +458,7 @@ class _PurchaseOrderDetailPageState extends State<PurchaseOrderDetailPage> {
                 if (!_isEditing && !widget.readOnly && _purchase.isPending) ...[
                   const SizedBox(height: 12),
                   Text(
-                    'Commande en attente : aucune entrée de stock tant qu'elle n'est pas validée.',
+                    "Commande en attente : aucune entrée de stock tant qu'elle n'est pas validée.",
                     style: TextStyle(color: Colors.orange.shade800),
                     textAlign: TextAlign.center,
                   ),
