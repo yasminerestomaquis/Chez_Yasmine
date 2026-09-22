@@ -33,8 +33,8 @@ double stockUnitSalePrice(Product product) =>
   return (purchase: purchase, sale: sale);
 }
 
-/// Nombre total de bouteilles en stock, restreint aux catégories vendues par
-/// casier (Bières, Vins, Sucreries — `category.hasCasePricing`) : cette
+/// « Bouteilles en stock » (nombre total), restreint aux catégories vendues
+/// par casier (Bières, Vins, Sucreries — `category.hasCasePricing`) : cette
 /// vignette ne compte jamais les catégories à prix variable ou fixe (Gbêlê,
 /// Poulets, Poissons, Plats africains), pour lesquelles « bouteille » n'a pas
 /// de sens. [selectedCategoryIds] restreint encore le résultat aux catégories
