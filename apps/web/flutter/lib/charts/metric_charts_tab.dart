@@ -108,7 +108,9 @@ class _MetricChartsTabState extends State<MetricChartsTab> {
 
   late DateTime _weekAnchor = _clampToYear(DateTime.now(), widget.year);
   final Set<String> _selectedCategoryIds = {};
-  String? _productId;
+  // Sélection multiple, réinitialisable (demande utilisateur du 2026-09-22) —
+  // vide = tous les produits (agrégés en une seule série, comme sans filtre).
+  Set<String> _selectedProductIds = {};
   int? _topMonth;
 
   List<Category> _categories = [];
@@ -182,7 +184,6 @@ class _MetricChartsTabState extends State<MetricChartsTab> {
       setState(() {
         _categories = categories;
         _products = products;
-        _productId = products.isNotEmpty ? products.first.id : null;
       });
       _reloadByProduct();
     } catch (_) {
@@ -228,10 +229,15 @@ class _MetricChartsTabState extends State<MetricChartsTab> {
     final future = _charts.getWeeklyByProduct(
       metric: widget.metric,
       weekStart: _weekStartParam,
-      productId: _productId,
+      productIds: _selectedProductIds,
     );
     future.ignore();
     setState(() => _byProductFuture = future);
+  }
+
+  void _toggleProductSelection(Set<String> ids) {
+    setState(() => _selectedProductIds = ids);
+    _reloadByProduct();
   }
 
   void _reloadTop() {
@@ -411,19 +417,10 @@ class _MetricChartsTabState extends State<MetricChartsTab> {
           controls: [
             if (!_can('daily') && !_can('by_category')) _pickWeekButton(),
             if (_products.isNotEmpty)
-              DropdownButton<String?>(
-                value: _productId,
-                items: [
-                  for (final product in _products)
-                    DropdownMenuItem(
-                      value: product.id,
-                      child: Text(product.name),
-                    ),
-                ],
-                onChanged: (value) {
-                  setState(() => _productId = value);
-                  _reloadByProduct();
-                },
+              _ProductFilterField(
+                products: _products,
+                selectedIds: _selectedProductIds,
+                onChanged: _toggleProductSelection,
               )
             else
               const Text('Aucun produit au catalogue'),
@@ -476,6 +473,102 @@ class _MetricChartsTabState extends State<MetricChartsTab> {
           ),
         ),
       ],
+    );
+  }
+}
+
+/// Filtre Produit de « Recettes/Bénéfices journaliers par produit » — sélection
+/// multiple avec réinitialisation (demande utilisateur du 2026-09-22), même
+/// principe que `_CategoryFilterField` (lib/stock/stock_page.dart) : un champ
+/// cliquable ouvrant un dialogue à cases à cocher, plus adapté qu'une rangée
+/// de puces vu le nombre de produits possible au catalogue.
+class _ProductFilterField extends StatelessWidget {
+  const _ProductFilterField({
+    required this.products,
+    required this.selectedIds,
+    required this.onChanged,
+  });
+
+  final List<Product> products;
+  final Set<String> selectedIds;
+  final ValueChanged<Set<String>> onChanged;
+
+  Future<void> _open(BuildContext context) async {
+    var working = Set<String>.from(selectedIds);
+    final result = await showDialog<Set<String>>(
+      context: context,
+      builder: (dialogContext) => StatefulBuilder(
+        builder: (dialogContext, setDialogState) => AlertDialog(
+          title: const Text('Filtrer par produit'),
+          content: SizedBox(
+            width: 360,
+            child: ListView(
+              shrinkWrap: true,
+              children: [
+                for (final product in products)
+                  CheckboxListTile(
+                    contentPadding: EdgeInsets.zero,
+                    value: working.contains(product.id),
+                    title: Text(product.name),
+                    onChanged: (checked) => setDialogState(() {
+                      if (checked ?? false) {
+                        working.add(product.id);
+                      } else {
+                        working.remove(product.id);
+                      }
+                    }),
+                  ),
+              ],
+            ),
+          ),
+          actions: [
+            TextButton(
+              onPressed: () => setDialogState(() => working = {}),
+              child: const Text('Réinitialiser'),
+            ),
+            TextButton(
+              onPressed: () => Navigator.of(dialogContext).pop(selectedIds),
+              child: const Text('Annuler'),
+            ),
+            FilledButton(
+              onPressed: () => Navigator.of(dialogContext).pop(working),
+              child: const Text('Appliquer'),
+            ),
+          ],
+        ),
+      ),
+    );
+    if (result != null) onChanged(result);
+  }
+
+  String get _label {
+    if (selectedIds.isEmpty) return 'Tous les produits';
+    if (selectedIds.length == 1) {
+      return products.firstWhere((p) => p.id == selectedIds.first, orElse: () => products.first).name;
+    }
+    return '${selectedIds.length} produits sélectionnés';
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return InkWell(
+      borderRadius: BorderRadius.circular(4),
+      onTap: () => _open(context),
+      child: InputDecorator(
+        decoration: InputDecoration(
+          labelText: 'Produit',
+          isDense: true,
+          prefixIcon: const Icon(Icons.filter_list),
+          suffixIcon: selectedIds.isEmpty
+              ? const Icon(Icons.arrow_drop_down)
+              : IconButton(
+                  tooltip: 'Réinitialiser le filtre',
+                  icon: const Icon(Icons.clear),
+                  onPressed: () => onChanged({}),
+                ),
+        ),
+        child: Text(_label, overflow: TextOverflow.ellipsis),
+      ),
     );
   }
 }

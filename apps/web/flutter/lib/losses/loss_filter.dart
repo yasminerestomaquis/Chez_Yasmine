@@ -17,7 +17,10 @@ List<Loss> lossesOnDay(List<Loss> losses, DateTime? day) {
   }).toList();
 }
 
-/// Nombre de pertes et valeur estimée totale de [losses], affichés en gras
-/// au-dessus du listing.
-({int count, double totalValue}) lossTotals(List<Loss> losses) =>
-    (count: losses.length, totalValue: losses.fold(0.0, (sum, l) => sum + l.estimatedValue));
+/// Nombre total de bouteilles perdues (somme des quantités, remplace le
+/// nombre de lignes — demande utilisateur du 2026-09-22) et valeur estimée
+/// totale de [losses], affichés en gras au-dessus du listing.
+({double count, double totalValue}) lossTotals(List<Loss> losses) => (
+      count: losses.fold(0.0, (sum, l) => sum + l.quantity),
+      totalValue: losses.fold(0.0, (sum, l) => sum + l.estimatedValue),
+    );

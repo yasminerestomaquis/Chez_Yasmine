@@ -20,9 +20,15 @@ export class WeeklyByCategoryQueryDto extends WeeklyChartQueryDto {
 }
 
 export class WeeklyByProductQueryDto extends WeeklyChartQueryDto {
+  /** @deprecated Remplacé par `productIds` (sélection multiple, 2026-09-22) — encore accepté pour compatibilité. */
   @IsOptional()
   @IsString()
   productId?: string;
+
+  /** CSV d'identifiants de produit — sélection multiple, agrégée en une seule série (somme), même principe que `WeeklyByCategoryQueryDto.categoryIds`. */
+  @IsOptional()
+  @IsString()
+  productIds?: string;
 }
 
 export class MonthlyChartQueryDto {

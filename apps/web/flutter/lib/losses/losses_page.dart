@@ -149,7 +149,7 @@ class _LossesPageState extends State<LossesPage> {
                       ],
                     ),
                     Text(
-                      'Nombre total de pertes : ${totals.count}',
+                      'Nombre total de bouteilles perdues : ${_formatQuantity(totals.count)}',
                       style: const TextStyle(fontWeight: FontWeight.bold),
                     ),
                     Text(

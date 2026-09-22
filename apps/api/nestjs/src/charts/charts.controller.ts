@@ -72,7 +72,7 @@ export class ChartsController {
   @Get('weekly-by-product')
   async weeklyByProduct(@Req() request: Request, @Param('establishmentId') establishmentId: string, @Query() query: WeeklyByProductQueryDto) {
     await this.require(request, establishmentId, metricChartPermission(query.metric, 'by_product'));
-    return this.charts.weeklyByProduct(establishmentId, query.metric, query.weekStart, query.productId);
+    return this.charts.weeklyByProduct(establishmentId, query.metric, query.weekStart, query.productId, query.productIds);
   }
 
   @Get('monthly')

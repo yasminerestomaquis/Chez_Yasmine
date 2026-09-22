@@ -7,7 +7,7 @@ Toutes protégées par `SupabaseJwtGuard` + `PermissionsGuard` + `@RequirePermis
 ```
 GET /establishments/:establishmentId/charts/weekly?metric=revenue|profit&weekStart=YYYY-MM-DD
 GET /establishments/:establishmentId/charts/weekly-by-category?metric=&weekStart=&categoryIds=
-GET /establishments/:establishmentId/charts/weekly-by-product?metric=&weekStart=&productId=
+GET /establishments/:establishmentId/charts/weekly-by-product?metric=&weekStart=&productIds=
 GET /establishments/:establishmentId/charts/monthly?metric=revenue|profit&year=YYYY
 GET /establishments/:establishmentId/charts/top?metric=revenue|profit&from=&to=
 GET /establishments/:establishmentId/charts/stock-lots?productIds=
@@ -86,7 +86,7 @@ Constat à l'origine de ce correctif : seule la nature « Marché » avait un r�
 
 - `GET /charts/weekly` : toujours une seule série (`id: null`, `name: "Total"`).
 - `GET /charts/weekly-by-category` : sans `categoryId`, une série par catégorie ayant vendu quelque chose cette semaine-là (triées par total décroissant), plus une série `"Sans catégorie"` (`id: null`) si des produits sans catégorie ont été vendus ; avec `categoryId`, une seule série pour cette catégorie.
-- `GET /charts/weekly-by-product` : même principe, une série par produit vendu (ou une seule avec `productId`).
+- `GET /charts/weekly-by-product` : même principe, une série par produit vendu, ou une seule série agrégée quand `productIds` (CSV, sélection multiple, réinitialisable — demande utilisateur du 2026-09-22) est fourni ; `productId` (singulier) reste accepté pour compatibilité.
 
 ## Mois (graphiques 5, 10)
 

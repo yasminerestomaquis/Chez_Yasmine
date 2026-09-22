@@ -362,9 +362,31 @@ export class ChartsService {
     return this.buildWeekResponse(monday, series);
   }
 
-  async weeklyByProduct(establishmentId: string, metric: ChartMetric, weekStart?: string, productId?: string) {
+  async weeklyByProduct(
+    establishmentId: string,
+    metric: ChartMetric,
+    weekStart?: string,
+    productId?: string,
+    productIdsCsv?: string,
+  ) {
     const { from, to, monday } = this.weekRange(weekStart);
     const lines = await this.soldLines(establishmentId, from, to);
+    const productIds = productIdsCsv ? productIdsCsv.split(',').filter((id) => id.length > 0) : [];
+
+    // Sélection multiple (2026-09-22) : agrégée en une seule série, même
+    // principe que weeklyByCategory. `productId` (singulier) reste accepté
+    // pour compatibilité, prioritaire sur l'ancien filtre à un seul produit.
+    if (productIds.length > 0) {
+      const filtered = lines.filter((l) => productIds.includes(l.productId));
+      const names = [...new Set(filtered.map((l) => l.productName))];
+      const values = emptyWeek();
+      for (const line of filtered) {
+        values[weekdayIndex(line.createdAt)] += valueOf(metric, line);
+      }
+      const name = names.length === 1 ? names[0] : `${productIds.length} produits sélectionnés`;
+      return this.buildWeekResponse(monday, [{ id: null, name, values }]);
+    }
+
     const filtered = productId ? lines.filter((l) => l.productId === productId) : lines;
 
     const byKey = new Map<string, WeekSeries>();

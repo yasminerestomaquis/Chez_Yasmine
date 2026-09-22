@@ -61,14 +61,14 @@ class ChartsRepository {
   Future<WeeklyChart> getWeeklyByProduct({
     required String metric,
     String? weekStart,
-    String? productId,
+    Set<String>? productIds,
   }) async {
     final json = await _api.get(
       '$_base/weekly-by-product',
       query: _query({
         'metric': metric,
         'weekStart': weekStart,
-        'productId': productId,
+        'productIds': (productIds == null || productIds.isEmpty) ? null : productIds.join(','),
       }),
     ) as Map<String, dynamic>;
     return WeeklyChart.fromJson(json);

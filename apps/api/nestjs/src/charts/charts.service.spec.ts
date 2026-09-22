@@ -355,6 +355,22 @@ describe('ChartsService.weeklyByProduct', () => {
     expect(result.series).toHaveLength(1);
     expect(result.series[0].name).toBe('Soda');
   });
+
+  it('aggregates several selected products into a single summed series (2026-09-22)', async () => {
+    const prisma = makePrismaMock();
+    const service = new ChartsService(prisma as unknown as PrismaService);
+    prisma.saleItem.findMany.mockResolvedValue([
+      item({ productId: 'p1', name: 'Bière', quantity: 1, unitPrice: 1000 }),
+      item({ productId: 'p2', name: 'Soda', quantity: 1, unitPrice: 500 }),
+      item({ productId: 'p3', name: 'Jus', quantity: 1, unitPrice: 300 }),
+    ]);
+
+    const result = await service.weeklyByProduct('est-1', 'revenue', '2026-09-07', undefined, 'p1,p2');
+
+    expect(result.series).toHaveLength(1);
+    expect(result.series[0].name).toBe('2 produits sélectionnés');
+    expect(result.series[0].points.reduce((sum, p) => sum + p.value, 0)).toBe(1500);
+  });
 });
 
 describe('ChartsService.monthly', () => {

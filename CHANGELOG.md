@@ -2,6 +2,12 @@
 
 ## [Unreleased]
 
+### Ajouté (2026-09-22) — Stock : groupe Valeur du stock ; Pertes : bouteilles perdues ; Graphiques : filtre produit multi-sélection
+- **Stock** : la vignette « Valeur du stock » quitte la rangée de compteurs (désormais Articles suivis / Stock faible / Ruptures sur une seule ligne) pour son propre groupe, avec un filtre Catégorie à sélection multiple et réinitialisable, et deux vignettes **Prix d'achat** et **Prix de vente** calculées sur les catégories choisies (tout le catalogue sans sélection).
+- **Pertes** : « Nombre total de pertes » (nombre de lignes) devient **« Nombre total de bouteilles perdues »** (somme des quantités).
+- **Graphiques > Recettes/Bénéfices > … par produit** : le filtre Produit devient à sélection multiple et réinitialisable (dialogue à cases à cocher, comme le filtre Catégorie de Stock/Pertes) ; plusieurs produits sélectionnés sont agrégés en une seule série. `GET .../charts/weekly-by-product` accepte `productIds` (CSV) ; `productId` reste accepté pour compatibilité.
+- Tests : 2 NestJS (`ChartsService`), 1 Flutter (`lossTotals`).
+
 ### Ajouté (2026-09-20) — Achats : bouton « En attente » (projection de commande)
 - Dans « Liste de commandes », le bouton **En attente** enregistre la commande sans validation : `POST .../purchases` avec `status: 'pending'`. **Aucune entrée de stock** (ni mouvement, ni lot Graphiques) tant qu'elle n'est pas confirmée.
 - **Créer la commande** valide une commande en attente (via le bouton **Valider la commande** du détail (Historique) : `PATCH .../purchases/:id` avec `confirm: true`) : le stock entre alors, avec le motif « Commande n°X ».

@@ -1,3 +1,5 @@
+import 'stock_value.dart';
+
 import 'package:flutter/material.dart';
 
 import '../api/api_client.dart';
@@ -36,16 +38,16 @@ List<Product> filterAndSortStockProducts({
   required Set<String> selectedCategoryIds,
 }) {
   return products.where((p) {
-        final matchesSearch =
-            search.isEmpty || p.name.toLowerCase().contains(search.toLowerCase());
-        if (!matchesSearch) return false;
-        if (selectedCategoryIds.isNotEmpty && !selectedCategoryIds.contains(p.categoryId)) {
-          return false;
-        }
-        if (statusFilter == _kFilterAll) return true;
-        return stockStatusOf(p, alertsByProduct[p.id]) == statusFilter;
-      }).toList()
-    ..sort((a, b) => a.stockQuantity.compareTo(b.stockQuantity));
+    final matchesSearch =
+        search.isEmpty || p.name.toLowerCase().contains(search.toLowerCase());
+    if (!matchesSearch) return false;
+    if (selectedCategoryIds.isNotEmpty &&
+        !selectedCategoryIds.contains(p.categoryId)) {
+      return false;
+    }
+    if (statusFilter == _kFilterAll) return true;
+    return stockStatusOf(p, alertsByProduct[p.id]) == statusFilter;
+  }).toList()..sort((a, b) => a.stockQuantity.compareTo(b.stockQuantity));
 }
 
 class _StockPageData {
@@ -101,6 +103,8 @@ class _StockPageState extends State<StockPage> {
   // Vide = toutes les catégories (pas de filtre) — sélection multiple,
   // demande utilisateur du 2026-09-16.
   Set<String> _selectedCategoryIds = {};
+  // Filtre propre au groupe « Valeur du stock » (indépendant du filtre de la liste).
+  Set<String> _valueCategoryIds = {};
 
   Future<_StockPageData> _load() async {
     try {
@@ -110,13 +114,23 @@ class _StockPageState extends State<StockPage> {
         _catalog.listCategories(),
         _stock.listMovementTotals(),
       ).wait;
-      return _StockPageData(alerts: alerts, products: products, categories: categories, totals: totals);
+      return _StockPageData(
+        alerts: alerts,
+        products: products,
+        categories: categories,
+        totals: totals,
+      );
     } catch (error) {
       final cached = await _cache.load();
       if (cached != null) {
         // Offline : niveaux de stock potentiellement obsolètes, ni alertes
         // ni totaux de mouvements calculables localement.
-        return _StockPageData(alerts: const [], products: cached.$2, categories: cached.$1, totals: const []);
+        return _StockPageData(
+          alerts: const [],
+          products: cached.$2,
+          categories: cached.$1,
+          totals: const [],
+        );
       }
       rethrow;
     }
@@ -133,20 +147,6 @@ class _StockPageState extends State<StockPage> {
       hasVariablePricing: product.hasVariablePricing,
     );
     if (created == true) _reload();
-  }
-
-  // Coût unitaire effectif pour l'estimation de la valeur du stock : reprend
-  // le prix d'achat par bouteille, ou le dérive du prix par casier quand
-  // seule cette information est saisie (catégories à prix par casier) —
-  // purement un calcul d'affichage côté client, aucune donnée nouvelle.
-  double _unitCost(Product product) {
-    if (product.purchasePrice != null) return product.purchasePrice!;
-    if (product.purchasePricePerCase != null &&
-        product.bottlesPerCase != null &&
-        product.bottlesPerCase! > 0) {
-      return product.purchasePricePerCase! / product.bottlesPerCase!;
-    }
-    return 0;
   }
 
   @override
@@ -190,7 +190,9 @@ class _StockPageState extends State<StockPage> {
                 final alerts = data.alerts;
                 final allProducts = data.products;
                 final categories = data.categories;
-                final totalsByProduct = {for (final t in data.totals) t.productId: t};
+                final totalsByProduct = {
+                  for (final t in data.totals) t.productId: t,
+                };
                 final alertsByProduct = {for (final a in alerts) a.id: a};
                 final outCount = allProducts
                     .where((p) => p.stockQuantity <= 0)
@@ -198,9 +200,9 @@ class _StockPageState extends State<StockPage> {
                 final lowCount = alerts
                     .where((a) => a.stockQuantity > 0)
                     .length;
-                final totalValue = allProducts.fold<double>(
-                  0,
-                  (sum, p) => sum + p.stockQuantity * _unitCost(p),
+                final valueTotals = stockValueTotals(
+                  allProducts,
+                  _valueCategoryIds,
                 );
 
                 final products = filterAndSortStockProducts(
@@ -222,9 +224,22 @@ class _StockPageState extends State<StockPage> {
                           total: allProducts.length,
                           low: lowCount,
                           out: outCount,
-                          value: _isServeur ? null : totalValue,
                         ),
                       ),
+                      if (!_isServeur) ...[
+                        const SizedBox(height: 12),
+                        Padding(
+                          padding: const EdgeInsets.symmetric(horizontal: 12),
+                          child: _StockValueBox(
+                            categories: categories,
+                            selectedIds: _valueCategoryIds,
+                            onChanged: (ids) =>
+                                setState(() => _valueCategoryIds = ids),
+                            purchase: valueTotals.purchase,
+                            sale: valueTotals.sale,
+                          ),
+                        ),
+                      ],
                       const SizedBox(height: 12),
                       Padding(
                         padding: const EdgeInsets.symmetric(horizontal: 12),
@@ -257,7 +272,8 @@ class _StockPageState extends State<StockPage> {
                         child: _CategoryFilterField(
                           categories: categories,
                           selectedIds: _selectedCategoryIds,
-                          onChanged: (ids) => setState(() => _selectedCategoryIds = ids),
+                          onChanged: (ids) =>
+                              setState(() => _selectedCategoryIds = ids),
                         ),
                       ),
                       const SizedBox(height: 8),
@@ -333,7 +349,12 @@ class _CategoryFilterField extends StatelessWidget {
   String get _label {
     if (selectedIds.isEmpty) return 'Toutes les catégories';
     if (selectedIds.length == 1) {
-      return categories.firstWhere((c) => c.id == selectedIds.first, orElse: () => Category(id: '', name: '1 catégorie')).name;
+      return categories
+          .firstWhere(
+            (c) => c.id == selectedIds.first,
+            orElse: () => Category(id: '', name: '1 catégorie'),
+          )
+          .name;
     }
     return '${selectedIds.length} catégories sélectionnées';
   }
@@ -416,98 +437,155 @@ class _StockKpiRow extends StatelessWidget {
     required this.total,
     required this.low,
     required this.out,
-    required this.value,
   });
 
   final int total;
   final int low;
   final int out;
-  // `null` : masque la carte "Valeur du stock" (rôle Serveur, demande
-  // utilisateur du 2026-09-11 — chiffre potentiellement sensible).
-  final double? value;
 
   @override
   Widget build(BuildContext context) {
-    return GridView(
-      shrinkWrap: true,
-      physics: const NeverScrollableScrollPhysics(),
-      gridDelegate: const SliverGridDelegateWithFixedCrossAxisCount(
-        crossAxisCount: 2,
-        crossAxisSpacing: 10,
-        mainAxisSpacing: 10,
-        mainAxisExtent: 84,
-      ),
+    // Une seule ligne horizontale (demande utilisateur du 2026-09-22) ; la
+    // « Valeur du stock » a quitté cette rangée pour son propre groupe.
+    return Row(
       children: [
-        _kpiCard(
-          Icons.inventory_2_outlined,
-          'Articles suivis',
-          '$total',
-          AppColors.green,
-        ),
-        _kpiCard(
-          Icons.warning_amber_outlined,
-          'Stock faible',
-          '$low',
-          AppColors.orange,
-        ),
-        _kpiCard(
-          Icons.remove_shopping_cart_outlined,
-          'Ruptures',
-          '$out',
-          AppColors.alert,
-        ),
-        if (value != null)
-          _kpiCard(
-            Icons.payments_outlined,
-            'Valeur du stock',
-            '${formatAmount(value!)} F',
+        Expanded(
+          child: _kpiCard(
+            Icons.inventory_2_outlined,
+            'Articles suivis',
+            '$total',
             AppColors.green,
           ),
+        ),
+        const SizedBox(width: 8),
+        Expanded(
+          child: _kpiCard(
+            Icons.warning_amber_outlined,
+            'Stock faible',
+            '$low',
+            AppColors.orange,
+          ),
+        ),
+        const SizedBox(width: 8),
+        Expanded(
+          child: _kpiCard(
+            Icons.remove_shopping_cart_outlined,
+            'Ruptures',
+            '$out',
+            AppColors.alert,
+          ),
+        ),
       ],
     );
   }
 
-  Widget _kpiCard(IconData icon, String label, String value, Color color) {
-    return Card(
-      child: Padding(
-        padding: const EdgeInsets.all(12),
-        child: Row(
-          children: [
-            Container(
-              padding: const EdgeInsets.all(8),
-              decoration: BoxDecoration(
-                color: color.withValues(alpha: 0.12),
-                shape: BoxShape.circle,
-              ),
-              child: Icon(icon, color: color, size: 18),
+  Widget _kpiCard(IconData icon, String label, String value, Color color) =>
+      _kpiTile(icon, label, value, color);
+}
+
+/// Vignette KPI compacte (icône, valeur, libellé) — partagée par la rangée
+/// des compteurs et le groupe « Valeur du stock ».
+Widget _kpiTile(IconData icon, String label, String value, Color color) {
+  return Card(
+    margin: EdgeInsets.zero,
+    child: Padding(
+      padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 10),
+      child: Column(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          Container(
+            padding: const EdgeInsets.all(6),
+            decoration: BoxDecoration(
+              color: color.withValues(alpha: 0.12),
+              shape: BoxShape.circle,
             ),
-            const SizedBox(width: 10),
-            Expanded(
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                mainAxisSize: MainAxisSize.min,
-                children: [
-                  Text(
-                    value,
-                    style: const TextStyle(
-                      fontWeight: FontWeight.bold,
-                      fontSize: 15,
-                    ),
-                    overflow: TextOverflow.ellipsis,
-                  ),
-                  Text(
-                    label,
-                    style: const TextStyle(
-                      color: AppColors.textSecondary,
-                      fontSize: 11,
-                    ),
-                    overflow: TextOverflow.ellipsis,
-                  ),
-                ],
-              ),
+            child: Icon(icon, color: color, size: 16),
+          ),
+          const SizedBox(height: 6),
+          FittedBox(
+            fit: BoxFit.scaleDown,
+            child: Text(
+              value,
+              style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 15),
             ),
-          ],
-        ),
+          ),
+          Text(
+            label,
+            style: const TextStyle(
+              color: AppColors.textSecondary,
+              fontSize: 11,
+            ),
+            overflow: TextOverflow.ellipsis,
+            textAlign: TextAlign.center,
+          ),
+        ],
+      ),
+    ),
+  );
+}
+
+/// Groupe « Valeur du stock » : filtre Catégorie (sélection multiple,
+/// réinitialisable) et deux vignettes, Prix d'achat et Prix de vente, du stock
+/// des catégories choisies (tout le catalogue sans sélection).
+class _StockValueBox extends StatelessWidget {
+  const _StockValueBox({
+    required this.categories,
+    required this.selectedIds,
+    required this.onChanged,
+    required this.purchase,
+    required this.sale,
+  });
+
+  final List<Category> categories;
+  final Set<String> selectedIds;
+  final ValueChanged<Set<String>> onChanged;
+  final double purchase;
+  final double sale;
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      padding: const EdgeInsets.all(12),
+      decoration: BoxDecoration(
+        border: Border.all(color: AppColors.green.withValues(alpha: 0.4)),
+        borderRadius: BorderRadius.circular(12),
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          const Text(
+            'Valeur du stock',
+            style: TextStyle(fontWeight: FontWeight.bold, fontSize: 15),
+          ),
+          const SizedBox(height: 10),
+          _CategoryFilterField(
+            categories: categories,
+            selectedIds: selectedIds,
+            onChanged: onChanged,
+          ),
+          const SizedBox(height: 10),
+          Row(
+            children: [
+              Expanded(
+                child: _kpiTile(
+                  Icons.shopping_cart_outlined,
+                  "Prix d'achat",
+                  '${formatAmount(purchase)} F',
+                  AppColors.orange,
+                ),
+              ),
+              const SizedBox(width: 8),
+              Expanded(
+                child: _kpiTile(
+                  Icons.payments_outlined,
+                  'Prix de vente',
+                  '${formatAmount(sale)} F',
+                  AppColors.green,
+                ),
+              ),
+            ],
+          ),
+        ],
       ),
     );
   }

@@ -3,11 +3,11 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:chez_yasmine/losses/loss_filter.dart';
 import 'package:chez_yasmine/losses/loss_models.dart';
 
-Loss _loss(String id, DateTime createdAt, double value, {String? by}) => Loss(
+Loss _loss(String id, DateTime createdAt, double value, {String? by, double quantity = 1}) => Loss(
       id: id,
       productId: 'p',
       productName: 'Produit',
-      quantity: 1,
+      quantity: quantity,
       estimatedValue: value,
       createdByName: by,
       createdAt: createdAt,
@@ -59,6 +59,15 @@ void main() {
 
       expect(totals.count, 0);
       expect(totals.totalValue, 0);
+    });
+
+    test('le total est la somme des quantités (bouteilles), pas le nombre de lignes (2026-09-22)', () {
+      final withQuantities = [
+        _loss('a', monday, 1000, quantity: 6),
+        _loss('b', monday, 500, quantity: 2),
+      ];
+
+      expect(lossTotals(withQuantities).count, 8);
     });
   });
 
