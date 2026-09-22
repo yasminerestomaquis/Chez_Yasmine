@@ -463,10 +463,10 @@ class _StockKpiRow extends StatelessWidget {
   final int low;
   final int out;
 
-  /// Nombre total de bouteilles en stock (catégories à prix par casier —
-  /// Bières, Vins, Sucreries), fixe et non filtré, distinct de la vignette
-  /// homonyme du groupe « Valeur du stock » qui suit son propre filtre
-  /// Catégorie — demande utilisateur du 2026-09-22.
+  /// « Bouteilles en stock » (catégories à prix par casier — Bières, Vins,
+  /// Sucreries), fixe et non filtré, distinct de la vignette homonyme du
+  /// groupe « Valeur du stock » qui suit son propre filtre Catégorie —
+  /// demande utilisateur du 2026-09-22.
   final double bottles;
 
   @override
@@ -561,10 +561,10 @@ Widget _kpiTile(IconData icon, String label, String value, Color color) {
 
 /// Groupe « Valeur du stock » : filtre Catégorie (sélection multiple,
 /// réinitialisable) et trois vignettes sur une seule ligne — Prix d'achat,
-/// Prix de vente et Nombre total de bouteilles en stock (restreint aux
-/// catégories vendues par casier — Bières, Vins, Sucreries), toutes les
-/// trois calculées sur les catégories choisies dans le filtre (tout le
-/// catalogue sans sélection) — demande utilisateur du 2026-09-22.
+/// Prix de vente et Bouteilles en stock (restreint aux catégories vendues
+/// par casier — Bières, Vins, Sucreries), toutes les trois calculées sur
+/// les catégories choisies dans le filtre (tout le catalogue sans
+/// sélection) — demande utilisateur du 2026-09-22.
 class _StockValueBox extends StatelessWidget {
   const _StockValueBox({
     required this.categories,
