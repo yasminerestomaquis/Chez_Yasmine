@@ -34,11 +34,22 @@ double stockUnitSalePrice(Product product) =>
 }
 
 /// Nombre total de bouteilles en stock, restreint aux catégories vendues par
-/// casier (Bières, Vins, Sucreries — `category.hasCasePricing`), quelle que
-/// soit la sélection du filtre Catégorie du groupe « Valeur du stock » —
-/// demande utilisateur du 2026-09-22 : cette vignette ne compte jamais les
-/// catégories à prix variable ou fixe (Gbêlê, Poulets, Poissons, Plats
-/// africains), pour lesquelles « bouteille » n'a pas de sens.
-double stockBottleCount(List<Product> products) => products
-    .where((p) => p.hasCasePricing)
-    .fold(0.0, (sum, p) => sum + (p.stockQuantity > 0 ? p.stockQuantity : 0));
+/// casier (Bières, Vins, Sucreries — `category.hasCasePricing`) : cette
+/// vignette ne compte jamais les catégories à prix variable ou fixe (Gbêlê,
+/// Poulets, Poissons, Plats africains), pour lesquelles « bouteille » n'a pas
+/// de sens. [selectedCategoryIds] restreint encore le résultat aux catégories
+/// choisies dans le filtre Catégorie (aucune sélection = toutes les
+/// catégories à bouteilles) — demande utilisateur du 2026-09-22 : suit le
+/// même filtre que [stockValueTotals] pour la vignette du groupe « Valeur du
+/// stock » ; appelée avec un ensemble vide pour le total fixe affiché au
+/// dessus du groupe (rangée Articles suivis/Stock faible/Ruptures).
+double stockBottleCount(List<Product> products, Set<String> selectedCategoryIds) {
+  var count = 0.0;
+  for (final product in products) {
+    if (!product.hasCasePricing) continue;
+    if (selectedCategoryIds.isNotEmpty && !selectedCategoryIds.contains(product.categoryId)) continue;
+    if (product.stockQuantity <= 0) continue;
+    count += product.stockQuantity;
+  }
+  return count;
+}

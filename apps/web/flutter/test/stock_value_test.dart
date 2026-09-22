@@ -38,7 +38,7 @@ void main() {
     final gbele = _category(id: 'c3', name: 'Gbêlê');
     final poulets = _category(id: 'c4', name: 'Poulets');
 
-    test('additionne le stock des seules catégories à prix par casier', () {
+    test('sans sélection : additionne le stock des seules catégories à prix par casier', () {
       final products = [
         _product(id: 'beaufort', stockQuantity: 8, category: bieres),
         _product(id: 'vin100', stockQuantity: 5, category: vins),
@@ -46,7 +46,7 @@ void main() {
         _product(id: 'poulet', stockQuantity: 10, category: poulets),
       ];
 
-      expect(stockBottleCount(products), 13);
+      expect(stockBottleCount(products, {}), 13);
     });
 
     test('ignore un produit sans catégorie et une quantité négative/nulle', () {
@@ -56,11 +56,29 @@ void main() {
         _product(id: 'rupture', stockQuantity: -2, category: bieres),
       ];
 
-      expect(stockBottleCount(products), 8);
+      expect(stockBottleCount(products, {}), 8);
     });
 
     test('vide sans produit de catégorie à prix par casier', () {
-      expect(stockBottleCount([_product(id: 'gbele', stockQuantity: 3, category: gbele)]), 0);
+      expect(stockBottleCount([_product(id: 'gbele', stockQuantity: 3, category: gbele)], {}), 0);
+    });
+
+    test('suit la sélection du filtre Catégorie (2026-09-22)', () {
+      final products = [
+        _product(id: 'beaufort', stockQuantity: 8, category: bieres),
+        _product(id: 'vin100', stockQuantity: 5, category: vins),
+      ];
+
+      expect(stockBottleCount(products, {'c1'}), 8);
+    });
+
+    test('une catégorie sélectionnée hors bouteilles donne 0, même si dautres bouteilles existent', () {
+      final products = [
+        _product(id: 'beaufort', stockQuantity: 8, category: bieres),
+        _product(id: 'poulet', stockQuantity: 10, category: poulets),
+      ];
+
+      expect(stockBottleCount(products, {'c4'}), 0);
     });
   });
 

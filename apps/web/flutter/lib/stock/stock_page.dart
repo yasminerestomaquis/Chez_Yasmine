@@ -214,7 +214,13 @@ class _StockPageState extends State<StockPage> {
                   allProducts,
                   _valueCategoryIds,
                 );
-                final bottleCount = stockBottleCount(allProducts);
+                // Rangée du haut (Articles suivis/Stock faible/Ruptures) :
+                // total fixe, non filtré — indépendant du filtre Catégorie
+                // du groupe « Valeur du stock ». Vignette du groupe : suit
+                // ce filtre, comme Prix d'achat/Prix de vente (demande
+                // utilisateur du 2026-09-22).
+                final totalBottleCount = stockBottleCount(allProducts, {});
+                final valueBottleCount = stockBottleCount(allProducts, _valueCategoryIds);
 
                 final products = filterAndSortStockProducts(
                   products: allProducts,
@@ -235,6 +241,7 @@ class _StockPageState extends State<StockPage> {
                           total: allProducts.length,
                           low: lowCount,
                           out: outCount,
+                          bottles: totalBottleCount,
                         ),
                       ),
                       if (data.canViewValue) ...[
@@ -248,7 +255,7 @@ class _StockPageState extends State<StockPage> {
                                 setState(() => _valueCategoryIds = ids),
                             purchase: valueTotals.purchase,
                             sale: valueTotals.sale,
-                            bottleCount: bottleCount,
+                            bottleCount: valueBottleCount,
                           ),
                         ),
                       ],
@@ -449,11 +456,18 @@ class _StockKpiRow extends StatelessWidget {
     required this.total,
     required this.low,
     required this.out,
+    required this.bottles,
   });
 
   final int total;
   final int low;
   final int out;
+
+  /// Nombre total de bouteilles en stock (catégories à prix par casier —
+  /// Bières, Vins, Sucreries), fixe et non filtré, distinct de la vignette
+  /// homonyme du groupe « Valeur du stock » qui suit son propre filtre
+  /// Catégorie — demande utilisateur du 2026-09-22.
+  final double bottles;
 
   @override
   Widget build(BuildContext context) {
@@ -485,6 +499,15 @@ class _StockKpiRow extends StatelessWidget {
             'Ruptures',
             '$out',
             AppColors.alert,
+          ),
+        ),
+        const SizedBox(width: 8),
+        Expanded(
+          child: _kpiCard(
+            Icons.sports_bar_outlined,
+            'Nombre total de bouteilles',
+            bottles.toStringAsFixed(0),
+            AppColors.green,
           ),
         ),
       ],
@@ -537,11 +560,11 @@ Widget _kpiTile(IconData icon, String label, String value, Color color) {
 }
 
 /// Groupe « Valeur du stock » : filtre Catégorie (sélection multiple,
-/// réinitialisable) et trois vignettes — Prix d'achat et Prix de vente du
-/// stock des catégories choisies (tout le catalogue sans sélection), et
-/// Nombre total de bouteilles en stock, qui ne suit PAS ce filtre : toujours
-/// restreint aux catégories vendues par casier (Bières, Vins, Sucreries —
-/// demande utilisateur du 2026-09-22, voir `stockBottleCount`).
+/// réinitialisable) et trois vignettes sur une seule ligne — Prix d'achat,
+/// Prix de vente et Nombre total de bouteilles en stock (restreint aux
+/// catégories vendues par casier — Bières, Vins, Sucreries), toutes les
+/// trois calculées sur les catégories choisies dans le filtre (tout le
+/// catalogue sans sélection) — demande utilisateur du 2026-09-22.
 class _StockValueBox extends StatelessWidget {
   const _StockValueBox({
     required this.categories,
@@ -581,6 +604,8 @@ class _StockValueBox extends StatelessWidget {
             onChanged: onChanged,
           ),
           const SizedBox(height: 10),
+          // Les 3 vignettes sur une seule ligne horizontale (demande
+          // utilisateur du 2026-09-22).
           Row(
             children: [
               Expanded(
@@ -600,17 +625,16 @@ class _StockValueBox extends StatelessWidget {
                   AppColors.green,
                 ),
               ),
+              const SizedBox(width: 8),
+              Expanded(
+                child: _kpiTile(
+                  Icons.sports_bar_outlined,
+                  'Nombre total de bouteilles en stock',
+                  bottleCount.toStringAsFixed(0),
+                  AppColors.green,
+                ),
+              ),
             ],
-          ),
-          const SizedBox(height: 8),
-          SizedBox(
-            width: double.infinity,
-            child: _kpiTile(
-              Icons.sports_bar_outlined,
-              'Nombre total de bouteilles en stock',
-              bottleCount.toStringAsFixed(0),
-              AppColors.green,
-            ),
           ),
         ],
       ),
