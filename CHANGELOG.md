@@ -2,8 +2,8 @@
 
 ## [Unreleased]
 
-### Ajouté (2026-09-22) — Stock : vignette Nombre total de bouteilles en stock
-- Dans le groupe « Valeur du stock », nouvelle vignette **Nombre total de bouteilles en stock** : somme du stock des seules catégories vendues par casier (Bières, Vins, Sucreries) — suit le filtre Catégorie du groupe (sélectionner « Poulets » y affiche 0), comme Prix d'achat/Prix de vente.
+### Ajouté (2026-09-22) — Stock : vignette Bouteilles en stock
+- Dans le groupe « Valeur du stock », nouvelle vignette **Bouteilles en stock** (« Nombre total de bouteilles en stock » à l'introduction, renommée le même jour) : somme du stock des seules catégories vendues par casier (Bières, Vins, Sucreries) — suit le filtre Catégorie du groupe (sélectionner « Poulets » y affiche 0), comme Prix d'achat/Prix de vente.
 - Les 3 vignettes du groupe sont sur une seule ligne horizontale.
 - **Rangée du haut** (Articles suivis/Stock faible/Ruptures) : 4ᵉ vignette **Bouteilles en stock** (renommée depuis « Nombre total de bouteilles »), fixe et non filtrée, visible sans `stock.view_value` (simple décompte physique, pas un montant).
 - Tests : 5 Flutter (`stockBottleCount`).

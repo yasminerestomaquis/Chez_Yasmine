@@ -629,7 +629,7 @@ class _StockValueBox extends StatelessWidget {
               Expanded(
                 child: _kpiTile(
                   Icons.sports_bar_outlined,
-                  'Nombre total de bouteilles en stock',
+                  'Bouteilles en stock',
                   bottleCount.toStringAsFixed(0),
                   AppColors.green,
                 ),
