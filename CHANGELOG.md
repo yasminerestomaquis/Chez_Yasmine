@@ -2,6 +2,10 @@
 
 ## [Unreleased]
 
+### Ajouté (2026-09-22) — Stock : vignette Nombre total de bouteilles en stock
+- Dans le groupe « Valeur du stock », nouvelle vignette **Nombre total de bouteilles en stock** : somme du stock des seules catégories vendues par casier (Bières, Vins, Sucreries), quel que soit le filtre Catégorie du groupe.
+- Tests : 4 Flutter (`stockBottleCount`).
+
 ### Ajouté (2026-09-22) — Stock : visibilité de « Valeur du stock » par permission
 - Nouvelle permission `stock.view_value`, gérable depuis Utilisateurs > Gestion des permissions (module Stock) : accorde ou refuse, rôle par rôle, la visibilité du groupe « Valeur du stock » (prix d'achat/prix de vente). Réservée au Super Administrateur par défaut.
 - `GET .../stock/permissions` (nouvelle route, `stock.view`) renvoie les permissions Stock à bascule client détenues par l'utilisateur, même principe que `GET .../charts/permissions`.

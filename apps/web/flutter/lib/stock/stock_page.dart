@@ -214,6 +214,7 @@ class _StockPageState extends State<StockPage> {
                   allProducts,
                   _valueCategoryIds,
                 );
+                final bottleCount = stockBottleCount(allProducts);
 
                 final products = filterAndSortStockProducts(
                   products: allProducts,
@@ -247,6 +248,7 @@ class _StockPageState extends State<StockPage> {
                                 setState(() => _valueCategoryIds = ids),
                             purchase: valueTotals.purchase,
                             sale: valueTotals.sale,
+                            bottleCount: bottleCount,
                           ),
                         ),
                       ],
@@ -535,8 +537,11 @@ Widget _kpiTile(IconData icon, String label, String value, Color color) {
 }
 
 /// Groupe « Valeur du stock » : filtre Catégorie (sélection multiple,
-/// réinitialisable) et deux vignettes, Prix d'achat et Prix de vente, du stock
-/// des catégories choisies (tout le catalogue sans sélection).
+/// réinitialisable) et trois vignettes — Prix d'achat et Prix de vente du
+/// stock des catégories choisies (tout le catalogue sans sélection), et
+/// Nombre total de bouteilles en stock, qui ne suit PAS ce filtre : toujours
+/// restreint aux catégories vendues par casier (Bières, Vins, Sucreries —
+/// demande utilisateur du 2026-09-22, voir `stockBottleCount`).
 class _StockValueBox extends StatelessWidget {
   const _StockValueBox({
     required this.categories,
@@ -544,6 +549,7 @@ class _StockValueBox extends StatelessWidget {
     required this.onChanged,
     required this.purchase,
     required this.sale,
+    required this.bottleCount,
   });
 
   final List<Category> categories;
@@ -551,6 +557,7 @@ class _StockValueBox extends StatelessWidget {
   final ValueChanged<Set<String>> onChanged;
   final double purchase;
   final double sale;
+  final double bottleCount;
 
   @override
   Widget build(BuildContext context) {
@@ -594,6 +601,16 @@ class _StockValueBox extends StatelessWidget {
                 ),
               ),
             ],
+          ),
+          const SizedBox(height: 8),
+          SizedBox(
+            width: double.infinity,
+            child: _kpiTile(
+              Icons.sports_bar_outlined,
+              'Nombre total de bouteilles en stock',
+              bottleCount.toStringAsFixed(0),
+              AppColors.green,
+            ),
           ),
         ],
       ),

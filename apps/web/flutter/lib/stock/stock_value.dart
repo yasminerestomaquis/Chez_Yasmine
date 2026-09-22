@@ -32,3 +32,13 @@ double stockUnitSalePrice(Product product) =>
   }
   return (purchase: purchase, sale: sale);
 }
+
+/// Nombre total de bouteilles en stock, restreint aux catégories vendues par
+/// casier (Bières, Vins, Sucreries — `category.hasCasePricing`), quelle que
+/// soit la sélection du filtre Catégorie du groupe « Valeur du stock » —
+/// demande utilisateur du 2026-09-22 : cette vignette ne compte jamais les
+/// catégories à prix variable ou fixe (Gbêlê, Poulets, Poissons, Plats
+/// africains), pour lesquelles « bouteille » n'a pas de sens.
+double stockBottleCount(List<Product> products) => products
+    .where((p) => p.hasCasePricing)
+    .fold(0.0, (sum, p) => sum + (p.stockQuantity > 0 ? p.stockQuantity : 0));
