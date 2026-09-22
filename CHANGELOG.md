@@ -2,6 +2,11 @@
 
 ## [Unreleased]
 
+### Ajouté (2026-09-22) — Stock : visibilité de « Valeur du stock » par permission
+- Nouvelle permission `stock.view_value`, gérable depuis Utilisateurs > Gestion des permissions (module Stock) : accorde ou refuse, rôle par rôle, la visibilité du groupe « Valeur du stock » (prix d'achat/prix de vente). Réservée au Super Administrateur par défaut.
+- `GET .../stock/permissions` (nouvelle route, `stock.view`) renvoie les permissions Stock à bascule client détenues par l'utilisateur, même principe que `GET .../charts/permissions`.
+- Tests : 2 NestJS (`stock-permissions`).
+
 ### Ajouté (2026-09-22) — Stock : groupe Valeur du stock ; Pertes : bouteilles perdues ; Graphiques : filtre produit multi-sélection
 - **Stock** : la vignette « Valeur du stock » quitte la rangée de compteurs (désormais Articles suivis / Stock faible / Ruptures sur une seule ligne) pour son propre groupe, avec un filtre Catégorie à sélection multiple et réinitialisable, et deux vignettes **Prix d'achat** et **Prix de vente** calculées sur les catégories choisies (tout le catalogue sans sélection).
 - **Pertes** : « Nombre total de pertes » (nombre de lignes) devient **« Nombre total de bouteilles perdues »** (somme des quantités).

@@ -41,7 +41,8 @@ insert into permissions (code, description) values
   ('charts.expenses_daily', 'Dépenses journalières totales'),
   ('charts.expenses_by_category', 'Dépenses journalières totales par catégorie'),
   ('charts.expenses_top', 'Top dépenses'),
-  ('charts.expenses_monthly', 'Dépenses mensuelles')
+  ('charts.expenses_monthly', 'Dépenses mensuelles'),
+  ('stock.view_value', 'Voir le groupe « Valeur du stock » (prix d''achat/prix de vente du stock filtré par catégorie) dans le module Stock')
 on conflict (code) do nothing;
 
 insert into roles (organization_id, name, is_system) values
@@ -68,7 +69,7 @@ select r.id, p.id
 from roles r
 cross join permissions p
 where r.is_system and r.name in ('Super Administrateur', 'Administrateur', 'Propriétaire')
-  and p.code not in ('notifications.manage', 'roles.manage', 'losses.edit')
+  and p.code not in ('notifications.manage', 'roles.manage', 'losses.edit', 'stock.view_value')
 on conflict do nothing;
 
 -- notifications.manage : Super Administrateur uniquement (bouton "Effacer
@@ -109,12 +110,26 @@ on conflict do nothing;
 -- consulter le catalogue, notamment parce qu'Achats en dépend pour choisir
 -- un produit à commander (voir purchase_order_detail_page.dart) — seule la
 -- création/modification/suppression de produits/catégories/photos lui est
--- retirée, voir docs/api/catalog.md).
+-- retirée, voir docs/api/catalog.md). `stock.view_value` exclue de ce "tout
+-- sauf" : par défaut réservée au seul Super Administrateur (décision
+-- utilisateur du 2026-09-22), accordable au Gérant depuis "Gestion des
+-- permissions" si besoin.
 insert into role_permissions (role_id, permission_id)
 select r.id, p.id
 from roles r
 cross join permissions p
-where r.is_system and r.name = 'Gérant' and p.code not in ('roles.manage', 'users.manage', 'products.manage')
+where r.is_system and r.name = 'Gérant' and p.code not in ('roles.manage', 'users.manage', 'products.manage', 'stock.view_value')
+on conflict do nothing;
+
+-- stock.view_value : Super Administrateur uniquement par défaut (demande
+-- utilisateur du 2026-09-22 — visibilité du groupe « Valeur du stock »,
+-- accordable/révocable rôle par rôle depuis "Gestion des permissions", voir
+-- docs/api/catalog.md).
+insert into role_permissions (role_id, permission_id)
+select r.id, p.id
+from roles r
+join permissions p on p.code = 'stock.view_value'
+where r.is_system and r.name = 'Super Administrateur'
 on conflict do nothing;
 
 -- Caissier : caisse, remboursement, clients (encours crédit), rapports.

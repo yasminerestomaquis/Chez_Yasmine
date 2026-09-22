@@ -1,16 +1,35 @@
 import { Body, Controller, Get, Param, Post, Req, UseGuards } from '@nestjs/common';
 import type { Request } from 'express';
+import { AuthorizationService } from '../auth/authorization.service.js';
 import { PermissionsGuard } from '../auth/permissions.guard.js';
 import { RequirePermissions } from '../auth/permissions.decorator.js';
 import { SupabaseJwtGuard } from '../auth/supabase-jwt.guard.js';
 import { CreateStockMovementDto } from './dto/create-stock-movement.dto.js';
 import { StockMovementsService } from './stock-movements.service.js';
+import { stockPermissionsOf } from './stock-permissions.js';
 
 @Controller('establishments/:establishmentId')
 @UseGuards(SupabaseJwtGuard, PermissionsGuard)
 @RequirePermissions('stock.manage')
 export class StockController {
-  constructor(private readonly stockMovements: StockMovementsService) {}
+  constructor(
+    private readonly stockMovements: StockMovementsService,
+    private readonly authorization: AuthorizationService,
+  ) {}
+
+  /**
+   * Permissions Stock à bascule client détenues par l'utilisateur (pour
+   * l'instant, seulement `stock.view_value` — visibilité du groupe « Valeur
+   * du stock », demande utilisateur du 2026-09-22) — même principe que
+   * `ChartsController.myPermissions`.
+   */
+  @Get('stock/permissions')
+  @RequirePermissions('stock.view')
+  async myPermissions(@Req() request: Request, @Param('establishmentId') establishmentId: string) {
+    const userId = request.user?.sub;
+    const granted = userId ? await this.authorization.getPermissionCodes(userId, establishmentId) : new Set<string>();
+    return { permissions: stockPermissionsOf(granted) };
+  }
 
   @Post('products/:productId/stock-movements')
   create(

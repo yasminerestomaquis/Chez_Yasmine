@@ -49,8 +49,20 @@ Demande utilisateur explicite : le Serveur doit pouvoir consulter tout le module
 Nouvelle permission `stock.view`, affectée aux deux routes `GET` ci-dessus à la place de `stock.manage` (qui reste réservé à la création d'un mouvement) ; note que la liste des produits/leur `stockQuantity` elle-même vient de `GET .../products` (`products.view`, voir `docs/api/catalog.md`), pas d'une route de ce contrôleur. `stock.view` accordée à Serveur et Magasinier (`supabase/seed/001_roles_permissions.sql`).
 
 Côté Flutter, `StockPage` reçoit `roleName` et, pour le Serveur (`roleName == 'Serveur'`) :
-- `_StockKpiRow` masque la carte « Valeur du stock » (`value: null`) — les 3 autres (Articles suivis/Stock faible/Ruptures) restent visibles.
 - `_StockProductRow(readOnly: true)` retire l'action « Mouvement de stock » du menu par produit ; « Voir l'historique » reste toujours disponible.
+
+Le masquage de « Valeur du stock » par rôle codé en dur ci-dessus est remplacé par une permission dédiée — voir la section suivante.
+
+## Ajout (2026-09-22) — groupe « Valeur du stock » par permission, filtrable par catégorie
+
+Demande utilisateur : le groupe « Valeur du stock » (prix d'achat et prix de vente du stock) ne doit être visible que par le Super Administrateur par défaut, avec la possibilité d'accorder ou de refuser cette visibilité aux autres rôles depuis « Gestion des permissions ».
+
+- **Nouvelle permission `stock.view_value`** (`supabase/seed/001_roles_permissions.sql`), affichée sous Stock > « Mouvements de stock » dans le tableau de « Gestion des permissions » (même regroupement générique par préfixe que les autres permissions `stock.*`, `lib/users/permission_grouping.dart` n'a rien de spécifique à ajouter). Exclue des règles « tout sauf » de Super Administrateur/Administrateur/Propriétaire/Gérant ; accordée explicitement au seul Super Administrateur.
+- **`GET .../stock/permissions`** (`stock.view`, même principe que `ChartsController.myPermissions`) : renvoie `{ permissions: string[] }`, filtré aux codes `stock.*` à bascule client (`src/stock/stock-permissions.ts`, pour l'instant seulement `stock.view_value`).
+- Côté Flutter, `StockRepository.getMyPermissions()` appelle cette route ; `StockPage._load()` échoue *fermé* (`catchError` → aucune permission) plutôt qu'ouvert — un chiffre potentiellement sensible reste masqué en cas d'échec réseau, contrairement à `ChartsRepository.getMyPermissions()` qui retombe sur *tout accordé* (graphiques déjà tous visibles avant l'introduction de `charts.*`).
+- Le groupe lui-même (`_StockValueBox`) a quitté la rangée de compteurs, qui n'affiche plus qu'Articles suivis/Stock faible/Ruptures sur une seule ligne — il vit dans son propre encadré, avec ses deux vignettes **Prix d'achat**/**Prix de vente** (`stockValueTotals`, `lib/stock/stock_value.dart`) et son propre filtre Catégorie à sélection multiple (`_valueCategoryIds`, indépendant du filtre de la liste de produits).
+
+Tests : 2 NestJS (`stock-permissions.spec.ts`).
 
 `ReportsPage` (lien « Voir le stock » des Points d'attention) reçoit désormais aussi `roleName`, uniquement pour le transmettre à `StockPage` en cas de navigation depuis ce lien.
 

@@ -1,5 +1,3 @@
-import 'stock_value.dart';
-
 import 'package:flutter/material.dart';
 
 import '../api/api_client.dart';
@@ -12,6 +10,7 @@ import 'product_stock_history_page.dart';
 import 'stock_models.dart';
 import 'stock_movement_dialog.dart';
 import 'stock_repository.dart';
+import 'stock_value.dart';
 
 const _kFilterAll = 'all';
 const _kFilterInStock = 'in_stock';
@@ -56,12 +55,18 @@ class _StockPageData {
     required this.products,
     required this.categories,
     required this.totals,
+    required this.canViewValue,
   });
 
   final List<StockAlert> alerts;
   final List<Product> products;
   final List<Category> categories;
   final List<StockMovementTotals> totals;
+
+  /// Permission `stock.view_value` — visibilité du groupe « Valeur du stock »
+  /// (demande utilisateur du 2026-09-22, "Gestion des permissions" > Stock).
+  /// Par défaut réservée au Super Administrateur.
+  final bool canViewValue;
 }
 
 class StockPage extends StatefulWidget {
@@ -83,8 +88,7 @@ class _StockPageState extends State<StockPage> {
   // HomeDashboard._isServeur (voir lib/home/home_dashboard.dart) : `GET
   // /auth/me` n'expose pas de code de permission au client. Demande
   // utilisateur du 2026-09-11 : le Serveur a `stock.view` (lecture) mais pas
-  // `stock.manage` — accès en lecture seule (pas de "Mouvement de stock"),
-  // sans la carte "Valeur du stock" (chiffre potentiellement sensible).
+  // `stock.manage` — accès en lecture seule (pas de "Mouvement de stock").
   bool get _isServeur => widget.roleName == 'Serveur';
 
   late final CatalogRepository _catalog = CatalogRepository(
@@ -108,17 +112,22 @@ class _StockPageState extends State<StockPage> {
 
   Future<_StockPageData> _load() async {
     try {
-      final (alerts, products, categories, totals) = await (
+      final (alerts, products, categories, totals, permissions) = await (
         _stock.listAlerts(),
         _catalog.listProducts(),
         _catalog.listCategories(),
         _stock.listMovementTotals(),
+        // Échec (réseau, ou rôle qui n'a même pas stock.view) : groupe masqué
+        // par défaut, un chiffre potentiellement sensible reste donc jamais
+        // affiché faute de mieux.
+        _stock.getMyPermissions().catchError((_) => <String>{}),
       ).wait;
       return _StockPageData(
         alerts: alerts,
         products: products,
         categories: categories,
         totals: totals,
+        canViewValue: permissions.contains('stock.view_value'),
       );
     } catch (error) {
       final cached = await _cache.load();
@@ -130,6 +139,7 @@ class _StockPageState extends State<StockPage> {
           products: cached.$2,
           categories: cached.$1,
           totals: const [],
+          canViewValue: false,
         );
       }
       rethrow;
@@ -226,7 +236,7 @@ class _StockPageState extends State<StockPage> {
                           out: outCount,
                         ),
                       ),
-                      if (!_isServeur) ...[
+                      if (data.canViewValue) ...[
                         const SizedBox(height: 12),
                         Padding(
                           padding: const EdgeInsets.symmetric(horizontal: 12),

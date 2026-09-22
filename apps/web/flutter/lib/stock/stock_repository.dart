@@ -63,4 +63,11 @@ class StockRepository {
     final json = await _api.get('/establishments/$establishmentId/products/$productId/order-numbers') as Map<String, dynamic>;
     return OrderNumberChoices.fromJson(json);
   }
+
+  /// Codes `stock.*` à bascule client accordés à l'utilisateur courant (pour
+  /// l'instant, seulement `stock.view_value` — voir `StockController.myPermissions`).
+  Future<Set<String>> getMyPermissions() async {
+    final json = await _api.get('/establishments/$establishmentId/stock/permissions') as Map<String, dynamic>;
+    return (json['permissions'] as List<dynamic>).cast<String>().toSet();
+  }
 }
