@@ -66,7 +66,7 @@ Demande utilisateur : le groupe « Valeur du stock » (prix d'achat et prix de v
 
 Ajustements demandés après la première version ci-dessus :
 
-- **Rangée du haut** (`_StockKpiRow`) : 4ᵉ vignette **Nombre total de bouteilles**, alignée avec Articles suivis/Stock faible/Ruptures — `stockBottleCount(allProducts, {})`, fixe (pas de filtre à ce niveau), et **non soumise à `stock.view_value`** (visible comme les 3 autres de cette rangée, y compris au Serveur — ce n'est pas un montant, juste un décompte physique).
+- **Rangée du haut** (`_StockKpiRow`) : 4ᵉ vignette **Bouteilles en stock** (« Nombre total de bouteilles » à l'introduction, renommée le même jour), alignée avec Articles suivis/Stock faible/Ruptures — `stockBottleCount(allProducts, {})`, fixe (pas de filtre à ce niveau), et **non soumise à `stock.view_value`** (visible comme les 3 autres de cette rangée, y compris au Serveur — ce n'est pas un montant, juste un décompte physique).
 - **Vignette homonyme du groupe « Valeur du stock »** : suit désormais le filtre Catégorie du groupe (`stockBottleCount(allProducts, _valueCategoryIds)`), comme Prix d'achat/Prix de vente — sélectionner « Poulets » y affiche 0 (aucun produit à prix par casier dans cette catégorie), sélectionner « Bières » n'y compte que les bouteilles de cette catégorie.
 - Les 3 vignettes du groupe (Prix d'achat, Prix de vente, Nombre total de bouteilles en stock) sont désormais sur une seule ligne horizontale plutôt que 2+1.
 

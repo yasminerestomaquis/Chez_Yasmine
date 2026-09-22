@@ -505,7 +505,7 @@ class _StockKpiRow extends StatelessWidget {
         Expanded(
           child: _kpiCard(
             Icons.sports_bar_outlined,
-            'Nombre total de bouteilles',
+            'Bouteilles en stock',
             bottles.toStringAsFixed(0),
             AppColors.green,
           ),
