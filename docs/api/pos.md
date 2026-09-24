@@ -15,6 +15,18 @@ PATCH /establishments/:establishmentId/sales/:saleId/payments/:paymentId { metho
 
 `pos.sell` pour créer/consulter, `pos.refund` pour annuler une vente entière, `pos.correct` pour corriger une ligne déjà enregistrée (quantité, mode de paiement) sans l'annuler — trois permissions distinctes (permissions du catalogue de la Phase 3 — un caissier peut vendre sans forcément pouvoir rembourser/corriger, selon le rôle ; `pos.correct` séparée de `pos.refund` depuis le 2026-09-16, voir plus bas).
 
+## Prix de référence variable (ex. Gbêlê) — décision utilisateur du 2026-09-24
+
+Un produit dont `Product.referenceSalePrice` est renseigné (catégorie fixe, ni `hasCasePricing` ni `hasVariablePricing`, mais `requiresPriceAtSale` — ex. Gbêlê : achat connu au litre, prix de vente saisi à chaque vente) se vend par MONTANT plutôt que par quantité : le caissier saisit ce que le client paie (`SaleItemDto.amountPaid`/`AddOrderItemDto.amountPaid`), **jamais** une quantité ni un prix unitaire pour ce cas — le serveur déduit les deux avec `resolveReferencePriceLine` (`src/pos/reference-price.ts`) :
+
+- `quantity = round((amountPaid / referenceSalePrice), 2)` — ex. 100 FCFA à 3 000 FCFA/L → 0,03 L (arrondi à la précision de `sale_items.quantity`, `Decimal(12,2)`).
+- `unitPrice = amountPaid / quantity` — recalculé à partir de la quantité arrondie, pas égal à `referenceSalePrice`, pour que `quantity × unitPrice` reproduise exactement le montant saisi malgré l'arrondi (le total facturé/encaissé ne doit jamais dériver d'un arrondi de stock).
+- Un montant trop faible pour représenter au moins 0,01 unité (< 15 FCFA à 3 000 FCFA/L) est refusé (`BadRequestException`) plutôt qu'arrondi à une quantité nulle.
+
+`SalesService.create` accepte aussi `quantity`/`unitPrice` déjà résolus pour ce type de produit (sans `amountPaid`) : c'est le cas de l'encaissement d'une addition (`TableOrderPage`), où `OrdersService.addItem` a déjà calculé ces valeurs au moment de l'ajout à la table — la même confiance déjà accordée à l'encaissement d'un produit à prix variable "classique" (Poulets/Poissons/Plats africains, ci-dessous), pas une nouvelle dérivation.
+
+Interface Flutter : `PosPage._promptManualPrice`/`TableOrderPage._promptManualPrice` (dialogue partagé en substance entre Caisse et Salle) affichent « Montant payé » au lieu de « Prix de vente » et un aperçu de la quantité (`≈ 0,03 L`) sous le champ, mis à jour à la saisie.
+
 ## Logique métier
 
 Reprise et adaptée du prototype v1 déjà validé :

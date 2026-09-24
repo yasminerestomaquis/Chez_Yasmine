@@ -13,7 +13,11 @@ class CartLine {
   int quantity;
 
   /// Saisi par le caissier pour un produit à prix variable (`product.salePrice`
-  /// nul, ex. Poulets/Poissons/Plats africains) — voir `PosPage._addToCart`.
+  /// nul) — voir `PosPage._addToCart`. Pour un produit à prix fixe "classique"
+  /// (Poulets/Poissons/Plats africains) : le prix de vente lui-même. Pour un
+  /// produit à prix de RÉFÉRENCE variable (`product.referenceSalePrice` non
+  /// nul, ex. Gbêlê) : le MONTANT payé — envoyé au serveur comme `amountPaid`
+  /// plutôt que `unitPrice` (voir `_checkout`), qui en déduit la quantité.
   final double? manualUnitPrice;
 
   /// Vente à l'unité plutôt qu'au tarif normal (ex. Heineken 33/Despé 33,

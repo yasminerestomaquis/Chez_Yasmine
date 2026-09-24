@@ -135,40 +135,51 @@ class _PosPageState extends State<PosPage> {
     );
   }
 
+  /// Pour un produit à prix fixe (ex. Poulets/Poissons/Plats africains) :
+  /// saisie du prix de vente, tel quel. Pour un produit à prix de référence
+  /// variable (`referenceSalePrice` non nul, ex. Gbêlê) : saisie du MONTANT
+  /// payé — le serveur en déduit la quantité (litres) au prix de référence
+  /// (ex. 100 FCFA à 3 000 FCFA/L → 0,03 L), voir `docs/api/pos.md`. Un
+  /// aperçu de la quantité s'affiche sous le champ pendant la saisie.
   Future<double?> _promptManualPrice(Product product) async {
+    final referencePrice = product.referenceSalePrice;
     final controller = TextEditingController();
     return showDialog<double>(
       context: context,
-      builder: (context) => AlertDialog(
-        title: Text('Prix de vente — ${product.name}'),
-        content: TextField(
-          controller: controller,
-          autofocus: true,
-          keyboardType: const TextInputType.numberWithOptions(decimal: true),
-          decoration: const InputDecoration(labelText: 'Prix (FCFA)'),
-          onSubmitted: (_) {
-            final value = double.tryParse(
-              controller.text.trim().replaceAll(',', '.'),
-            );
-            if (value != null && value > 0) Navigator.of(context).pop(value);
-          },
-        ),
-        actions: [
-          TextButton(
-            onPressed: () => Navigator.of(context).pop(),
-            child: const Text('Annuler'),
-          ),
-          FilledButton(
-            onPressed: () {
-              final value = double.tryParse(
-                controller.text.trim().replaceAll(',', '.'),
-              );
-              if (value == null || value <= 0) return;
-              Navigator.of(context).pop(value);
-            },
-            child: const Text('Ajouter'),
-          ),
-        ],
+      builder: (context) => StatefulBuilder(
+        builder: (context, setDialogState) {
+          final amount = double.tryParse(controller.text.trim().replaceAll(',', '.'));
+          return AlertDialog(
+            title: Text(
+              referencePrice != null ? 'Montant payé — ${product.name}' : 'Prix de vente — ${product.name}',
+            ),
+            content: TextField(
+              controller: controller,
+              autofocus: true,
+              keyboardType: const TextInputType.numberWithOptions(decimal: true),
+              decoration: InputDecoration(
+                labelText: referencePrice != null ? 'Montant (FCFA)' : 'Prix (FCFA)',
+                helperText: referencePrice != null && amount != null && amount > 0
+                    ? '≈ ${(amount / referencePrice).toStringAsFixed(2)} L'
+                    : null,
+              ),
+              onChanged: (_) => setDialogState(() {}),
+              onSubmitted: (_) {
+                if (amount != null && amount > 0) Navigator.of(context).pop(amount);
+              },
+            ),
+            actions: [
+              TextButton(
+                onPressed: () => Navigator.of(context).pop(),
+                child: const Text('Annuler'),
+              ),
+              FilledButton(
+                onPressed: (amount == null || amount <= 0) ? null : () => Navigator.of(context).pop(amount),
+                child: const Text('Ajouter'),
+              ),
+            ],
+          );
+        },
       ),
     );
   }
@@ -213,7 +224,12 @@ class _PosPageState extends State<PosPage> {
           (l) => {
             'productId': l.product.id,
             'quantity': l.quantity,
-            if (l.manualUnitPrice != null) 'unitPrice': l.manualUnitPrice,
+            // Prix de référence variable (ex. Gbêlê) : `manualUnitPrice`
+            // contient en réalité le montant saisi par le caissier, envoyé
+            // comme `amountPaid` — le serveur en déduit lui-même la
+            // quantité, voir docs/api/pos.md (2026-09-24).
+            if (l.manualUnitPrice != null)
+              (l.product.referenceSalePrice != null ? 'amountPaid' : 'unitPrice'): l.manualUnitPrice,
             if (l.sellAsUnit) 'sellAsUnit': true,
           },
         )

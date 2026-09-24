@@ -36,6 +36,7 @@ const product = (
     name: string;
     salePrice: number | null;
     unitSalePrice: number | null;
+    referenceSalePrice: number | null;
     stockQuantity: number;
   }> = {},
 ) => ({
@@ -48,6 +49,9 @@ const product = (
   // unitSalePrice: prix de vente alternatif à l'unité (ex. Heineken 33/Despé
   // 33, normalement vendues par lot de 3) — voir SaleItemDto.sellAsUnit.
   unitSalePrice: over.unitSalePrice == null ? null : new Decimal(over.unitSalePrice),
+  // referenceSalePrice : prix de référence variable (ex. Gbêlê, 3000 FCFA/L)
+  // — voir SaleItemDto.amountPaid.
+  referenceSalePrice: over.referenceSalePrice == null ? null : new Decimal(over.referenceSalePrice),
   stockQuantity: new Decimal(over.stockQuantity ?? 20),
 });
 
@@ -272,6 +276,48 @@ describe('SalesService.create', () => {
           }),
         }),
       );
+    });
+  });
+
+  describe('prix de référence variable (ex. Gbêlê, 3000 FCFA/L) — decision utilisateur du 2026-09-24', () => {
+    it('deduit quantite et prix unitaire du montant paye', async () => {
+      (prisma.product as any).findMany.mockResolvedValue([product({ salePrice: null, referenceSalePrice: 3000, stockQuantity: 40 })]);
+      (prisma.sale as any).create.mockResolvedValue({ id: 'sale-1', items: [], payments: [] });
+
+      await service.create('est-1', 'user-1', {
+        items: [{ productId: 'p1', amountPaid: 100 }],
+        payments: [{ method: 'cash', amount: 100 }],
+      } as any);
+
+      const created = (prisma.sale.create as any).mock.calls[0][0].data.items.create[0];
+      expect(created.quantity).toBe(0.03);
+      expect(created.quantity * created.unitPrice).toBeCloseTo(100, 6);
+      expect((prisma.stockMovement.create as any).mock.calls[0][0].data.quantity).toBe(0.03);
+    });
+
+    it('refuse la vente sans montant paye', async () => {
+      (prisma.product as any).findMany.mockResolvedValue([product({ salePrice: null, referenceSalePrice: 3000 })]);
+      await expect(
+        service.create('est-1', 'user-1', {
+          items: [{ productId: 'p1' }],
+          payments: [{ method: 'cash', amount: 100 }],
+        } as any),
+      ).rejects.toBeInstanceOf(BadRequestException);
+      expect(prisma.$transaction).not.toHaveBeenCalled();
+    });
+
+    it('accepte lencaissement dune addition, qui rejoue quantite/unitPrice deja resolus (checkout)', async () => {
+      (prisma.product as any).findMany.mockResolvedValue([product({ salePrice: null, referenceSalePrice: 3000, stockQuantity: 40 })]);
+      (prisma.sale as any).create.mockResolvedValue({ id: 'sale-1', items: [], payments: [] });
+
+      await service.create('est-1', 'user-1', {
+        items: [{ productId: 'p1', quantity: 0.03, unitPrice: 3333.33 }],
+        payments: [{ method: 'cash', amount: 100 }],
+      } as any);
+
+      const created = (prisma.sale.create as any).mock.calls[0][0].data.items.create[0];
+      expect(created.quantity).toBe(0.03);
+      expect(created.unitPrice).toBe(3333.33);
     });
   });
 

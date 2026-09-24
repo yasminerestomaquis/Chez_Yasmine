@@ -95,6 +95,7 @@ class TablesRepository {
     required String productId,
     required double quantity,
     double? unitPrice,
+    double? amountPaid,
     bool sellAsUnit = false,
   }) {
     return _api.post(
@@ -103,6 +104,7 @@ class TablesRepository {
         'productId': productId,
         'quantity': quantity,
         'unitPrice': ?unitPrice,
+        'amountPaid': ?amountPaid,
         if (sellAsUnit) 'sellAsUnit': true,
       },
     );

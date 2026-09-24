@@ -11,15 +11,23 @@ export class AddOrderItemDto {
   @IsUUID()
   productId!: string;
 
+  /** Optionnelle quand `amountPaid` est fourni (produit à prix de référence variable, ex. Gbêlê) — voir OrdersService.addItem. */
+  @IsOptional()
   @IsNumber()
   @Min(0.01)
-  quantity!: number;
+  quantity?: number;
 
   /** Requis si le produit appartient à une catégorie à prix variable (Poulets, Poissons, Plats africains) — voir OrdersService.addItem. Ignoré pour un produit à prix fixe (le prix catalogue prévaut toujours). */
   @IsOptional()
   @IsNumber()
   @Min(0.01)
   unitPrice?: number;
+
+  /** Montant payé (FCFA) pour un produit à prix de référence variable (`Product.referenceSalePrice`, ex. Gbêlê) — le serveur en déduit la quantité, même principe que `SaleItemDto.amountPaid` en Caisse (décision utilisateur du 2026-09-24). */
+  @IsOptional()
+  @IsNumber()
+  @Min(0.01)
+  amountPaid?: number;
 
   /** Demande de vendre à l'unité (`Product.unitSalePrice`) plutôt qu'au tarif normal — même principe que `CreateSaleDto.items[].sellAsUnit` en Caisse, voir OrdersService.addItem. */
   @IsOptional()

@@ -126,34 +126,47 @@ class _TableOrderPageState extends State<TableOrderPage> {
     }
   }
 
+  /// Pour un produit à prix fixe "classique" (ex. Poulets/Poissons/Plats
+  /// africains) : saisie du prix de vente. Pour un produit à prix de
+  /// référence variable (`referenceSalePrice` non nul, ex. Gbêlê) : saisie
+  /// du MONTANT payé, avec aperçu de la quantité (litres) — même dialogue
+  /// qu'en Caisse (`pos_page.dart._promptManualPrice`), voir docs/api/pos.md.
   Future<double?> _promptManualPrice(Product product) async {
+    final referencePrice = product.referenceSalePrice;
     final controller = TextEditingController();
     return showDialog<double>(
       context: context,
-      builder: (context) => AlertDialog(
-        title: Text('Prix de vente — ${product.name}'),
-        content: TextField(
-          controller: controller,
-          autofocus: true,
-          keyboardType: const TextInputType.numberWithOptions(decimal: true),
-          decoration: const InputDecoration(labelText: 'Prix (FCFA)'),
-        ),
-        actions: [
-          TextButton(
-            onPressed: () => Navigator.of(context).pop(),
-            child: const Text('Annuler'),
-          ),
-          FilledButton(
-            onPressed: () {
-              final value = double.tryParse(
-                controller.text.trim().replaceAll(',', '.'),
-              );
-              if (value == null || value <= 0) return;
-              Navigator.of(context).pop(value);
-            },
-            child: const Text('Ajouter'),
-          ),
-        ],
+      builder: (context) => StatefulBuilder(
+        builder: (context, setDialogState) {
+          final amount = double.tryParse(controller.text.trim().replaceAll(',', '.'));
+          return AlertDialog(
+            title: Text(
+              referencePrice != null ? 'Montant payé — ${product.name}' : 'Prix de vente — ${product.name}',
+            ),
+            content: TextField(
+              controller: controller,
+              autofocus: true,
+              keyboardType: const TextInputType.numberWithOptions(decimal: true),
+              decoration: InputDecoration(
+                labelText: referencePrice != null ? 'Montant (FCFA)' : 'Prix (FCFA)',
+                helperText: referencePrice != null && amount != null && amount > 0
+                    ? '≈ ${(amount / referencePrice).toStringAsFixed(2)} L'
+                    : null,
+              ),
+              onChanged: (_) => setDialogState(() {}),
+            ),
+            actions: [
+              TextButton(
+                onPressed: () => Navigator.of(context).pop(),
+                child: const Text('Annuler'),
+              ),
+              FilledButton(
+                onPressed: (amount == null || amount <= 0) ? null : () => Navigator.of(context).pop(amount),
+                child: const Text('Ajouter'),
+              ),
+            ],
+          );
+        },
       ),
     );
   }
@@ -195,11 +208,19 @@ class _TableOrderPageState extends State<TableOrderPage> {
     if (_isBusy) return;
     // Catégorie à prix variable (Poulets/Poissons/Plats africains) : aucun
     // prix catalogue à proposer, le serveur exige `unitPrice` — même règle
-    // qu'en Caisse (`pos_page.dart`).
+    // qu'en Caisse (`pos_page.dart`). Produit à prix de référence variable
+    // (`referenceSalePrice` non nul, ex. Gbêlê) : le montant saisi part en
+    // `amountPaid`, jamais `unitPrice` — voir docs/api/pos.md (2026-09-24).
     double? unitPrice;
+    double? amountPaid;
     if (product.salePrice == null) {
-      unitPrice = await _promptManualPrice(product);
-      if (unitPrice == null) return;
+      final amount = await _promptManualPrice(product);
+      if (amount == null) return;
+      if (product.referenceSalePrice != null) {
+        amountPaid = amount;
+      } else {
+        unitPrice = amount;
+      }
     }
     // Vente à l'unité en plus du tarif normal (ex. Heineken 33/Despé 33) —
     // même mécanisme qu'en Caisse (`pos_page.dart`).
@@ -216,6 +237,7 @@ class _TableOrderPageState extends State<TableOrderPage> {
         productId: product.id,
         quantity: 1,
         unitPrice: unitPrice,
+        amountPaid: amountPaid,
         sellAsUnit: sellAsUnit,
       );
       _reloadOrders();

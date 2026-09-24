@@ -2,6 +2,11 @@
 
 ## [Unreleased]
 
+### Ajouté (2026-09-24) — Gbêlê : vente par montant payé (Caisse et Salle)
+- Pour un produit à prix de référence variable (`Product.referenceSalePrice`, ex. Gbêlê à 3 000 FCFA/L), le caissier saisit désormais le **montant payé** (ex. 100 FCFA) au lieu d'un prix — le serveur en déduit la quantité (0,03 L) et le prix unitaire, avec un aperçu affiché à la saisie (« ≈ 0,03 L »). S'applique en Caisse et dans les additions (Salle).
+- Nouveau : `SaleItemDto.amountPaid` / `AddOrderItemDto.amountPaid`, fonction pure `resolveReferencePriceLine` (`src/pos/reference-price.ts`).
+- Tests : 5 NestJS (`reference-price`) + 3 (`SalesService`) + 2 (`OrdersService`).
+
 ### Ajouté (2026-09-22) — Stock : vignette Bouteilles en stock
 - Dans le groupe « Valeur du stock », nouvelle vignette **Bouteilles en stock** (« Nombre total de bouteilles en stock » à l'introduction, renommée le même jour) : somme du stock des seules catégories vendues par casier (Bières, Vins, Sucreries) — suit le filtre Catégorie du groupe (sélectionner « Poulets » y affiche 0), comme Prix d'achat/Prix de vente.
 - Les 3 vignettes du groupe sont sur une seule ligne horizontale.

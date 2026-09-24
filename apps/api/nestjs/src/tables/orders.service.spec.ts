@@ -178,6 +178,38 @@ describe('OrdersService.addItem', () => {
     expect(prisma.orderItem.create).not.toHaveBeenCalled();
   });
 
+  it('deduit quantite et prix unitaire du montant paye pour un produit a prix de reference variable (Gbêlê, 2026-09-24)', async () => {
+    (prisma.order as any).findFirst.mockResolvedValue({ id: 'order-1', status: 'open' });
+    (prisma.product as any).findFirst.mockResolvedValue({
+      id: 'p1',
+      name: 'Gbêlê',
+      salePrice: null,
+      referenceSalePrice: new Decimal(3000),
+    });
+    (prisma.orderItem as any).findFirst.mockResolvedValue(null);
+
+    await service.addItem('est-1', 'order-1', { productId: 'p1', amountPaid: 100 } as any);
+
+    const created = (prisma.orderItem.create as any).mock.calls[0][0].data;
+    expect(created.quantity).toBe(0.03);
+    expect(created.quantity * created.unitPrice).toBeCloseTo(100, 6);
+  });
+
+  it('refuse un produit a prix de reference variable sans montant paye', async () => {
+    (prisma.order as any).findFirst.mockResolvedValue({ id: 'order-1', status: 'open' });
+    (prisma.product as any).findFirst.mockResolvedValue({
+      id: 'p1',
+      name: 'Gbêlê',
+      salePrice: null,
+      referenceSalePrice: new Decimal(3000),
+    });
+
+    await expect(service.addItem('est-1', 'order-1', { productId: 'p1' } as any)).rejects.toBeInstanceOf(
+      BadRequestException,
+    );
+    expect(prisma.orderItem.create).not.toHaveBeenCalled();
+  });
+
   it('merges into the existing line when the same product at the same price is already on the order', async () => {
     (prisma.order as any).findFirst.mockResolvedValue({ id: 'order-1', status: 'open' });
     (prisma.product as any).findFirst.mockResolvedValue({ id: 'p1', salePrice: new Decimal(1500) });

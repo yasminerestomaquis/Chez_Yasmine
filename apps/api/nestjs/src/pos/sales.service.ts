@@ -4,6 +4,7 @@ import { ActivityNotifierService } from '../notifications/activity-notifier.serv
 import { applyCreditSale } from './credit-math.js';
 import type { CreateSaleDto } from './dto/create-sale.dto.js';
 import { computeCartTotals, validatePayments, type CartLine } from './pos-math.js';
+import { resolveReferencePriceLine } from './reference-price.js';
 
 @Injectable()
 export class SalesService {
@@ -31,6 +32,49 @@ export class SalesService {
     }
     const productById = new Map(products.map((p) => [p.id, p]));
 
+    // Résout quantité et prix unitaire ligne par ligne, AVANT toute
+    // agrégation — trois cas, par ordre de priorité :
+    // - prix fixe (`salePrice` non nul) : prix catalogue, jamais celui du
+    //   client (`sellAsUnit` choisit seulement laquelle des deux
+    //   tarifications déjà connues du serveur s'applique) ; quantité = celle
+    //   demandée par le client (bouteilles, casiers...).
+    // - prix de référence variable (`referenceSalePrice` non nul, ex.
+    //   Gbêlê) : le caissier a saisi un MONTANT (`amountPaid`), jamais une
+    //   quantité — le serveur déduit les deux (`resolveReferencePriceLine`,
+    //   décision utilisateur du 2026-09-24, voir docs/api/pos.md).
+    // - prix variable "classique" (Poulets/Poissons/Plats africains, ni
+    //   l'un ni l'autre) : le caissier a saisi le prix ET la quantité.
+    const resolvedItems = dto.items.map((item) => {
+      const product = productById.get(item.productId)!;
+      if (product.salePrice != null) {
+        const unitPrice =
+          item.sellAsUnit && product.unitSalePrice != null ? product.unitSalePrice.toNumber() : product.salePrice.toNumber();
+        if (item.quantity == null) {
+          throw new BadRequestException(`Quantité requise pour ${product.name}`);
+        }
+        return { productId: item.productId, quantity: item.quantity, unitPrice };
+      }
+      if (product.referenceSalePrice != null) {
+        if (item.amountPaid != null) {
+          const resolved = resolveReferencePriceLine(product.referenceSalePrice.toNumber(), item.amountPaid, product.name);
+          return { productId: item.productId, quantity: resolved.quantity, unitPrice: resolved.unitPrice };
+        }
+        // Encaissement d'une addition (`dto.orderId`) : quantité et prix déjà
+        // résolus par `OrdersService.addItem` au moment de l'ajout, simplement
+        // repris tels quels par le client à l'encaissement (TableOrderPage) —
+        // même confiance déjà accordée au checkout d'un produit à prix
+        // variable "classique" ci-dessous, pas de nouveau montant à dériver.
+        if (item.unitPrice == null || item.quantity == null) {
+          throw new BadRequestException(`Montant payé requis pour ${product.name} (prix de référence variable)`);
+        }
+        return { productId: item.productId, quantity: item.quantity, unitPrice: item.unitPrice };
+      }
+      if (item.unitPrice == null || item.quantity == null) {
+        throw new BadRequestException(`Prix de vente et quantité requis pour ${product.name} (catégorie à prix variable)`);
+      }
+      return { productId: item.productId, quantity: item.quantity, unitPrice: item.unitPrice };
+    });
+
     // Agrégé par produit, pas par ligne : un produit à prix variable (Poulets/
     // Poissons/Plats africains) peut légitimement apparaître sur plusieurs
     // lignes du même panier (prix différents, voir PosPage._addToCart /
@@ -38,7 +82,7 @@ export class SalesService {
     // passer une vente dont la SOMME des quantités dépasse le stock réel,
     // même si chaque ligne prise seule semble tenir dans le stock.
     const quantityByProductId = new Map<string, number>();
-    for (const item of dto.items) {
+    for (const item of resolvedItems) {
       quantityByProductId.set(item.productId, (quantityByProductId.get(item.productId) ?? 0) + item.quantity);
     }
     // Contrôle rapide, avant d'ouvrir la transaction — message d'erreur clair
@@ -53,29 +97,9 @@ export class SalesService {
       }
     }
 
-    // Un produit à prix fixe ignore tout unitPrice envoyé par le client (le
-    // serveur reste seul juge du prix) ; un produit à prix variable (aucun
-    // salePrice en catalogue) exige que le caissier l'ait saisi en caisse.
-    // `sellAsUnit` ne fait pas exception à cette règle : le client indique
-    // seulement laquelle des deux tarifications déjà connues du serveur
-    // s'applique (jamais un montant) — voir SaleItemDto.sellAsUnit.
-    const unitPriceByItemIndex = dto.items.map((item) => {
-      const product = productById.get(item.productId)!;
-      if (product.salePrice != null) {
-        if (item.sellAsUnit && product.unitSalePrice != null) {
-          return product.unitSalePrice.toNumber();
-        }
-        return product.salePrice.toNumber();
-      }
-      if (item.unitPrice == null) {
-        throw new BadRequestException(`Prix de vente requis pour ${product.name} (catégorie à prix variable)`);
-      }
-      return item.unitPrice;
-    });
-
-    const lines: CartLine[] = dto.items.map((item, index) => ({
+    const lines: CartLine[] = resolvedItems.map((item) => ({
       productId: item.productId,
-      unitPrice: unitPriceByItemIndex[index],
+      unitPrice: item.unitPrice,
       quantity: item.quantity,
     }));
 
@@ -138,7 +162,7 @@ export class SalesService {
           throw new ConflictException(`Stock insuffisant pour ${productById.get(productId)!.name}`);
         }
       }
-      for (const item of dto.items) {
+      for (const item of resolvedItems) {
         await tx.stockMovement.create({
           data: { productId: item.productId, type: 'sale', quantity: item.quantity, createdBy: userId },
         });
@@ -159,11 +183,11 @@ export class SalesService {
           orderNumber: dto.orderNumber,
           marketNumber: dto.marketNumber,
           items: {
-            create: dto.items.map((item, index) => ({
+            create: resolvedItems.map((item) => ({
               productId: item.productId,
               name: productById.get(item.productId)!.name,
               quantity: item.quantity,
-              unitPrice: unitPriceByItemIndex[index],
+              unitPrice: item.unitPrice,
             })),
           },
           payments: { create: dto.payments.map((p) => ({ method: p.method, amount: p.amount })) },

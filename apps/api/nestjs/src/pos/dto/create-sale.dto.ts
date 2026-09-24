@@ -5,9 +5,15 @@ export class SaleItemDto {
   @IsUUID()
   productId!: string;
 
+  /**
+   * Optionnelle quand `amountPaid` est fourni (produit à prix de référence
+   * variable, ex. Gbêlê) : le serveur calcule alors la quantité lui-même et
+   * ignore ce champ — voir `SalesService.create`/`resolveReferencePriceLine`.
+   */
+  @IsOptional()
   @IsNumber()
   @Min(0.01)
-  quantity!: number;
+  quantity?: number;
 
   /**
    * Prix de vente saisi par le caissier — utilisé uniquement pour un produit
@@ -21,6 +27,18 @@ export class SaleItemDto {
   @IsNumber()
   @Min(0)
   unitPrice?: number;
+
+  /**
+   * Montant payé (FCFA) pour un produit à prix de référence variable
+   * (`Product.referenceSalePrice` non nul, ex. Gbêlê) : le serveur en déduit
+   * la quantité (`resolveReferencePriceLine`) — jamais une quantité ou un
+   * prix unitaire acceptés bruts du client dans ce cas (décision utilisateur
+   * du 2026-09-24, voir docs/api/pos.md).
+   */
+  @IsOptional()
+  @IsNumber()
+  @Min(0.01)
+  amountPaid?: number;
 
   /**
    * Demande de vendre à l'unité (`Product.unitSalePrice`) plutôt qu'au tarif

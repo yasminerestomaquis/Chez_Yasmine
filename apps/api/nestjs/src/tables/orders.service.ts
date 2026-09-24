@@ -2,6 +2,7 @@ import { BadRequestException, ConflictException, Injectable, NotFoundException }
 import type { Prisma } from '@prisma/client';
 import { PrismaService } from '../prisma/prisma.service.js';
 import type { AddOrderItemDto, SplitOrderDto, TransferOrderDto } from './dto/order-operations.dto.js';
+import { resolveReferencePriceLine } from '../pos/reference-price.js';
 
 @Injectable()
 export class OrdersService {
@@ -138,10 +139,11 @@ export class OrdersService {
     }
 
     // Reste en Decimal pour un produit à prix fixe (comme le faisait le code
-    // original) ; converti en number seulement côté prix variable, où il
-    // provient déjà de dto.unitPrice — évite de casser l'égalité stricte
-    // attendue par les tests existants sur le type exact écrit en base.
+    // original) ; converti en number pour tout autre cas — évite de casser
+    // l'égalité stricte attendue par les tests existants sur le type exact
+    // écrit en base.
     let unitPrice: number | Prisma.Decimal;
+    let quantity: number;
     let sellAsUnit = false;
     if (product.salePrice != null) {
       if (dto.sellAsUnit && product.unitSalePrice != null) {
@@ -150,11 +152,26 @@ export class OrdersService {
       } else {
         unitPrice = product.salePrice;
       }
+      if (dto.quantity == null) {
+        throw new BadRequestException(`Quantité requise pour ${product.name}`);
+      }
+      quantity = dto.quantity;
+    } else if (product.referenceSalePrice != null) {
+      // Prix de référence variable (ex. Gbêlê) : le serveur déduit quantité
+      // et prix unitaire du montant payé — même principe que
+      // `SalesService.create` en Caisse (décision utilisateur du 2026-09-24).
+      if (dto.amountPaid == null) {
+        throw new BadRequestException(`Montant payé requis pour ${product.name} (prix de référence variable)`);
+      }
+      const resolved = resolveReferencePriceLine(product.referenceSalePrice.toNumber(), dto.amountPaid, product.name);
+      unitPrice = resolved.unitPrice;
+      quantity = resolved.quantity;
     } else {
-      if (dto.unitPrice == null) {
-        throw new BadRequestException(`Prix de vente requis pour ${product.name} (catégorie à prix variable)`);
+      if (dto.unitPrice == null || dto.quantity == null) {
+        throw new BadRequestException(`Prix de vente et quantité requis pour ${product.name} (catégorie à prix variable)`);
       }
       unitPrice = dto.unitPrice;
+      quantity = dto.quantity;
     }
 
     const existing = await this.prisma.orderItem.findFirst({
@@ -163,11 +180,11 @@ export class OrdersService {
     if (existing) {
       return this.prisma.orderItem.update({
         where: { id: existing.id },
-        data: { quantity: existing.quantity.toNumber() + dto.quantity },
+        data: { quantity: existing.quantity.toNumber() + quantity },
       });
     }
     return this.prisma.orderItem.create({
-      data: { orderId: order.id, productId: product.id, quantity: dto.quantity, unitPrice, sellAsUnit },
+      data: { orderId: order.id, productId: product.id, quantity, unitPrice, sellAsUnit },
     });
   }
 
