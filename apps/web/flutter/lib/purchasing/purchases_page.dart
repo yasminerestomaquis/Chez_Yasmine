@@ -78,8 +78,10 @@ class _PurchasesPageState extends State<PurchasesPage>
   // Ligne en cours de configuration dans "Créer une commande".
   Product? _selectedProduct;
   final _casesOrderedController = TextEditingController(text: '1');
-  // Choix 25 L / 50 L pour un produit à prix de référence variable (ex. Gbêlê).
-  int _litersOrdered = 25;
+  // Litres commandés pour un produit à prix de référence variable (ex.
+  // Gbêlê) — saisie libre plutôt que figée à 25/50 L, décision utilisateur
+  // du 2026-09-25 (25 L par défaut).
+  final _litersOrderedController = TextEditingController(text: '25');
 
   @override
   void initState() {
@@ -148,7 +150,7 @@ class _PurchasesPageState extends State<PurchasesPage>
     setState(() {
       _selectedProduct = chosen;
       _casesOrderedController.text = '1';
-      _litersOrdered = 25;
+      _litersOrderedController.text = '25';
     });
   }
 
@@ -168,10 +170,12 @@ class _PurchasesPageState extends State<PurchasesPage>
     final product = _selectedProduct;
     if (product == null) return;
     if (product.isReferencePriced) {
+      final liters = double.tryParse(_litersOrderedController.text.trim().replaceAll(',', '.'));
+      if (liters == null || liters <= 0) return;
       setState(() {
-        _draftLines.add(_DraftLine(product: product, casesOrdered: _litersOrdered.toDouble(), isLiters: true));
+        _draftLines.add(_DraftLine(product: product, casesOrdered: liters, isLiters: true));
         _selectedProduct = null;
-        _litersOrdered = 25;
+        _litersOrderedController.text = '25';
       });
       _tabController.animateTo(1);
       return;
@@ -277,6 +281,7 @@ class _PurchasesPageState extends State<PurchasesPage>
     _tabController.dispose();
     _orderNumberController.dispose();
     _casesOrderedController.dispose();
+    _litersOrderedController.dispose();
     super.dispose();
   }
 
@@ -504,12 +509,14 @@ class _PurchasesPageState extends State<PurchasesPage>
     );
   }
 
-  /// Produit à prix de référence variable (ex. Gbêlê) : commandé par
-  /// jerrican de 25 ou 50 L, au prix d'achat par litre du Catalogue — pas de
-  /// "casiers", pas de bouteilles (décision utilisateur du 2026-09-24).
+  /// Produit à prix de référence variable (ex. Gbêlê) : commandé au litre, au
+  /// prix d'achat par litre du Catalogue — pas de "casiers", pas de
+  /// bouteilles (décision utilisateur du 2026-09-24, saisie libre du nombre
+  /// de litres depuis le 2026-09-25 — plus figée à 25/50 L).
   Widget _buildSelectedReferencePricedCard(Product product) {
     final purchasePrice = product.purchasePrice ?? 0;
-    final total = _litersOrdered * purchasePrice;
+    final liters = double.tryParse(_litersOrderedController.text.trim().replaceAll(',', '.')) ?? 0;
+    final total = liters * purchasePrice;
     return Card(
       child: Padding(
         padding: const EdgeInsets.all(16),
@@ -532,21 +539,17 @@ class _PurchasesPageState extends State<PurchasesPage>
             const SizedBox(height: 12),
             _readOnlyField("Prix d'achat par litre", '${formatAmount(purchasePrice)} FCFA'),
             const SizedBox(height: 12),
-            const Text('Litres commandés'),
-            const SizedBox(height: 6),
-            SegmentedButton<int>(
-              segments: const [
-                ButtonSegment(value: 25, label: Text('25 L')),
-                ButtonSegment(value: 50, label: Text('50 L')),
-              ],
-              selected: {_litersOrdered},
-              onSelectionChanged: (selection) => setState(() => _litersOrdered = selection.first),
+            TextFormField(
+              controller: _litersOrderedController,
+              keyboardType: const TextInputType.numberWithOptions(decimal: true),
+              decoration: const InputDecoration(labelText: 'Litres commandés *'),
+              onChanged: (_) => setState(() {}),
             ),
             const SizedBox(height: 12),
             _readOnlyField('Total', '${formatAmount(total)} FCFA'),
             const SizedBox(height: 16),
             FilledButton(
-              onPressed: purchasePrice > 0 ? _addLineToOrder : null,
+              onPressed: purchasePrice > 0 && liters > 0 ? _addLineToOrder : null,
               child: const Text('Ajouter la commande'),
             ),
           ],

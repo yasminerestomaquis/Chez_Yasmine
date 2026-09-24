@@ -53,9 +53,15 @@ Côté Flutter, `StockPage` reçoit `roleName` et, pour le Serveur (`roleName ==
 
 Le masquage de « Valeur du stock » par rôle codé en dur ci-dessus est remplacé par une permission dédiée — voir la section suivante.
 
-## Ajout (2026-09-24) — vignette produit Gbêlê en litres
+## Ajout (2026-09-24, révisé 2026-09-25) — vignette produit Gbêlê en litres
 
-Pour un produit à prix de référence variable (`Product.isReferencePriced`, ex. Gbêlê), `_StockProductRow` affiche « Stock actuel : X,XX L — Prix de vente : Y FCFA/L » (2 décimales, `referenceSalePrice`) au lieu de « Stock actuel : X » — seul ce produit, tous les autres gardent l'affichage habituel.
+Pour un produit à prix de référence variable (`Product.isReferencePriced`, ex. Gbêlê), `_StockProductRow` affiche « Stock actuel : X,XX L — Prix de vente attendu : Y FCFA » (2 décimales pour le stock, `referenceSalePrice`) au lieu de « Stock actuel : X » — seul ce produit, tous les autres gardent l'affichage habituel. Le « prix de vente attendu » est un **montant total** (`stockQuantity × referenceSalePrice`), pas un taux au litre (revu le 2026-09-25 sur demande utilisateur — affichait auparavant « … FCFA/L »).
+
+`showStockMovementDialog`/`_StockMovementDialog` reçoivent `isReferencePriced` (déduit de `product.isReferencePriced`) : le libellé du champ Quantité du mouvement (Entrée, Sortie, Correction) devient « Quantité (L) *  »/« Nouvelle quantité totale (L) * » pour ce produit — demande utilisateur du 2026-09-25, la colonne `stock_movements.quantity` reste `Decimal(12,2)` sans changement de schéma, seul l'affichage précise l'unité.
+
+### Groupe « Valeur du stock » : « Stock en litres » à la place de « Bouteilles en stock » pour Gbêlê (2026-09-25)
+
+Quand le filtre Catégorie du groupe porte sur un produit à prix de référence variable (`hasReferencePricedSelection`, `lib/stock/stock_value.dart`), la 3ᵉ vignette bascule de « Bouteilles en stock » vers **« Stock en litres »** (`stockReferenceLiters`, 2 décimales) — « bouteille » n'a pas de sens pour un produit compté en litres. Prix d'achat/Prix de vente du groupe étaient déjà corrects pour Gbêlê sans changement (`stockValueTotals` ne restreint pas par `hasCasePricing`, `stockUnitPurchaseCost` préfère déjà `Product.purchasePrice`).
 
 ## Ajout (2026-09-22) — groupe « Valeur du stock » par permission, filtrable par catégorie
 

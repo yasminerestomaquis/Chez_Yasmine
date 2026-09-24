@@ -3,8 +3,8 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:chez_yasmine/catalog/models.dart';
 import 'package:chez_yasmine/stock/stock_value.dart';
 
-Category _category({required String id, required String name, bool hasCasePricing = false}) =>
-    Category(id: id, name: name, hasCasePricing: hasCasePricing);
+Category _category({required String id, required String name, bool hasCasePricing = false, bool isBeverage = false}) =>
+    Category(id: id, name: name, hasCasePricing: hasCasePricing, isBeverage: isBeverage);
 
 Product _product({
   required String id,
@@ -16,6 +16,7 @@ Product _product({
   double? referenceSalePrice,
   double? purchasePricePerCase,
   int? bottlesPerCase,
+  bool requiresPriceAtSale = false,
 }) => Product(
   id: id,
   name: id,
@@ -29,6 +30,7 @@ Product _product({
   referenceSalePrice: referenceSalePrice,
   purchasePricePerCase: purchasePricePerCase,
   bottlesPerCase: bottlesPerCase,
+  requiresPriceAtSale: requiresPriceAtSale,
 );
 
 void main() {
@@ -94,6 +96,37 @@ void main() {
 
       expect(totals.purchase, closeTo(2 * (5400 / 12), 0.001));
       expect(totals.sale, 1400);
+    });
+  });
+
+  group('hasReferencePricedSelection / stockReferenceLiters (2026-09-25)', () {
+    final gbele = _category(id: 'c1', name: 'Gbêlê', isBeverage: true);
+    final bieres = _category(id: 'c2', name: 'Bières', hasCasePricing: true);
+    final gbeleProduct = _product(
+      id: 'gbele',
+      stockQuantity: 7,
+      category: gbele,
+      requiresPriceAtSale: true,
+      referenceSalePrice: 3000,
+      purchasePrice: 1100,
+    );
+    final beaufort = _product(id: 'beaufort', stockQuantity: 8, category: bieres);
+
+    test('faux sans sélection', () {
+      expect(hasReferencePricedSelection([gbeleProduct, beaufort], {}), isFalse);
+    });
+
+    test('vrai quand la catégorie Gbêlê est sélectionnée', () {
+      expect(hasReferencePricedSelection([gbeleProduct, beaufort], {'c1'}), isTrue);
+    });
+
+    test('faux pour une sélection de catégories à prix par casier', () {
+      expect(hasReferencePricedSelection([gbeleProduct, beaufort], {'c2'}), isFalse);
+    });
+
+    test('stockReferenceLiters ne compte que les produits à prix de référence variable de la sélection', () {
+      expect(stockReferenceLiters([gbeleProduct, beaufort], {'c1'}), 7);
+      expect(stockReferenceLiters([gbeleProduct, beaufort], {'c2'}), 0);
     });
   });
 }

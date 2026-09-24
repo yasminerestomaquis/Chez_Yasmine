@@ -147,6 +147,15 @@ class _StockLotsTabState extends State<StockLotsTab> {
   String _formatQuantity(double value) =>
       value == value.roundToDouble() ? value.toInt().toString() : '$value';
 
+  Map<String, Product> get _productById => {for (final p in _products) p.id: p};
+
+  /// Vrai si TOUS les produits affichés (sélection courante) sont à prix de
+  /// référence variable (ex. Gbêlê) : "Quantité reçue" et le total du bas
+  /// s'expriment alors en litres plutôt qu'en unités génériques — demande
+  /// utilisateur du 2026-09-25.
+  bool _isReferencePricedSelection(List<String> productIds) =>
+      productIds.isNotEmpty && productIds.every((id) => _productById[id]?.isReferencePriced ?? false);
+
   Widget _statusBadge(StockLot lot) {
     final color = lot.isActive ? _StockPalette.green : _StockPalette.grey;
     final label = lot.isActive ? 'Actif' : 'Épuisé';
@@ -200,6 +209,8 @@ class _StockLotsTabState extends State<StockLotsTab> {
       );
     }
     final showProductColumn = lots.map((l) => l.productId).toSet().length > 1;
+    final isLiters = _isReferencePricedSelection(lots.map((l) => l.productId).toSet().toList());
+    String q(double value) => isLiters ? '${_formatQuantity(value)} L' : _formatQuantity(value);
     return SingleChildScrollView(
       scrollDirection: Axis.horizontal,
       child: DataTable(
@@ -208,7 +219,7 @@ class _StockLotsTabState extends State<StockLotsTab> {
           const DataColumn(label: Text('Lot')),
           if (showProductColumn) const DataColumn(label: Text('Produit')),
           const DataColumn(label: Text('Date réception')),
-          const DataColumn(label: Text('Quantité reçue'), numeric: true),
+          DataColumn(label: Text(isLiters ? 'Quantité reçue (L)' : 'Quantité reçue'), numeric: true),
           const DataColumn(label: Text('Consommé'), numeric: true),
           const DataColumn(label: Text('Perdu'), numeric: true),
           const DataColumn(label: Text('Restant'), numeric: true),
@@ -226,10 +237,10 @@ class _StockLotsTabState extends State<StockLotsTab> {
                 ),
                 if (showProductColumn) DataCell(Text(lot.productName)),
                 DataCell(Text(_dayFormat.format(lot.receivedAt))),
-                DataCell(Text(_formatQuantity(lot.receivedQuantity))),
-                DataCell(Text(_formatQuantity(lot.consumedQuantity - lot.lossQuantity))),
-                DataCell(Text(_formatQuantity(lot.lossQuantity))),
-                DataCell(Text(_formatQuantity(lot.remainingQuantity))),
+                DataCell(Text(q(lot.receivedQuantity))),
+                DataCell(Text(q(lot.consumedQuantity - lot.lossQuantity))),
+                DataCell(Text(q(lot.lossQuantity))),
+                DataCell(Text(q(lot.remainingQuantity))),
                 DataCell(_statusBadge(lot)),
               ],
             ),
@@ -242,6 +253,9 @@ class _StockLotsTabState extends State<StockLotsTab> {
     final label = chart.productNames.length > 1
         ? '${chart.productNames.length} PRODUITS SÉLECTIONNÉS'
         : chart.productNames.first.toUpperCase();
+    // Litres plutôt qu'"unités" pour un produit à prix de référence variable
+    // (ex. Gbêlê) — demande utilisateur du 2026-09-25.
+    final isLiters = _isReferencePricedSelection(chart.productIds);
     return Container(
       margin: const EdgeInsets.only(top: 16),
       padding: const EdgeInsets.all(16),
@@ -263,7 +277,9 @@ class _StockLotsTabState extends State<StockLotsTab> {
           ),
           const SizedBox(height: 4),
           Text(
-            '${_formatQuantity(chart.totalActiveUnits)} unités',
+            isLiters
+                ? '${_formatQuantity(chart.totalActiveUnits)} L'
+                : '${_formatQuantity(chart.totalActiveUnits)} unités',
             style: const TextStyle(
               fontSize: 24,
               fontWeight: FontWeight.bold,

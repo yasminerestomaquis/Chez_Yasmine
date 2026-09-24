@@ -357,6 +357,16 @@ describe('Achat au litre pour un produit à prix de référence variable (Gbêl�
     expect((prisma.purchase as any).create.mock.calls[0][0].data.total).toBe(25 * 1100);
   });
 
+  it('accepte une saisie libre de litres, pas seulement 25 ou 50 (2026-09-25)', async () => {
+    (prisma.product as any).findMany.mockResolvedValue([referencePricedProduct()]);
+    (prisma.purchase as any).create.mockResolvedValue({ id: 'purchase-1', supplier: null, items: [] });
+
+    await service.create('est-1', 'user-1', { orderNumber: 1, items: [{ productId: 'p1', litersOrdered: 7.5 }] } as any);
+
+    expect(prisma.product.update).toHaveBeenCalledWith({ where: { id: 'p1' }, data: { stockQuantity: { increment: 7.5 } } });
+    expect((prisma.purchase as any).create.mock.calls[0][0].data.total).toBe(7.5 * 1100);
+  });
+
   it('rejette un produit a prix de reference variable sans litersOrdered', async () => {
     (prisma.product as any).findMany.mockResolvedValue([referencePricedProduct()]);
     await expect(

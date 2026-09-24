@@ -36,4 +36,24 @@ void main() {
       expect(chart.total, 0);
     });
   });
+
+  group('MonthlyChart.total (2026-09-25 — badge « Top recettes »/« Top bénéfices »)', () {
+    test('sums every month of the year', () {
+      final chart = MonthlyChart(
+        year: 2026,
+        months: [
+          MonthlyPoint(month: 'Janvier', value: 100000),
+          MonthlyPoint(month: 'Février', value: 50000),
+        ],
+      );
+
+      expect(chart.total, 150000);
+    });
+
+    test('is zero for an empty month list', () {
+      final chart = MonthlyChart(year: 2026, months: []);
+
+      expect(chart.total, 0);
+    });
+  });
 }

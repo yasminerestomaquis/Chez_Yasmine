@@ -155,6 +155,7 @@ class _StockPageState extends State<StockPage> {
       productId: product.id,
       productName: product.name,
       hasVariablePricing: product.hasVariablePricing,
+      isReferencePriced: product.isReferencePriced,
     );
     if (created == true) _reload();
   }
@@ -221,6 +222,12 @@ class _StockPageState extends State<StockPage> {
                 // utilisateur du 2026-09-22).
                 final totalBottleCount = stockBottleCount(allProducts, {});
                 final valueBottleCount = stockBottleCount(allProducts, _valueCategoryIds);
+                // Filtre Catégorie du groupe portant sur Gbêlê (ou un autre
+                // produit à prix de référence variable) : « Bouteilles en
+                // stock » n'a pas de sens, remplacée par « Stock en litres »
+                // — demande utilisateur du 2026-09-25.
+                final valueShowsLiters = hasReferencePricedSelection(allProducts, _valueCategoryIds);
+                final valueLiters = stockReferenceLiters(allProducts, _valueCategoryIds);
 
                 final products = filterAndSortStockProducts(
                   products: allProducts,
@@ -256,6 +263,8 @@ class _StockPageState extends State<StockPage> {
                             purchase: valueTotals.purchase,
                             sale: valueTotals.sale,
                             bottleCount: valueBottleCount,
+                            showLiters: valueShowsLiters,
+                            literCount: valueLiters,
                           ),
                         ),
                       ],
@@ -564,7 +573,10 @@ Widget _kpiTile(IconData icon, String label, String value, Color color) {
 /// Prix de vente et Bouteilles en stock (restreint aux catégories vendues
 /// par casier — Bières, Vins, Sucreries), toutes les trois calculées sur
 /// les catégories choisies dans le filtre (tout le catalogue sans
-/// sélection) — demande utilisateur du 2026-09-22.
+/// sélection) — demande utilisateur du 2026-09-22. La troisième vignette
+/// devient « Stock en litres » quand la sélection porte sur un produit à
+/// prix de référence variable (ex. Gbêlê) — demande utilisateur du
+/// 2026-09-25, voir `hasReferencePricedSelection`/`stockReferenceLiters`.
 class _StockValueBox extends StatelessWidget {
   const _StockValueBox({
     required this.categories,
@@ -573,6 +585,8 @@ class _StockValueBox extends StatelessWidget {
     required this.purchase,
     required this.sale,
     required this.bottleCount,
+    required this.showLiters,
+    required this.literCount,
   });
 
   final List<Category> categories;
@@ -581,6 +595,8 @@ class _StockValueBox extends StatelessWidget {
   final double purchase;
   final double sale;
   final double bottleCount;
+  final bool showLiters;
+  final double literCount;
 
   @override
   Widget build(BuildContext context) {
@@ -627,12 +643,19 @@ class _StockValueBox extends StatelessWidget {
               ),
               const SizedBox(width: 8),
               Expanded(
-                child: _kpiTile(
-                  Icons.sports_bar_outlined,
-                  'Bouteilles en stock',
-                  bottleCount.toStringAsFixed(0),
-                  AppColors.green,
-                ),
+                child: showLiters
+                    ? _kpiTile(
+                        Icons.local_drink_outlined,
+                        'Stock en litres',
+                        '${literCount.toStringAsFixed(2)} L',
+                        AppColors.green,
+                      )
+                    : _kpiTile(
+                        Icons.sports_bar_outlined,
+                        'Bouteilles en stock',
+                        bottleCount.toStringAsFixed(0),
+                        AppColors.green,
+                      ),
               ),
             ],
           ),
@@ -786,13 +809,16 @@ class _StockProductRow extends StatelessWidget {
                   const SizedBox(height: 4),
                   Text(
                     product.isReferencePriced
-                        // Gbêlê : stock et prix de vente en litres (demande
-                        // utilisateur du 2026-09-24) — 2 décimales, comme le
-                        // reste de l'app pour une quantité fractionnaire
-                        // (ex. `LossPricingChoice`), plutôt que l'entier
-                        // habituel de cette ligne.
+                        // Gbêlê : stock en litres et prix de vente ATTENDU du
+                        // stock actuel (quantité × prix de référence), pas un
+                        // simple taux au litre — demande utilisateur du
+                        // 2026-09-25. 2 décimales, comme le reste de l'app
+                        // pour une quantité fractionnaire (ex.
+                        // `LossPricingChoice`), plutôt que l'entier habituel
+                        // de cette ligne.
                         ? 'Stock actuel : ${product.stockQuantity.toStringAsFixed(2)} L — '
-                              'Prix de vente : ${formatAmount(product.referenceSalePrice!)} FCFA/L'
+                              'Prix de vente attendu : '
+                              '${formatAmount(product.stockQuantity * product.referenceSalePrice!)} FCFA'
                         : 'Stock actuel : ${product.stockQuantity.toStringAsFixed(0)}',
                     style: TextStyle(
                       fontSize: 12,

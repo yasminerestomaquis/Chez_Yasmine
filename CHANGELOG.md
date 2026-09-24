@@ -2,6 +2,15 @@
 
 ## [Unreleased]
 
+### Ajouté (2026-09-25) — Gbêlê au litre partout (Stock, Achats, Graphiques), Accueil sans troncature
+- **Stock** : la vignette Gbêlê affiche « Prix de vente attendu » (quantité × prix de référence, un montant total) au lieu d'un taux « FCFA/L ». Le mouvement de stock (Entrée/Sortie/Correction) porte le libellé « (L) » pour ce produit. Groupe « Valeur du stock » : quand Gbêlê est dans le filtre Catégorie, la 3ᵉ vignette devient **« Stock en litres »** (au lieu de « Bouteilles en stock », qui n'a pas de sens pour ce produit) ; Prix d'achat/Prix de vente étaient déjà corrects (prix du Catalogue × stock actuel).
+- **Achats** : le nombre de litres commandés pour Gbêlê se saisit librement (25/50 L n'était qu'un point de départ, plus figé).
+- **Graphiques > Recettes/Bénéfices > Top** : montant total de l'année sélectionnée en haut à droite (réutilise le graphique mensuel déjà chargé).
+- **Graphiques > Stock > Détail d'un produit** : pour Gbêlê, « Quantité reçue » et le total du bas (« TOTAL GBÊLÊ ») s'affichent en litres plutôt qu'en unités génériques.
+- **Accueil** : les désignations des vignettes (ex. « Boissons sans Gbêlê · Mobile Money ») ne sont plus jamais coupées par une ellipse — retour à la ligne si besoin, quelle que soit la largeur de l'écran (grille à hauteur libre, `_statCardGrid`, au lieu d'une grille à hauteur fixe).
+- Stock de production de Gbêlê réajusté à 7 L (mouvement de correction).
+- Tests : 4 Flutter (`hasReferencePricedSelection`/`stockReferenceLiters`), 2 (`MonthlyChart.total`), 1 NestJS (`resolveLines`, litres libres).
+
 ### Ajouté (2026-09-24) — Graphiques : total par produit, sélection multiple de semaines
 - **Recettes/Bénéfices journalières totales par produit** : montant total en haut à droite (`WeekTotalBadge`), reflétant la sélection du filtre Produit — même principe que le graphique par catégorie.
 - **Choisir la semaine** (Recettes, Bénéfices, Dépenses) : sélection **multiple**, désormais possible — dialogue à puces retirables + « Ajouter une semaine » + « Réinitialiser » ; les semaines choisies sont additionnées jour de semaine par jour de semaine côté client (`mergeWeeklyCharts`), le serveur ne résout toujours qu'une semaine à la fois.

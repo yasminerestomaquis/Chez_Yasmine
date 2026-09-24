@@ -1,5 +1,5 @@
 import { Type } from 'class-transformer';
-import { ArrayMinSize, IsArray, IsDateString, IsIn, IsInt, IsOptional, IsUUID, Min, ValidateNested } from 'class-validator';
+import { ArrayMinSize, IsArray, IsDateString, IsIn, IsInt, IsNumber, IsOptional, IsUUID, Min, ValidateNested } from 'class-validator';
 
 export class PurchaseItemDto {
   @IsUUID()
@@ -19,14 +19,16 @@ export class PurchaseItemDto {
 
   /**
    * Litres commandés — uniquement pour un produit à prix de référence
-   * variable (`Product.referenceSalePrice`, ex. Gbêlê), vendu en jerricans
-   * de 25 ou 50 L (décision utilisateur du 2026-09-24) : le prix d'achat par
-   * litre (`Product.purchasePrice`, éditable au Catalogue) est dérivé côté
-   * serveur, jamais accepté du client — voir `PurchasesService.resolveLines`.
+   * variable (`Product.referenceSalePrice`, ex. Gbêlê — décision utilisateur
+   * du 2026-09-24) : saisie libre (plus figée à 25/50 L depuis le
+   * 2026-09-25). Le prix d'achat par litre (`Product.purchasePrice`,
+   * éditable au Catalogue) est dérivé côté serveur, jamais accepté du client
+   * — voir `PurchasesService.resolveLines`.
    */
   @IsOptional()
-  @IsIn([25, 50])
-  litersOrdered?: 25 | 50;
+  @IsNumber()
+  @Min(0.01)
+  litersOrdered?: number;
 }
 
 export class CreatePurchaseDto {

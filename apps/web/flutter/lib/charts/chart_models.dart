@@ -70,6 +70,11 @@ class MonthlyChart {
   final int year;
   final List<MonthlyPoint> months;
 
+  /// Total de l'année affichée, tous mois confondus — affiché en tête du
+  /// graphique « Top recettes »/« Top bénéfices » (demande utilisateur du
+  /// 2026-09-25), même principe que `WeeklyChart.total`.
+  double get total => months.fold(0.0, (sum, m) => sum + m.value);
+
   factory MonthlyChart.fromJson(Map<String, dynamic> json) => MonthlyChart(
     year: json['year'] as int,
     months: (json['months'] as List<dynamic>)

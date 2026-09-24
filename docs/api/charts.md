@@ -114,6 +114,8 @@ Plafonné à 10 lignes (comme `topProducts` dans Rapports).
 { "from": "...", "to": "...", "groupBy": "category", "items": [{ "id": "...", "name": "Plats", "value": 125000 }] }
 ```
 
+**Montant total de l'année en haut à droite** (décision actée 2026-09-25, demande utilisateur — « Top recettes »/« Top bénéfices ») : `MetricChartsTab` affiche `MonthlyChart.total` (somme des 12 mois, réutilise `_monthlyFuture` déjà chargé pour la carte "mensuelle" ci-dessous, même `metric`/année) via `WeekTotalBadge` — purement client, pas de nouvelle route. Contrairement aux `items` du classement lui-même (bornés par le filtre Mois de la carte, ou toute l'année si "Toute l'année"), ce total couvre toujours l'année entière du filtre Année de `GraphiquesPage`, indépendamment du filtre Mois de "Top".
+
 ## Sous-module Stock — lots FIFO (`GET /charts/stock-lots?productIds=`)
 
 Maquette demandée pour une fiche de gestion de stock par lots (First In, First Out) : quelle part du stock actuel d'un ou plusieurs produits provient de quelle livraison. Aucun schéma dédié — reconstruit à la volée depuis l'historique existant des `StockMovement` (`apps/api/nestjs/src/stock/`), le même que celui qui alimente `product.stockQuantity` :
@@ -135,6 +137,10 @@ Principe demandé : un lot `L00N` doit correspondre exactement à la commande N�
 ### Sélection multiple, filtre catégorie (revu 2026-09-17 : plus de filtre Produit, catégories multiples)
 
 `productIds` (CSV) accepte un ou plusieurs identifiants produit — plus aucune contrainte de catégorie unique côté serveur depuis le 2026-09-17 (l'ancienne `BadRequestException` "même catégorie" a été retirée). Les lots de tous les produits sélectionnés sont fusionnés dans une seule chronologie, chaque lot portant `productId`/`productName` (utile dès que plus d'un produit est sélectionné).
+
+### « Quantité reçue » et le total du bas en litres pour Gbêlê (décision actée 2026-09-25)
+
+Purement un affichage client (`lib/charts/stock_lots_tab.dart`) — aucun changement de route ni de calcul : quand **tous** les produits de la sélection courante sont à prix de référence variable (`Product.isReferencePriced`, ex. Gbêlê — `_isReferencePricedSelection`), la colonne « Quantité reçue » du tableau des lots devient « Quantité reçue (L) » et sa valeur (et celles de Consommé/Perdu/Restant, mêmes chiffres) reçoit le suffixe « L » ; le bandeau du bas (« TOTAL GBÊLÊ (LOTS ACTIFS) ») affiche « … L » au lieu de « … unités ». Mélanger Gbêlê avec un produit à prix par casier retombe sur l'affichage habituel (« unités »), les deux n'ayant pas la même unité physique.
 
 Le gating "numéro de marché"/"numéro de commande" (catégories `hasVariablePricing`/`hasCasePricing`, voir plus haut) se calcule désormais **par produit, selon sa propre catégorie**, plutôt qu'en supposant une catégorie unique pour toute la sélection (`ChartsService.stockLots`) — un seul aller-retour `Purchase`/`Expense` au total, même avec des produits de catégories différentes à la fois.
 

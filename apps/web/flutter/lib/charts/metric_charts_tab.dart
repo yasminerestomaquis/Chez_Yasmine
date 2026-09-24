@@ -462,12 +462,29 @@ class _MetricChartsTabState extends State<MetricChartsTab> {
               },
             ),
           ],
-          child: _futureChart(
-            _topFuture,
-            (chart) => RankingBarChartWidget(
-              items: chart.items,
-              color: widget.palette.top,
-            ),
+          // Montant total de toutes les recettes/bénéfices de l'année
+          // sélectionnée (filtre Année de `GraphiquesPage`), en haut à
+          // droite — demande utilisateur du 2026-09-25. Réutilise
+          // `_monthlyFuture` (déjà chargé pour la carte "mensuelle"
+          // ci-dessous, même année) plutôt qu'un nouvel appel réseau.
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.stretch,
+            children: [
+              _futureChart(
+                _monthlyFuture,
+                (monthly) => Padding(
+                  padding: const EdgeInsets.only(bottom: 4),
+                  child: WeekTotalBadge(total: monthly.total, color: widget.palette.top),
+                ),
+              ),
+              _futureChart(
+                _topFuture,
+                (chart) => RankingBarChartWidget(
+                  items: chart.items,
+                  color: widget.palette.top,
+                ),
+              ),
+            ],
           ),
         ),
         if (_can('monthly'))

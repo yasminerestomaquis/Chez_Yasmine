@@ -16,6 +16,10 @@ Future<bool?> showStockMovementDialog(
   required String productId,
   required String productName,
   bool hasVariablePricing = false,
+  // Produit à prix de référence variable (ex. Gbêlê) : la quantité du
+  // mouvement (Entrée, Sortie, Correction) s'exprime en litres — demande
+  // utilisateur du 2026-09-25.
+  bool isReferencePriced = false,
 }) {
   return showDialog<bool>(
     context: context,
@@ -24,6 +28,7 @@ Future<bool?> showStockMovementDialog(
       productId: productId,
       productName: productName,
       hasVariablePricing: hasVariablePricing,
+      isReferencePriced: isReferencePriced,
     ),
   );
 }
@@ -34,12 +39,14 @@ class _StockMovementDialog extends StatefulWidget {
     required this.productId,
     required this.productName,
     required this.hasVariablePricing,
+    required this.isReferencePriced,
   });
 
   final StockRepository repository;
   final String productId;
   final String productName;
   final bool hasVariablePricing;
+  final bool isReferencePriced;
 
   @override
   State<_StockMovementDialog> createState() => _StockMovementDialogState();
@@ -162,8 +169,8 @@ class _StockMovementDialogState extends State<_StockMovementDialog> {
                 ),
                 decoration: InputDecoration(
                   labelText: _type == 'adjustment'
-                      ? 'Nouvelle quantité totale *'
-                      : 'Quantité *',
+                      ? (widget.isReferencePriced ? 'Nouvelle quantité totale (L) *' : 'Nouvelle quantité totale *')
+                      : (widget.isReferencePriced ? 'Quantité (L) *' : 'Quantité *'),
                 ),
                 validator: (v) {
                   final value = double.tryParse(

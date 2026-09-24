@@ -498,6 +498,34 @@ class _HomeDashboardState extends State<HomeDashboard> {
     );
   }
 
+  /// Grille de vignettes `_statCard`, 2 par ligne, sans hauteur figée — pour
+  /// que les désignations longues (ex. « Boissons sans Gbêlê · Mobile Money »)
+  /// s'affichent toujours en entier, sur plusieurs lignes si besoin, quelle
+  /// que soit la largeur de l'écran, plutôt que d'être coupées par une
+  /// ellipse dans une carte de hauteur fixe (demande utilisateur du
+  /// 2026-09-25). `IntrinsicHeight` aligne les deux cartes d'une même ligne
+  /// sur la plus haute des deux.
+  Widget _statCardGrid(List<Widget> cards) {
+    final rows = <Widget>[];
+    for (var i = 0; i < cards.length; i += 2) {
+      final second = i + 1 < cards.length ? cards[i + 1] : null;
+      rows.add(
+        IntrinsicHeight(
+          child: Row(
+            crossAxisAlignment: CrossAxisAlignment.stretch,
+            children: [
+              Expanded(child: cards[i]),
+              const SizedBox(width: 10),
+              Expanded(child: second ?? const SizedBox()),
+            ],
+          ),
+        ),
+      );
+      if (i + 2 < cards.length) rows.add(const SizedBox(height: 10));
+    }
+    return Column(crossAxisAlignment: CrossAxisAlignment.stretch, children: rows);
+  }
+
   Widget _statCard({
     required IconData icon,
     required String label,
@@ -535,15 +563,20 @@ class _HomeDashboardState extends State<HomeDashboard> {
             ),
             const SizedBox(height: 2),
             Row(
+              crossAxisAlignment: CrossAxisAlignment.start,
               children: [
-                Flexible(
+                Expanded(
+                  // Pas d'`overflow`/`maxLines` : la désignation s'affiche
+                  // toujours en entier, quitte à retourner à la ligne
+                  // (demande utilisateur du 2026-09-25) — jamais coupée par
+                  // une ellipse, quelle que soit la largeur de l'écran.
                   child: Text(
                     label,
+                    softWrap: true,
                     style: const TextStyle(
                       color: AppColors.textSecondary,
                       fontSize: 12,
                     ),
-                    overflow: TextOverflow.ellipsis,
                   ),
                 ),
                 if (iconAssets != null)
@@ -1007,17 +1040,7 @@ class _HomeDashboardState extends State<HomeDashboard> {
                     const SizedBox(height: 10),
                   ],
                   if (summary != null && !_isServeur) ...[
-                    GridView(
-                      shrinkWrap: true,
-                      physics: const NeverScrollableScrollPhysics(),
-                      gridDelegate:
-                          const SliverGridDelegateWithFixedCrossAxisCount(
-                            crossAxisCount: 2,
-                            crossAxisSpacing: 10,
-                            mainAxisSpacing: 10,
-                            mainAxisExtent: 110,
-                          ),
-                      children: [
+                    _statCardGrid([
                         _statCard(
                           icon: Icons.receipt_long_outlined,
                           label: 'Commandes $_periodPhrase',
@@ -1032,8 +1055,7 @@ class _HomeDashboardState extends State<HomeDashboard> {
                               ? AppColors.alert
                               : AppColors.green,
                         ),
-                      ],
-                    ),
+                      ]),
                     const SizedBox(height: 20),
                   ],
                   if (breakdown != null) ...[
@@ -1049,16 +1071,7 @@ class _HomeDashboardState extends State<HomeDashboard> {
                       ),
                     ),
                     const SizedBox(height: 10),
-                    GridView(
-                      shrinkWrap: true,
-                      physics: const NeverScrollableScrollPhysics(),
-                      gridDelegate: const SliverGridDelegateWithFixedCrossAxisCount(
-                        crossAxisCount: 2,
-                        crossAxisSpacing: 10,
-                        mainAxisSpacing: 10,
-                        mainAxisExtent: 110,
-                      ),
-                      children: [
+                    _statCardGrid([
                         _statCard(
                           icon: Icons.sports_bar_outlined,
                           label: 'Recettes boissons sans Gbêlê $_periodPhrase',
@@ -1084,8 +1097,7 @@ class _HomeDashboardState extends State<HomeDashboard> {
                             color: AppColors.orange,
                             iconAssets: const ['assets/kedjenou_poulet.jpg'],
                           ),
-                      ],
-                    ),
+                      ]),
                     const SizedBox(height: 20),
                     const Text(
                       'DÉTAIL PAR MODE DE PAIEMENT',
@@ -1097,17 +1109,7 @@ class _HomeDashboardState extends State<HomeDashboard> {
                       ),
                     ),
                     const SizedBox(height: 10),
-                    GridView(
-                      shrinkWrap: true,
-                      physics: const NeverScrollableScrollPhysics(),
-                      gridDelegate:
-                          const SliverGridDelegateWithFixedCrossAxisCount(
-                            crossAxisCount: 2,
-                            crossAxisSpacing: 10,
-                            mainAxisSpacing: 10,
-                            mainAxisExtent: 100,
-                          ),
-                      children: [
+                    _statCardGrid([
                         _statCard(
                           icon: Icons.payments_outlined,
                           label: 'Boissons sans Gbêlê · Espèces',
@@ -1172,8 +1174,7 @@ class _HomeDashboardState extends State<HomeDashboard> {
                             ],
                           ),
                         ],
-                      ],
-                    ),
+                      ]),
                     const SizedBox(height: 20),
                   ],
                   const Text(

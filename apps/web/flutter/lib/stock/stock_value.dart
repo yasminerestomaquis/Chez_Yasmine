@@ -53,3 +53,28 @@ double stockBottleCount(List<Product> products, Set<String> selectedCategoryIds)
   }
   return count;
 }
+
+/// Vrai si le filtre Catégorie du groupe « Valeur du stock » porte sur au
+/// moins un produit à prix de référence variable (ex. Gbêlê,
+/// `Product.isReferencePriced`) — décision utilisateur du 2026-09-25 : dans
+/// ce cas, la troisième vignette du groupe devient « Stock en litres »
+/// (`stockReferenceLiters`) au lieu de « Bouteilles en stock », qui n'a pas
+/// de sens pour un produit compté en litres. Vide (aucune sélection) : reste
+/// sur « Bouteilles en stock », par défaut.
+bool hasReferencePricedSelection(List<Product> products, Set<String> selectedCategoryIds) {
+  if (selectedCategoryIds.isEmpty) return false;
+  return products.any((p) => selectedCategoryIds.contains(p.categoryId) && p.isReferencePriced);
+}
+
+/// Litres en stock des produits à prix de référence variable (ex. Gbêlê)
+/// dont la catégorie est sélectionnée — voir [hasReferencePricedSelection].
+double stockReferenceLiters(List<Product> products, Set<String> selectedCategoryIds) {
+  var count = 0.0;
+  for (final product in products) {
+    if (!product.isReferencePriced) continue;
+    if (selectedCategoryIds.isNotEmpty && !selectedCategoryIds.contains(product.categoryId)) continue;
+    if (product.stockQuantity <= 0) continue;
+    count += product.stockQuantity;
+  }
+  return count;
+}
