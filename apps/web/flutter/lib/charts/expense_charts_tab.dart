@@ -7,6 +7,7 @@ import 'chart_models.dart';
 import 'charts_repository.dart';
 import 'monthly_line_chart.dart';
 import 'ranking_bar_chart.dart';
+import 'week_selection.dart';
 import 'weekly_bar_chart.dart';
 
 const _monthNames = [
@@ -47,16 +48,18 @@ class _ExpenseChartsTabState extends State<ExpenseChartsTab> {
   late final ChartsRepository _charts = ChartsRepository(ApiClient(), widget.establishmentId);
   static final DateFormat _dayFormat = DateFormat('dd/MM/yyyy');
 
-  late DateTime _weekAnchor = _clampToYear(DateTime.now(), widget.year);
+  // Sélection multiple de semaines, réinitialisable (demande utilisateur du
+  // 2026-09-24) — même principe que MetricChartsTab (week_selection.dart).
+  late Set<DateTime> _weekAnchors = {mondayOfWeek(_clampToYear(DateTime.now(), widget.year))};
   final Set<String> _selectedCategories = {};
   int? _topMonth;
 
   // `..ignore()` sur chacun de ces futurs initiaux — même garde que
   // MetricChartsTab contre un rejet "unhandled" en test (flutter_test répond
   // quasi instantanément à tout appel réseau).
-  late Future<WeeklyChart> _totalFuture = _charts.getExpensesWeekly(weekStart: _weekStartParam)..ignore();
+  late Future<WeeklyChart> _totalFuture = _multiWeek((ws) => _charts.getExpensesWeekly(weekStart: ws))..ignore();
   late Future<WeeklyChart> _byCategoryFuture =
-      (_charts.getExpensesWeeklyByCategory(weekStart: _weekStartParam)..ignore());
+      _multiWeek((ws) => _charts.getExpensesWeeklyByCategory(weekStart: ws, categories: _selectedCategories))..ignore();
   late Future<RankingChart> _topFuture = _charts.getExpensesTop(from: _topFrom, to: _topTo)..ignore();
   late final Future<MonthlyChart> _monthlyFuture = _charts.getExpensesMonthly(year: widget.year)..ignore();
 
@@ -71,7 +74,13 @@ class _ExpenseChartsTabState extends State<ExpenseChartsTab> {
 
   bool _can(String kind) => widget.allowed.contains('charts.expenses_$kind');
 
-  String get _weekStartParam => _weekAnchor.toIso8601String().split('T').first;
+  /// Récupère un graphique hebdomadaire pour chaque semaine sélectionnée et
+  /// les fusionne (`mergeWeeklyCharts`) — même principe que MetricChartsTab.
+  Future<WeeklyChart> _multiWeek(Future<WeeklyChart> Function(String weekStart) fetchOne) {
+    return Future.wait(
+      _weekAnchors.map((a) => fetchOne(a.toIso8601String().split('T').first)),
+    ).then(mergeWeeklyCharts);
+  }
 
   String get _topFrom => (_topMonth == null ? DateTime(widget.year, 1, 1) : DateTime(widget.year, _topMonth! + 1, 1))
       .toIso8601String();
@@ -83,16 +92,15 @@ class _ExpenseChartsTabState extends State<ExpenseChartsTab> {
 
   void _reloadTotal() {
     if (!_can('daily')) return;
-    final future = _charts.getExpensesWeekly(weekStart: _weekStartParam);
+    final future = _multiWeek((ws) => _charts.getExpensesWeekly(weekStart: ws));
     future.ignore();
     setState(() => _totalFuture = future);
   }
 
   void _reloadByCategory() {
     if (!_can('by_category')) return;
-    final future = _charts.getExpensesWeeklyByCategory(
-      weekStart: _weekStartParam,
-      categories: _selectedCategories,
+    final future = _multiWeek(
+      (ws) => _charts.getExpensesWeeklyByCategory(weekStart: ws, categories: _selectedCategories),
     );
     future.ignore();
     setState(() => _byCategoryFuture = future);
@@ -116,16 +124,10 @@ class _ExpenseChartsTabState extends State<ExpenseChartsTab> {
     setState(() => _topFuture = future);
   }
 
-  Future<void> _pickWeek() async {
-    final picked = await showDatePicker(
-      context: context,
-      initialDate: _weekAnchor,
-      firstDate: DateTime(widget.year, 1, 1),
-      lastDate: DateTime(widget.year, 12, 31),
-      helpText: 'Choisir un jour de la semaine à afficher',
-    );
-    if (picked == null) return;
-    setState(() => _weekAnchor = picked);
+  Future<void> _pickWeeks() async {
+    final result = await pickWeeks(context, selected: _weekAnchors, year: widget.year);
+    if (result == null) return;
+    setState(() => _weekAnchors = result);
     _reloadTotal();
     _reloadByCategory();
   }
@@ -153,9 +155,9 @@ class _ExpenseChartsTabState extends State<ExpenseChartsTab> {
 
   Widget _pickWeekButton() {
     return OutlinedButton.icon(
-      onPressed: _pickWeek,
+      onPressed: _pickWeeks,
       icon: const Icon(Icons.date_range_outlined, size: 18),
-      label: const Text('Choisir la semaine'),
+      label: Text(weekFilterLabel(_weekAnchors)),
     );
   }
 
@@ -205,7 +207,9 @@ class _ExpenseChartsTabState extends State<ExpenseChartsTab> {
                       if (chart.weekStart.isNotEmpty)
                         Expanded(
                           child: Text(
-                            'Semaine du ${_dayFormat.format(DateTime.parse(chart.weekStart))} au ${_dayFormat.format(DateTime.parse(chart.weekEnd))}',
+                            _weekAnchors.length > 1
+                                ? weekFilterLabel(_weekAnchors)
+                                : 'Semaine du ${_dayFormat.format(DateTime.parse(chart.weekStart))} au ${_dayFormat.format(DateTime.parse(chart.weekEnd))}',
                             style: Theme.of(context).textTheme.bodySmall,
                           ),
                         ),

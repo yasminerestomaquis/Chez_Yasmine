@@ -8,6 +8,7 @@ import 'chart_models.dart';
 import 'charts_repository.dart';
 import 'monthly_line_chart.dart';
 import 'ranking_bar_chart.dart';
+import 'week_selection.dart';
 import 'weekly_bar_chart.dart';
 
 /// Une couleur différente par graphique au sein d'un même sous-module,
@@ -106,7 +107,12 @@ class _MetricChartsTabState extends State<MetricChartsTab> {
   );
   static final DateFormat _dayFormat = DateFormat('dd/MM/yyyy');
 
-  late DateTime _weekAnchor = _clampToYear(DateTime.now(), widget.year);
+  // Sélection multiple de semaines, réinitialisable (demande utilisateur du
+  // 2026-09-24) — chaque semaine ramenée à son lundi (`mondayOfWeek`) pour
+  // dédoublonner deux dates de la même semaine ISO. `mergeWeeklyCharts`
+  // (week_selection.dart) additionne les graphiques de chaque semaine
+  // côté client, le serveur ne résolvant qu'une semaine à la fois.
+  late Set<DateTime> _weekAnchors = {mondayOfWeek(_clampToYear(DateTime.now(), widget.year))};
   final Set<String> _selectedCategoryIds = {};
   // Sélection multiple, réinitialisable (demande utilisateur du 2026-09-22) —
   // vide = tous les produits (agrégés en une seule série, comme sans filtre).
@@ -121,19 +127,15 @@ class _MetricChartsTabState extends State<MetricChartsTab> {
   // appel réseau par un faux échec quasi instantané, assez tôt pour parfois
   // rejeter avant que `FutureBuilder` ne s'y abonne, ce que Dart signalerait
   // sinon comme une erreur non gérée alors que l'UI l'affiche normalement.
-  late Future<WeeklyChart> _totalFuture = _charts.getWeekly(
-    metric: widget.metric,
-    weekStart: _weekStartParam,
+  late Future<WeeklyChart> _totalFuture = _multiWeek(
+    (ws) => _charts.getWeekly(metric: widget.metric, weekStart: ws),
   )..ignore();
-  late Future<WeeklyChart> _byCategoryFuture = (_charts.getWeeklyByCategory(
-    metric: widget.metric,
-    weekStart: _weekStartParam,
-    categoryIds: _selectedCategoryIds,
-  )..ignore());
-  late Future<WeeklyChart> _byProductFuture = (_charts.getWeeklyByProduct(
-    metric: widget.metric,
-    weekStart: _weekStartParam,
-  )..ignore());
+  late Future<WeeklyChart> _byCategoryFuture = _multiWeek(
+    (ws) => _charts.getWeeklyByCategory(metric: widget.metric, weekStart: ws, categoryIds: _selectedCategoryIds),
+  )..ignore();
+  late Future<WeeklyChart> _byProductFuture = _multiWeek(
+    (ws) => _charts.getWeeklyByProduct(metric: widget.metric, weekStart: ws, productIds: _selectedProductIds),
+  )..ignore();
   late Future<RankingChart> _topFuture = _charts.getTop(
     metric: widget.metric,
     from: _topFrom,
@@ -162,7 +164,14 @@ class _MetricChartsTabState extends State<MetricChartsTab> {
 
   bool _can(String kind) => widget.allowed.contains('charts.${widget.permissionKey}_$kind');
 
-  String get _weekStartParam => _weekAnchor.toIso8601String().split('T').first;
+  /// Récupère un graphique hebdomadaire pour chaque semaine sélectionnée et
+  /// les fusionne (`mergeWeeklyCharts`) — le serveur ne résout qu'une
+  /// semaine à la fois par requête.
+  Future<WeeklyChart> _multiWeek(Future<WeeklyChart> Function(String weekStart) fetchOne) {
+    return Future.wait(
+      _weekAnchors.map((a) => fetchOne(a.toIso8601String().split('T').first)),
+    ).then(mergeWeeklyCharts);
+  }
 
   String get _topFrom =>
       (_topMonth == null
@@ -194,20 +203,15 @@ class _MetricChartsTabState extends State<MetricChartsTab> {
 
   void _reloadTotal() {
     if (!_can('daily')) return;
-    final future = _charts.getWeekly(
-      metric: widget.metric,
-      weekStart: _weekStartParam,
-    );
+    final future = _multiWeek((ws) => _charts.getWeekly(metric: widget.metric, weekStart: ws));
     future.ignore();
     setState(() => _totalFuture = future);
   }
 
   void _reloadByCategory() {
     if (!_can('by_category')) return;
-    final future = _charts.getWeeklyByCategory(
-      metric: widget.metric,
-      weekStart: _weekStartParam,
-      categoryIds: _selectedCategoryIds,
+    final future = _multiWeek(
+      (ws) => _charts.getWeeklyByCategory(metric: widget.metric, weekStart: ws, categoryIds: _selectedCategoryIds),
     );
     future.ignore();
     setState(() => _byCategoryFuture = future);
@@ -226,10 +230,8 @@ class _MetricChartsTabState extends State<MetricChartsTab> {
 
   void _reloadByProduct() {
     if (!_can('by_product')) return;
-    final future = _charts.getWeeklyByProduct(
-      metric: widget.metric,
-      weekStart: _weekStartParam,
-      productIds: _selectedProductIds,
+    final future = _multiWeek(
+      (ws) => _charts.getWeeklyByProduct(metric: widget.metric, weekStart: ws, productIds: _selectedProductIds),
     );
     future.ignore();
     setState(() => _byProductFuture = future);
@@ -251,16 +253,10 @@ class _MetricChartsTabState extends State<MetricChartsTab> {
     setState(() => _topFuture = future);
   }
 
-  Future<void> _pickWeek() async {
-    final picked = await showDatePicker(
-      context: context,
-      initialDate: _weekAnchor,
-      firstDate: DateTime(widget.year, 1, 1),
-      lastDate: DateTime(widget.year, 12, 31),
-      helpText: 'Choisir un jour de la semaine à afficher',
-    );
-    if (picked == null) return;
-    setState(() => _weekAnchor = picked);
+  Future<void> _pickWeeks() async {
+    final result = await pickWeeks(context, selected: _weekAnchors, year: widget.year);
+    if (result == null) return;
+    setState(() => _weekAnchors = result);
     _reloadTotal();
     _reloadByCategory();
     _reloadByProduct();
@@ -296,9 +292,9 @@ class _MetricChartsTabState extends State<MetricChartsTab> {
 
   Widget _pickWeekButton() {
     return OutlinedButton.icon(
-      onPressed: _pickWeek,
+      onPressed: _pickWeeks,
       icon: const Icon(Icons.date_range_outlined, size: 18),
-      label: const Text('Choisir la semaine'),
+      label: Text(weekFilterLabel(_weekAnchors)),
     );
   }
 
@@ -350,7 +346,9 @@ class _MetricChartsTabState extends State<MetricChartsTab> {
                       if (chart.weekStart.isNotEmpty)
                         Expanded(
                           child: Text(
-                            'Semaine du ${_dayFormat.format(DateTime.parse(chart.weekStart))} au ${_dayFormat.format(DateTime.parse(chart.weekEnd))}',
+                            _weekAnchors.length > 1
+                                ? weekFilterLabel(_weekAnchors)
+                                : 'Semaine du ${_dayFormat.format(DateTime.parse(chart.weekStart))} au ${_dayFormat.format(DateTime.parse(chart.weekEnd))}',
                             style: Theme.of(context).textTheme.bodySmall,
                           ),
                         ),
@@ -425,13 +423,24 @@ class _MetricChartsTabState extends State<MetricChartsTab> {
             else
               const Text('Aucun produit au catalogue'),
           ],
-          child: _futureChart(
-            _byProductFuture,
-            (chart) => WeeklyBarChartWidget(
-              series: chart.series,
-              baseColor: widget.palette.dailyByProduct,
-            ),
-          ),
+          // Montant total des recettes des produits vendus selon la sélection
+          // du filtre Produit, en haut à droite — demande utilisateur du
+          // 2026-09-24, même `WeekTotalBadge` que le graphique par catégorie.
+          child: _futureChart(_byProductFuture, (chart) {
+            return Column(
+              crossAxisAlignment: CrossAxisAlignment.stretch,
+              children: [
+                Padding(
+                  padding: const EdgeInsets.only(bottom: 4),
+                  child: WeekTotalBadge(total: chart.total, color: widget.palette.dailyByProduct),
+                ),
+                WeeklyBarChartWidget(
+                  series: chart.series,
+                  baseColor: widget.palette.dailyByProduct,
+                ),
+              ],
+            );
+          }),
         ),
         if (_can('top'))
         _card(

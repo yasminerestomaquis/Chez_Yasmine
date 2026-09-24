@@ -2,6 +2,11 @@
 
 ## [Unreleased]
 
+### Ajouté (2026-09-24) — Graphiques : total par produit, sélection multiple de semaines
+- **Recettes/Bénéfices journalières totales par produit** : montant total en haut à droite (`WeekTotalBadge`), reflétant la sélection du filtre Produit — même principe que le graphique par catégorie.
+- **Choisir la semaine** (Recettes, Bénéfices, Dépenses) : sélection **multiple**, désormais possible — dialogue à puces retirables + « Ajouter une semaine » + « Réinitialiser » ; les semaines choisies sont additionnées jour de semaine par jour de semaine côté client (`mergeWeeklyCharts`), le serveur ne résout toujours qu'une semaine à la fois.
+- Tests : 8 Flutter (`week_selection`).
+
 ### Ajouté (2026-09-24) — Accueil : Gbêlê isolé du groupe Boissons
 - **RECETTES DU JOUR** : « Recettes boissons aujourd'hui » devient **« Recettes boissons sans Gbêlê … »** (Bières, Vins, Sucreries uniquement) ; nouvelle vignette **« Recettes Gbêlê … »** (icône dédiée) pour la recette du jour de la seule catégorie Gbêlê.
 - **DÉTAIL PAR MODE DE PAIEMENT** : « Boissons · Espèces »/« Boissons · Mobile Money » deviennent **« Boissons sans Gbêlê · … »** ; nouvelles vignettes **« Gbêlê · Espèces »**/**« Gbêlê · Mobile Money »**.
