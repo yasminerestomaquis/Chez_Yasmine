@@ -42,18 +42,23 @@ class ServerPerformance {
 }
 
 /// Correspond à `ReportsService.paymentCategoryBreakdown` — voir
-/// `docs/api/reports.md`. Boissons = Bières/Vins/Sucreries
-/// (`Category.hasCasePricing`), Plats = Poulets/Poissons/Plats africains
+/// `docs/api/reports.md`. Trois groupes depuis le 2026-09-24 : Boissons sans
+/// Gbêlê = Bières/Vins/Sucreries (`Category.hasCasePricing`), Gbêlê =
+/// `Category.isBeverage` sans `hasCasePricing` (isolé de "Boissons" sur
+/// demande utilisateur), Plats = Poulets/Poissons/Plats africains
 /// (`Category.hasVariablePricing`).
 class PaymentCategoryBreakdown {
   PaymentCategoryBreakdown({
     required this.totalRevenue,
     required this.cashRevenue,
     required this.mobileMoneyRevenue,
-    required this.boissonsRevenue,
+    required this.boissonsSansGbeleRevenue,
+    required this.gbeleRevenue,
     required this.platsRevenue,
-    required this.boissonsCash,
-    required this.boissonsMobileMoney,
+    required this.boissonsSansGbeleCash,
+    required this.boissonsSansGbeleMobileMoney,
+    required this.gbeleCash,
+    required this.gbeleMobileMoney,
     required this.platsCash,
     required this.platsMobileMoney,
   });
@@ -61,10 +66,13 @@ class PaymentCategoryBreakdown {
   final double totalRevenue;
   final double cashRevenue;
   final double mobileMoneyRevenue;
-  final double boissonsRevenue;
+  final double boissonsSansGbeleRevenue;
+  final double gbeleRevenue;
   final double platsRevenue;
-  final double boissonsCash;
-  final double boissonsMobileMoney;
+  final double boissonsSansGbeleCash;
+  final double boissonsSansGbeleMobileMoney;
+  final double gbeleCash;
+  final double gbeleMobileMoney;
   final double platsCash;
   final double platsMobileMoney;
 
@@ -72,10 +80,13 @@ class PaymentCategoryBreakdown {
         totalRevenue: (json['totalRevenue'] as num).toDouble(),
         cashRevenue: (json['cashRevenue'] as num).toDouble(),
         mobileMoneyRevenue: (json['mobileMoneyRevenue'] as num).toDouble(),
-        boissonsRevenue: (json['boissonsRevenue'] as num).toDouble(),
+        boissonsSansGbeleRevenue: (json['boissonsSansGbeleRevenue'] as num).toDouble(),
+        gbeleRevenue: (json['gbeleRevenue'] as num).toDouble(),
         platsRevenue: (json['platsRevenue'] as num).toDouble(),
-        boissonsCash: (json['boissonsCash'] as num).toDouble(),
-        boissonsMobileMoney: (json['boissonsMobileMoney'] as num).toDouble(),
+        boissonsSansGbeleCash: (json['boissonsSansGbeleCash'] as num).toDouble(),
+        boissonsSansGbeleMobileMoney: (json['boissonsSansGbeleMobileMoney'] as num).toDouble(),
+        gbeleCash: (json['gbeleCash'] as num).toDouble(),
+        gbeleMobileMoney: (json['gbeleMobileMoney'] as num).toDouble(),
         platsCash: (json['platsCash'] as num).toDouble(),
         platsMobileMoney: (json['platsMobileMoney'] as num).toDouble(),
       );

@@ -56,9 +56,10 @@ String periodPhrase(Set<DateTime> dates, DateTime today) {
   return 'sur ${dates.length} jours';
 }
 
-/// Somme des ventilations Espèces/Mobile Money × Boissons/Plats de chaque
-/// date sélectionnée — le serveur ne sait résoudre qu'un intervalle continu,
-/// donc une sélection de dates non contiguës se calcule jour par jour.
+/// Somme des ventilations Espèces/Mobile Money × Boissons sans Gbêlê/Gbêlê/
+/// Plats de chaque date sélectionnée — le serveur ne sait résoudre qu'un
+/// intervalle continu, donc une sélection de dates non contiguës se calcule
+/// jour par jour.
 PaymentCategoryBreakdown mergeBreakdowns(List<PaymentCategoryBreakdown> items) {
   double sum(double Function(PaymentCategoryBreakdown) pick) =>
       items.fold(0.0, (total, b) => total + pick(b));
@@ -66,10 +67,13 @@ PaymentCategoryBreakdown mergeBreakdowns(List<PaymentCategoryBreakdown> items) {
     totalRevenue: sum((b) => b.totalRevenue),
     cashRevenue: sum((b) => b.cashRevenue),
     mobileMoneyRevenue: sum((b) => b.mobileMoneyRevenue),
-    boissonsRevenue: sum((b) => b.boissonsRevenue),
+    boissonsSansGbeleRevenue: sum((b) => b.boissonsSansGbeleRevenue),
+    gbeleRevenue: sum((b) => b.gbeleRevenue),
     platsRevenue: sum((b) => b.platsRevenue),
-    boissonsCash: sum((b) => b.boissonsCash),
-    boissonsMobileMoney: sum((b) => b.boissonsMobileMoney),
+    boissonsSansGbeleCash: sum((b) => b.boissonsSansGbeleCash),
+    boissonsSansGbeleMobileMoney: sum((b) => b.boissonsSansGbeleMobileMoney),
+    gbeleCash: sum((b) => b.gbeleCash),
+    gbeleMobileMoney: sum((b) => b.gbeleMobileMoney),
     platsCash: sum((b) => b.platsCash),
     platsMobileMoney: sum((b) => b.platsMobileMoney),
   );

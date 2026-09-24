@@ -2,6 +2,13 @@
 
 ## [Unreleased]
 
+### Ajouté (2026-09-24) — Accueil : Gbêlê isolé du groupe Boissons
+- **RECETTES DU JOUR** : « Recettes boissons aujourd'hui » devient **« Recettes boissons sans Gbêlê … »** (Bières, Vins, Sucreries uniquement) ; nouvelle vignette **« Recettes Gbêlê … »** (icône dédiée) pour la recette du jour de la seule catégorie Gbêlê.
+- **DÉTAIL PAR MODE DE PAIEMENT** : « Boissons · Espèces »/« Boissons · Mobile Money » deviennent **« Boissons sans Gbêlê · … »** ; nouvelles vignettes **« Gbêlê · Espèces »**/**« Gbêlê · Mobile Money »**.
+- Toutes ces vignettes restent visibles au Serveur (accès déjà accordé à la carte Boissons dont elles reprennent une partie).
+- `ReportsService.paymentCategoryBreakdown` renvoie désormais `boissonsSansGbeleRevenue`/`gbeleRevenue` (+ Cash/MobileMoney) au lieu de `boissonsRevenue` (+ Cash/MobileMoney) ; `plats*` inchangés.
+- Tests : 6 NestJS (`ReportsService`), 3 (`loss-revenue`), 2 Flutter (`mergeBreakdowns`).
+
 ### Ajouté (2026-09-24) — Gbêlê : Stock en litres, Achats au litre (25/50 L)
 - **Stock** : la vignette du produit Gbêlê affiche « Stock actuel : X,XX L — Prix de vente : Y FCFA/L » au lieu de l'affichage habituel (`Product.isReferencePriced`).
 - **Achats** : Gbêlê se commande désormais par jerrican de **25 ou 50 L**, au prix d'achat par litre du Catalogue (`Product.purchasePrice`, déjà éditable) — plus de « Nbre de casiers ». L'Historique et l'édition d'une commande distinguent casiers et litres (`Purchase.totalCases`/`totalLiters`).

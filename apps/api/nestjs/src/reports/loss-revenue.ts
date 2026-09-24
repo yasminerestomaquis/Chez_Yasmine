@@ -1,9 +1,11 @@
 /**
- * Valeur des pertes dans les statistiques Espèces/Mobile Money × Boissons/Plats
- * de l'Accueil (`ReportsService.paymentCategoryBreakdown`) — demande
- * utilisateur du 2026-09-20 : une perte enregistrée à une date précise compte,
- * à son prix de vente, dans le groupe (Boissons ou Plats) de la catégorie de
- * son produit et **uniquement côté Mobile Money** (jamais Espèces).
+ * Valeur des pertes dans les statistiques Espèces/Mobile Money × Boissons
+ * sans Gbêlê/Gbêlê/Plats de l'Accueil (`ReportsService.
+ * paymentCategoryBreakdown`) — demande utilisateur du 2026-09-20 : une perte
+ * enregistrée à une date précise compte, à son prix de vente, dans le groupe
+ * de la catégorie de son produit et **uniquement côté Mobile Money** (jamais
+ * Espèces). Le groupe Boissons s'est scindé en deux le 2026-09-24 (Boissons
+ * sans Gbêlê / Gbêlê) — voir `lossGroupOf`.
  */
 export interface LossForRevenue {
   quantity: { toNumber(): number };
@@ -16,9 +18,17 @@ export interface LossForRevenue {
   };
 }
 
-/** Même critère Boissons/Plats que les ventes (`hasCasePricing || isBeverage` / `hasVariablePricing`). */
-export function lossGroupOf(category: LossForRevenue['product']['category']): 'boissons' | 'plats' | null {
-  if (category?.hasCasePricing || category?.isBeverage) return 'boissons';
+/**
+ * Même critère que les ventes (`ReportsService.paymentCategoryBreakdown`) :
+ * `hasCasePricing` (Bières/Vins/Sucreries) → Boissons sans Gbêlê,
+ * `isBeverage` sans `hasCasePricing` (ex. Gbêlê) → Gbêlê, isolé le
+ * 2026-09-24 (auparavant fusionné avec Boissons), `hasVariablePricing` → Plats.
+ */
+export function lossGroupOf(
+  category: LossForRevenue['product']['category'],
+): 'boissonsSansGbele' | 'gbele' | 'plats' | null {
+  if (category?.hasCasePricing) return 'boissonsSansGbele';
+  if (category?.isBeverage) return 'gbele';
   if (category?.hasVariablePricing) return 'plats';
   return null;
 }
@@ -36,12 +46,14 @@ export function lossUnitSalePrice(product: Omit<LossForRevenue['product'], 'cate
 }
 
 /**
- * Cumul de la valeur des pertes par groupe. Une perte dont le produit n'est ni
- * Boissons ni Plats (catégorie fixe hors groupe, ou sans catégorie) n'est
- * comptée nulle part, comme une ligne de vente de même nature.
+ * Cumul de la valeur des pertes par groupe. Une perte dont le produit n'est
+ * dans aucun des trois groupes (catégorie fixe hors groupe, ou sans
+ * catégorie) n'est comptée nulle part, comme une ligne de vente de même nature.
  */
-export function lossRevenueByGroup(losses: LossForRevenue[]): { boissons: number; plats: number } {
-  const totals = { boissons: 0, plats: 0 };
+export function lossRevenueByGroup(
+  losses: LossForRevenue[],
+): { boissonsSansGbele: number; gbele: number; plats: number } {
+  const totals = { boissonsSansGbele: 0, gbele: 0, plats: 0 };
   for (const loss of losses) {
     const group = lossGroupOf(loss.product.category);
     if (group === null) continue;

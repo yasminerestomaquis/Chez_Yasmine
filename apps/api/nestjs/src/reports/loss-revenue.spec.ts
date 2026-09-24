@@ -11,9 +11,9 @@ const cat = (o: Partial<{ hasCasePricing: boolean; hasVariablePricing: boolean; 
 });
 
 describe('loss-revenue', () => {
-  it('classe Boissons (casier ou boisson), Plats (prix variable) ou aucun groupe', () => {
-    expect(lossGroupOf(cat({ hasCasePricing: true }))).toBe('boissons');
-    expect(lossGroupOf(cat({ isBeverage: true }))).toBe('boissons');
+  it('classe Boissons sans Gbêlê (casier), Gbêlê (boisson hors casier), Plats (prix variable) ou aucun groupe (2026-09-24)', () => {
+    expect(lossGroupOf(cat({ hasCasePricing: true }))).toBe('boissonsSansGbele');
+    expect(lossGroupOf(cat({ isBeverage: true }))).toBe('gbele');
     expect(lossGroupOf(cat({ hasVariablePricing: true }))).toBe('plats');
     expect(lossGroupOf(cat({}))).toBeNull();
     expect(lossGroupOf(null)).toBeNull();
@@ -25,7 +25,7 @@ describe('loss-revenue', () => {
     expect(lossUnitSalePrice({ salePrice: null, referenceSalePrice: null, category: null })).toBe(0);
   });
 
-  it('cumule quantité × prix de vente par groupe et ignore les produits hors groupe', () => {
+  it('cumule quantité × prix de vente par groupe (Boissons sans Gbêlê / Gbêlê / Plats) et ignore les produits hors groupe', () => {
     const totals = lossRevenueByGroup([
       { quantity: D(3), product: { salePrice: D(500), referenceSalePrice: null, category: cat({ hasCasePricing: true }) } },
       { quantity: D(1.5), product: { salePrice: null, referenceSalePrice: D(4000), category: cat({ isBeverage: true }) } },
@@ -33,6 +33,6 @@ describe('loss-revenue', () => {
       { quantity: D(9), product: { salePrice: D(700), referenceSalePrice: null, category: cat({}) } },
     ]);
 
-    expect(totals).toEqual({ boissons: 7500, plats: 2000 });
+    expect(totals).toEqual({ boissonsSansGbele: 1500, gbele: 6000, plats: 2000 });
   });
 });

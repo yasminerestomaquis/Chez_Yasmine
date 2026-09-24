@@ -3,15 +3,18 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:chez_yasmine/home/date_selection.dart';
 import 'package:chez_yasmine/reports/report_models.dart';
 
-PaymentCategoryBreakdown _b(double cash, double mm, double boissons, double plats) =>
+PaymentCategoryBreakdown _b(double cash, double mm, double boissons, double plats, {double gbele = 0}) =>
     PaymentCategoryBreakdown(
       totalRevenue: cash + mm,
       cashRevenue: cash,
       mobileMoneyRevenue: mm,
-      boissonsRevenue: boissons,
+      boissonsSansGbeleRevenue: boissons,
+      gbeleRevenue: gbele,
       platsRevenue: plats,
-      boissonsCash: boissons,
-      boissonsMobileMoney: 0,
+      boissonsSansGbeleCash: boissons,
+      boissonsSansGbeleMobileMoney: 0,
+      gbeleCash: gbele,
+      gbeleMobileMoney: 0,
       platsCash: 0,
       platsMobileMoney: plats,
     );
@@ -63,9 +66,19 @@ void main() {
       expect(merged.cashRevenue, 1200);
       expect(merged.mobileMoneyRevenue, 800);
       expect(merged.totalRevenue, 2000);
-      expect(merged.boissonsRevenue, 900);
+      expect(merged.boissonsSansGbeleRevenue, 900);
       expect(merged.platsRevenue, 1100);
       expect(merged.platsMobileMoney, 1100);
+    });
+
+    test('additionne aussi le groupe Gbêlê, séparément de Boissons sans Gbêlê (2026-09-24)', () {
+      final merged = mergeBreakdowns([
+        _b(1000, 500, 800, 700, gbele: 300),
+        _b(200, 300, 100, 400, gbele: 150),
+      ]);
+
+      expect(merged.gbeleRevenue, 450);
+      expect(merged.boissonsSansGbeleRevenue, 900);
     });
 
     test('cumule les commandes mais garde les alertes stock (état courant) au maximum', () {

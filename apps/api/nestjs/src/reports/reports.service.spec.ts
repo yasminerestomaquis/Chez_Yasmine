@@ -259,7 +259,7 @@ describe('ReportsService.paymentCategoryBreakdown', () => {
     expect(result.cashRevenue).toBe(2000);
     expect(result.mobileMoneyRevenue).toBe(1500);
     expect(result.totalRevenue).toBe(3500);
-    expect(result.boissonsRevenue).toBe(2000);
+    expect(result.boissonsSansGbeleRevenue).toBe(2000);
     expect(result.platsRevenue).toBe(1500);
   });
 
@@ -278,13 +278,13 @@ describe('ReportsService.paymentCategoryBreakdown', () => {
 
     const result = await service.paymentCategoryBreakdown('est-1', {});
 
-    expect(result.boissonsCash).toBeCloseTo(600);
-    expect(result.boissonsMobileMoney).toBeCloseTo(400);
+    expect(result.boissonsSansGbeleCash).toBeCloseTo(600);
+    expect(result.boissonsSansGbeleMobileMoney).toBeCloseTo(400);
     expect(result.platsCash).toBe(0);
     expect(result.platsMobileMoney).toBe(0);
   });
 
-  it('counts an isBeverage category (ex. Gbêlê) as Boissons even without hasCasePricing (2026-09-17)', async () => {
+  it('counts an isBeverage category (ex. Gbêlê) in its own Gbêlê group, separate from Boissons sans Gbêlê (2026-09-24)', async () => {
     (prisma.sale as any).findMany.mockResolvedValue([
       {
         payments: [{ method: 'mobile_money', amount: new Decimal(700) }],
@@ -300,12 +300,13 @@ describe('ReportsService.paymentCategoryBreakdown', () => {
 
     const result = await service.paymentCategoryBreakdown('est-1', {});
 
-    expect(result.boissonsRevenue).toBe(700);
+    expect(result.gbeleRevenue).toBe(700);
+    expect(result.boissonsSansGbeleRevenue).toBe(0);
     expect(result.platsRevenue).toBe(0);
-    expect(result.boissonsMobileMoney).toBeCloseTo(700);
+    expect(result.gbeleMobileMoney).toBeCloseTo(700);
   });
 
-  it('ajoute les pertes (au prix de vente) côté Mobile Money uniquement, par groupe Boissons/Plats (2026-09-20)', async () => {
+  it('ajoute les pertes (au prix de vente) côté Mobile Money uniquement, par groupe Boissons sans Gbêlê / Gbêlê / Plats (2026-09-20, scindé le 2026-09-24)', async () => {
     (prisma.sale as any).findMany.mockResolvedValue([
       {
         payments: [{ method: 'cash', amount: new Decimal(1000) }],
@@ -333,11 +334,13 @@ describe('ReportsService.paymentCategoryBreakdown', () => {
     expect(result.mobileMoneyRevenue).toBe(9500);
     expect(result.cashRevenue).toBe(1000);
     expect(result.totalRevenue).toBe(10500);
-    expect(result.boissonsRevenue).toBe(9000);
+    expect(result.boissonsSansGbeleRevenue).toBe(1000);
+    expect(result.gbeleRevenue).toBe(8000);
     expect(result.platsRevenue).toBe(1500);
-    expect(result.boissonsMobileMoney).toBeCloseTo(8000);
+    expect(result.boissonsSansGbeleCash).toBeCloseTo(1000);
+    expect(result.boissonsSansGbeleMobileMoney).toBe(0);
+    expect(result.gbeleMobileMoney).toBeCloseTo(8000);
     expect(result.platsMobileMoney).toBe(1500);
-    expect(result.boissonsCash).toBeCloseTo(1000);
     expect(result.platsCash).toBe(0);
     expect(result.lossesRevenue).toBe(9500);
   });
@@ -357,6 +360,25 @@ describe('ReportsService.paymentCategoryBreakdown', () => {
     );
   });
 
+  it('sépare Boissons sans Gbêlê et Gbêlê au sein dune même vente (2026-09-24)', async () => {
+    (prisma.sale as any).findMany.mockResolvedValue([
+      {
+        payments: [{ method: 'mobile_money', amount: new Decimal(1700) }],
+        items: [
+          { quantity: new Decimal(1), unitPrice: new Decimal(1000), product: { category: { hasCasePricing: true, hasVariablePricing: false, isBeverage: false } } },
+          { quantity: new Decimal(1), unitPrice: new Decimal(700), product: { category: { hasCasePricing: false, hasVariablePricing: false, isBeverage: true } } },
+        ],
+      },
+    ]);
+
+    const result = await service.paymentCategoryBreakdown('est-1', {});
+
+    expect(result.boissonsSansGbeleRevenue).toBe(1000);
+    expect(result.gbeleRevenue).toBe(700);
+    expect(result.boissonsSansGbeleMobileMoney).toBeCloseTo(1000);
+    expect(result.gbeleMobileMoney).toBeCloseTo(700);
+  });
+
   it('excludes card/credit payments from cash/mobile-money totals', async () => {
     (prisma.sale as any).findMany.mockResolvedValue([
       {
@@ -371,9 +393,9 @@ describe('ReportsService.paymentCategoryBreakdown', () => {
 
     expect(result.cashRevenue).toBe(0);
     expect(result.mobileMoneyRevenue).toBe(0);
-    expect(result.boissonsRevenue).toBe(1000);
-    expect(result.boissonsCash).toBe(0);
-    expect(result.boissonsMobileMoney).toBe(0);
+    expect(result.boissonsSansGbeleRevenue).toBe(1000);
+    expect(result.boissonsSansGbeleCash).toBe(0);
+    expect(result.boissonsSansGbeleMobileMoney).toBe(0);
   });
 });
 

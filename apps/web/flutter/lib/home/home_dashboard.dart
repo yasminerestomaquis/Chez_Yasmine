@@ -1052,8 +1052,8 @@ class _HomeDashboardState extends State<HomeDashboard> {
                     GridView(
                       shrinkWrap: true,
                       physics: const NeverScrollableScrollPhysics(),
-                      gridDelegate: SliverGridDelegateWithFixedCrossAxisCount(
-                        crossAxisCount: _isServeur ? 1 : 2,
+                      gridDelegate: const SliverGridDelegateWithFixedCrossAxisCount(
+                        crossAxisCount: 2,
                         crossAxisSpacing: 10,
                         mainAxisSpacing: 10,
                         mainAxisExtent: 110,
@@ -1061,10 +1061,20 @@ class _HomeDashboardState extends State<HomeDashboard> {
                       children: [
                         _statCard(
                           icon: Icons.sports_bar_outlined,
-                          label: 'Recettes boissons $_periodPhrase',
-                          value: '${formatAmount(breakdown.boissonsRevenue)} F',
+                          label: 'Recettes boissons sans Gbêlê $_periodPhrase',
+                          value: '${formatAmount(breakdown.boissonsSansGbeleRevenue)} F',
                           color: AppColors.green,
                           iconAssets: const ['assets/malta.jpg'],
+                        ),
+                        // Isolée de "Recettes boissons" le 2026-09-24 (demande
+                        // utilisateur) — visible aussi au Serveur, comme la
+                        // carte ci-dessus dont elle reprend une partie.
+                        _statCard(
+                          icon: Icons.local_drink_outlined,
+                          label: 'Recettes Gbêlê $_periodPhrase',
+                          value: '${formatAmount(breakdown.gbeleRevenue)} F',
+                          color: AppColors.green,
+                          iconAssets: const ['assets/gbele.jpg'],
                         ),
                         if (!_isServeur)
                           _statCard(
@@ -1100,8 +1110,8 @@ class _HomeDashboardState extends State<HomeDashboard> {
                       children: [
                         _statCard(
                           icon: Icons.payments_outlined,
-                          label: 'Boissons · Espèces',
-                          value: '${formatAmount(breakdown.boissonsCash)} F',
+                          label: 'Boissons sans Gbêlê · Espèces',
+                          value: '${formatAmount(breakdown.boissonsSansGbeleCash)} F',
                           color: AppColors.green,
                           iconAssets: const [
                             'assets/home_icon_2.jpg',
@@ -1110,13 +1120,33 @@ class _HomeDashboardState extends State<HomeDashboard> {
                         ),
                         _statCard(
                           icon: Icons.phone_iphone_outlined,
-                          label: 'Boissons · Mobile Money',
+                          label: 'Boissons sans Gbêlê · Mobile Money',
                           value:
-                              '${formatAmount(breakdown.boissonsMobileMoney)} F',
+                              '${formatAmount(breakdown.boissonsSansGbeleMobileMoney)} F',
                           color: AppColors.green,
                           iconAssets: const [
                             'assets/home_icon_3.jpg',
                             'assets/malta.jpg',
+                          ],
+                        ),
+                        _statCard(
+                          icon: Icons.payments_outlined,
+                          label: 'Gbêlê · Espèces',
+                          value: '${formatAmount(breakdown.gbeleCash)} F',
+                          color: AppColors.green,
+                          iconAssets: const [
+                            'assets/gbele.jpg',
+                            'assets/home_icon_2.jpg',
+                          ],
+                        ),
+                        _statCard(
+                          icon: Icons.phone_iphone_outlined,
+                          label: 'Gbêlê · Mobile Money',
+                          value: '${formatAmount(breakdown.gbeleMobileMoney)} F',
+                          color: AppColors.green,
+                          iconAssets: const [
+                            'assets/gbele.jpg',
+                            'assets/home_icon_3.jpg',
                           ],
                         ),
                         if (!_isServeur) ...[

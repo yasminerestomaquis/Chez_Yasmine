@@ -166,13 +166,16 @@ export class ReportsService {
   /**
    * Ventilation utilisée par le tableau de bord Accueil : chiffre d'affaires
    * du jour réparti par mode de paiement (Espèces/Mobile Money) et par
-   * groupe de catégories (Boissons = `hasCasePricing` OU `isBeverage`, ex.
-   * Bières/Vins/Sucreries et Gbêlê ; Plats = `hasVariablePricing`, ex.
+   * groupe de catégories — **trois groupes depuis le 2026-09-24** : Boissons
+   * sans Gbêlê (`hasCasePricing`, ex. Bières/Vins/Sucreries), Gbêlê
+   * (`isBeverage` sans `hasCasePricing` — seule catégorie de ce groupe à ce
+   * jour, prix d'achat connu, prix de vente saisi à chaque vente, décision
+   * utilisateur du 2026-09-17) et Plats (`hasVariablePricing`, ex.
    * Poulets/Poissons/Plats africains — voir docs/api/catalog.md), plus le
-   * croisement des deux. `isBeverage` couvre les boissons qui ne rentrent
-   * dans aucun des deux mécanismes de prix existants (ex. Gbêlê : prix
-   * d'achat connu, prix de vente saisi à chaque vente — décision
-   * utilisateur du 2026-09-17).
+   * croisement de chacun avec le mode de paiement. Auparavant Gbêlê comptait
+   * dans "Boissons" (`hasCasePricing || isBeverage`) ; isolé sur demande
+   * utilisateur pour distinguer "Recettes boissons sans Gbêlê"/"Recettes
+   * Gbêlê" à l'Accueil.
    *
    * Le CA par groupe de catégories est calculé ligne à ligne
    * (`SaleItem.quantity × SaleItem.unitPrice`), **jamais réduit par une
@@ -190,9 +193,9 @@ export class ReportsService {
    * totaux demandés (Espèces/Mobile Money uniquement).
    *
    * Les pertes de la période (valorisées au prix de vente) s'ajoutent, dans le
-   * groupe Boissons/Plats de leur produit, à Mobile Money uniquement — donc
-   * aussi au total des ventes — jamais à Espèces (demande utilisateur du
-   * 2026-09-20, voir docs/api/reports.md).
+   * groupe de leur produit, à Mobile Money uniquement — donc aussi au total
+   * des ventes — jamais à Espèces (demande utilisateur du 2026-09-20, voir
+   * docs/api/reports.md).
    */
   async paymentCategoryBreakdown(establishmentId: string, query: ReportQueryDto) {
     const { from, to } = this.resolveRange(query);
@@ -233,10 +236,16 @@ export class ReportsService {
 
     let cashRevenue = 0;
     let mobileMoneyRevenue = 0;
-    let boissonsRevenue = 0;
+    // Boissons sans Gbêlê (Bières/Vins/Sucreries, `hasCasePricing`) et Gbêlê
+    // (`isBeverage` sans `hasCasePricing`) séparés le 2026-09-24 — auparavant
+    // fusionnés sous "Boissons" (`hasCasePricing || isBeverage`).
+    let boissonsSansGbeleRevenue = 0;
+    let gbeleRevenue = 0;
     let platsRevenue = 0;
-    let boissonsCash = 0;
-    let boissonsMobileMoney = 0;
+    let boissonsSansGbeleCash = 0;
+    let boissonsSansGbeleMobileMoney = 0;
+    let gbeleCash = 0;
+    let gbeleMobileMoney = 0;
     let platsCash = 0;
     let platsMobileMoney = 0;
 
@@ -249,29 +258,36 @@ export class ReportsService {
       cashRevenue += cashAmount;
       mobileMoneyRevenue += mobileMoneyAmount;
 
-      let saleBoissons = 0;
+      let saleBoissonsSansGbele = 0;
+      let saleGbele = 0;
       let salePlats = 0;
       for (const item of sale.items) {
         const revenue = item.quantity.toNumber() * item.unitPrice.toNumber();
-        if (item.product.category?.hasCasePricing || item.product.category?.isBeverage) saleBoissons += revenue;
+        if (item.product.category?.hasCasePricing) saleBoissonsSansGbele += revenue;
+        else if (item.product.category?.isBeverage) saleGbele += revenue;
         else if (item.product.category?.hasVariablePricing) salePlats += revenue;
       }
-      boissonsRevenue += saleBoissons;
+      boissonsSansGbeleRevenue += saleBoissonsSansGbele;
+      gbeleRevenue += saleGbele;
       platsRevenue += salePlats;
 
       if (paidTotal > 0) {
-        boissonsCash += saleBoissons * (cashAmount / paidTotal);
-        boissonsMobileMoney += saleBoissons * (mobileMoneyAmount / paidTotal);
+        boissonsSansGbeleCash += saleBoissonsSansGbele * (cashAmount / paidTotal);
+        boissonsSansGbeleMobileMoney += saleBoissonsSansGbele * (mobileMoneyAmount / paidTotal);
+        gbeleCash += saleGbele * (cashAmount / paidTotal);
+        gbeleMobileMoney += saleGbele * (mobileMoneyAmount / paidTotal);
         platsCash += salePlats * (cashAmount / paidTotal);
         platsMobileMoney += salePlats * (mobileMoneyAmount / paidTotal);
       }
     }
 
-    const lossesRevenue = lossRevenue.boissons + lossRevenue.plats;
+    const lossesRevenue = lossRevenue.boissonsSansGbele + lossRevenue.gbele + lossRevenue.plats;
     mobileMoneyRevenue += lossesRevenue;
-    boissonsRevenue += lossRevenue.boissons;
+    boissonsSansGbeleRevenue += lossRevenue.boissonsSansGbele;
+    gbeleRevenue += lossRevenue.gbele;
     platsRevenue += lossRevenue.plats;
-    boissonsMobileMoney += lossRevenue.boissons;
+    boissonsSansGbeleMobileMoney += lossRevenue.boissonsSansGbele;
+    gbeleMobileMoney += lossRevenue.gbele;
     platsMobileMoney += lossRevenue.plats;
 
     return {
@@ -281,10 +297,13 @@ export class ReportsService {
       lossesRevenue,
       cashRevenue,
       mobileMoneyRevenue,
-      boissonsRevenue,
+      boissonsSansGbeleRevenue,
+      gbeleRevenue,
       platsRevenue,
-      boissonsCash,
-      boissonsMobileMoney,
+      boissonsSansGbeleCash,
+      boissonsSansGbeleMobileMoney,
+      gbeleCash,
+      gbeleMobileMoney,
       platsCash,
       platsMobileMoney,
     };
