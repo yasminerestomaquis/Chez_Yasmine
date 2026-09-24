@@ -368,11 +368,25 @@ export class PurchasesService {
     await tx.stockMovement.create({ data: { productId, type: 'in', quantity, reason, createdBy: userId } });
   }
 
-  /** Décrémente sans jamais passer sous 0 — une correction/suppression ne doit pas faire échouer si une partie du stock a déjà été vendue depuis. */
+  /**
+   * Décrémente sans jamais passer sous 0 — une correction/suppression ne doit pas
+   * faire échouer si une partie du stock a déjà été vendue depuis. Le mouvement
+   * enregistré porte la quantité RÉELLEMENT retirée (plafonnée au stock
+   * disponible), jamais la quantité d'origine de la commande : enregistrer la
+   * quantité brute alors que seule une partie a pu être retirée désynchronise
+   * l'historique des mouvements de `product.stockQuantity`, ce qui corrompt en
+   * aval la reconstruction des lots FIFO (`computeFifoLots` /
+   * `ChartsService.stockLots`, Graphiques > Stock) — régression constatée en
+   * production, 2026-09-25. Aucun mouvement n'est créé si le stock est déjà à 0
+   * (rien n'a été retiré).
+   */
   private async reverseStock(tx: Tx, productId: string, quantity: number, userId: string, reason: string): Promise<void> {
     const product = await tx.product.findUniqueOrThrow({ where: { id: productId } });
-    const nextQuantity = Math.max(0, product.stockQuantity.toNumber() - quantity);
-    await tx.product.update({ where: { id: productId }, data: { stockQuantity: nextQuantity } });
-    await tx.stockMovement.create({ data: { productId, type: 'out', quantity, reason, createdBy: userId } });
+    const currentQuantity = product.stockQuantity.toNumber();
+    const actualQuantity = Math.min(quantity, currentQuantity);
+    await tx.product.update({ where: { id: productId }, data: { stockQuantity: currentQuantity - actualQuantity } });
+    if (actualQuantity > 0) {
+      await tx.stockMovement.create({ data: { productId, type: 'out', quantity: actualQuantity, reason, createdBy: userId } });
+    }
   }
 }

@@ -184,6 +184,24 @@ describe('PurchasesService.update', () => {
     expect(prisma.product.update).toHaveBeenCalledWith({ where: { id: 'p1' }, data: { stockQuantity: { increment: 12 } } });
     expect(prisma.purchaseItem.deleteMany).toHaveBeenCalledWith({ where: { purchaseId: 'purchase-1' } });
   });
+
+  it("enregistre la quantité réellement retirée (plafonnée), pas la quantité d'origine de la commande, quand une partie a déjà été vendue", async () => {
+    (prisma.purchase as any).findFirst.mockResolvedValue({
+      id: 'purchase-1',
+      orderNumber: 5,
+      items: [{ productId: 'p1', quantity: new Decimal(24) }],
+    });
+    // Seules 3 unités de la commande n°5 restent en stock (le reste a déjà été vendu).
+    (prisma.product as any).findUniqueOrThrow.mockResolvedValue({ id: 'p1', stockQuantity: new Decimal(3) });
+    (prisma.product as any).findMany.mockResolvedValue([caseProduct({ bottlesPerCase: 12, purchasePricePerCase: 19500 })]);
+    (prisma.purchase as any).findUniqueOrThrow.mockResolvedValue({ id: 'purchase-1' });
+
+    await service.update('est-1', 'user-1', 'purchase-1', { items: [{ productId: 'p1', casesOrdered: 1 }] });
+
+    expect(prisma.stockMovement.create).toHaveBeenCalledWith({
+      data: { productId: 'p1', type: 'out', quantity: 3, reason: 'Correction commande n°5', createdBy: 'user-1' },
+    });
+  });
 });
 
 describe('PurchasesService.remove', () => {
@@ -211,10 +229,30 @@ describe('PurchasesService.remove', () => {
     await service.remove('est-1', 'user-1', 'purchase-1');
 
     expect(prisma.product.update).toHaveBeenCalledWith({ where: { id: 'p1' }, data: { stockQuantity: 0 } });
+    // Le mouvement 'out' enregistré doit refléter ce qui a RÉELLEMENT été
+    // retiré (10, plafonné), jamais la quantité d'origine de la commande
+    // (24) — sinon l'historique des mouvements ment sur ce qui s'est
+    // vraiment passé, ce qui corrompt `computeFifoLots` en aval (régression
+    // constatée en production, 2026-09-25 : voir aussi le correctif dans
+    // charts.service.ts::stockLots pour le symptôme visible côté Graphiques).
     expect(prisma.stockMovement.create).toHaveBeenCalledWith({
-      data: { productId: 'p1', type: 'out', quantity: 24, reason: 'Suppression commande n°2', createdBy: 'user-1' },
+      data: { productId: 'p1', type: 'out', quantity: 10, reason: 'Suppression commande n°2', createdBy: 'user-1' },
     });
     expect(prisma.purchase.delete).toHaveBeenCalledWith({ where: { id: 'purchase-1' } });
+  });
+
+  it("n'enregistre aucun mouvement de stock quand il ne reste plus rien à retirer (stock déjà à 0)", async () => {
+    (prisma.purchase as any).findFirst.mockResolvedValue({
+      id: 'purchase-1',
+      orderNumber: 2,
+      items: [{ productId: 'p1', quantity: new Decimal(24) }],
+    });
+    (prisma.product as any).findUniqueOrThrow.mockResolvedValue({ id: 'p1', stockQuantity: new Decimal(0) });
+
+    await service.remove('est-1', 'user-1', 'purchase-1');
+
+    expect(prisma.product.update).toHaveBeenCalledWith({ where: { id: 'p1' }, data: { stockQuantity: 0 } });
+    expect(prisma.stockMovement.create).not.toHaveBeenCalled();
   });
 });
 

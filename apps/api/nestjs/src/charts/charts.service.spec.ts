@@ -502,9 +502,53 @@ describe('ChartsService.stockLots', () => {
 
     const result = await service.stockLots('est-1', ['p1']);
 
+    // Le lot orphelin (+1, sans N° de commande) est rattaché à L001 : son
+    // reçu ET son restant augmentent tous les deux d'autant (pas seulement
+    // le restant — voir le test suivant pour la régression que ça évite),
+    // donc le consommé du lot visible (17) ne change pas.
     expect(result.historyLots).toHaveLength(1);
-    expect(result.historyLots[0]).toMatchObject({ code: 'L001', receivedQuantity: 24, consumedQuantity: 16, remainingQuantity: 8 });
+    expect(result.historyLots[0]).toMatchObject({ code: 'L001', receivedQuantity: 25, consumedQuantity: 17, remainingQuantity: 8 });
     expect(result.totalActiveUnits).toBe(8);
+  });
+
+  it('ne produit jamais un consommé négatif quand le lot orphelin est rattaché à un lot visible pas encore entamé (régression Chill/Rhino, 2026-09-25)', async () => {
+    const prisma = makePrismaMock();
+    const service = new ChartsService(prisma as unknown as PrismaService);
+    prisma.product.findMany.mockResolvedValue([
+      { id: 'p1', name: 'Chill', categoryId: 'c1', category: { name: 'Bières', hasCasePricing: true, hasVariablePricing: false } },
+    ]);
+    prisma.stockMovement.findMany.mockResolvedValue([
+      // Orphelin (comptage manuel) créé AVANT la commande n°3, entièrement non consommé à cette date.
+      { productId: 'p1', type: 'in', quantity: new Decimal(1), createdAt: new Date('2026-09-20T13:37:00Z'), reason: 'Ajustement suite au point du 20/09/2026 affichant des pertes' },
+      { productId: 'p1', type: 'in', quantity: new Decimal(12), createdAt: new Date('2026-09-21T16:50:00Z'), reason: 'Commande n°3' },
+    ]);
+    prisma.purchase.findMany.mockResolvedValue([{ orderNumber: 3 }]);
+
+    const result = await service.stockLots('est-1', ['p1']);
+
+    expect(result.historyLots).toHaveLength(1);
+    expect(result.historyLots[0]).toMatchObject({ code: 'L003', receivedQuantity: 13, consumedQuantity: 0, remainingQuantity: 13 });
+    expect(result.historyLots[0].consumedQuantity).toBeGreaterThanOrEqual(0);
+    expect(result.historyLots[0].remainingQuantity).toBeLessThanOrEqual(result.historyLots[0].receivedQuantity);
+    expect(result.totalActiveUnits).toBe(13);
+  });
+
+  it("crée un lot synthétique pour le stock orphelin quand aucun lot visible n'existe pour l'accueillir (sinon ce stock disparaît des totaux)", async () => {
+    const prisma = makePrismaMock();
+    const service = new ChartsService(prisma as unknown as PrismaService);
+    prisma.product.findMany.mockResolvedValue([
+      { id: 'p1', name: 'Vieux produit', categoryId: 'c1', category: { name: 'Bières', hasCasePricing: true, hasVariablePricing: false } },
+    ]);
+    prisma.stockMovement.findMany.mockResolvedValue([
+      { productId: 'p1', type: 'in', quantity: new Decimal(5), createdAt: new Date('2026-09-01T08:00:00Z'), reason: 'Comptage manuel' },
+    ]);
+    prisma.purchase.findMany.mockResolvedValue([]);
+
+    const result = await service.stockLots('est-1', ['p1']);
+
+    expect(result.historyLots).toHaveLength(1);
+    expect(result.historyLots[0]).toMatchObject({ referenceNumber: null, receivedQuantity: 5, consumedQuantity: 0, remainingQuantity: 5, status: 'actif' });
+    expect(result.totalActiveUnits).toBe(5);
   });
 
   it('combines lots from several products of the same category, tagging each with its own product name', async () => {

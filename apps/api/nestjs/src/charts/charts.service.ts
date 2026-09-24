@@ -537,10 +537,12 @@ export class ChartsService {
       const validNumbers = product.category?.hasVariablePricing ? validMarketNumbers : validOrderNumbers;
       const productLots: ProductStockLot[] = [];
       let hiddenRemaining = 0;
+      let hiddenLatestDate: Date | null = null;
       for (const lot of lotsByProduct.get(product.id) ?? []) {
         if (gated) {
           if (lot.referenceNumber == null) {
             hiddenRemaining += lot.remainingQuantity;
+            if (!hiddenLatestDate || lot.receivedAt > hiddenLatestDate) hiddenLatestDate = lot.receivedAt;
             continue;
           }
           if (!validNumbers.has(lot.referenceNumber)) continue;
@@ -552,11 +554,35 @@ export class ChartsService {
       // Le stock restant d'un lot sans N° de commande (entrée/correction manuelle,
       // ex. « Ajustement suite au point… ») est rattaché au dernier lot visible
       // du produit : la somme des lots reste égale au stock actuel (2026-09-20).
+      // Ajouté à `receivedQuantity` ET `remainingQuantity` — pas seulement au
+      // second — sinon un lot déjà bien entamé mais peu consommé (restant
+      // proche du reçu) affiche un `consumedQuantity` négatif dès que le
+      // stock orphelin le pousse au-dessus de son reçu d'origine (bug réel
+      // constaté en production sur Chill/Rhino, 2026-09-25 : Consommé -1).
+      // Sans lot visible pour l'accueillir (aucune commande valide pour ce
+      // produit, ex. commande supprimée depuis), un lot synthétique est créé
+      // plutôt que de silencieusement perdre ce stock des totaux.
       const target = productLots[productLots.length - 1];
-      if (target && hiddenRemaining > 0) {
-        target.remainingQuantity += hiddenRemaining;
-        target.consumedQuantity = target.receivedQuantity - target.remainingQuantity;
-        target.status = 'actif';
+      if (hiddenRemaining > 0) {
+        if (target) {
+          target.receivedQuantity += hiddenRemaining;
+          target.remainingQuantity += hiddenRemaining;
+          target.consumedQuantity = target.receivedQuantity - target.remainingQuantity;
+          target.status = 'actif';
+        } else {
+          productLots.push({
+            code: 'Ajustement',
+            referenceNumber: null,
+            receivedAt: hiddenLatestDate ?? new Date(),
+            receivedQuantity: hiddenRemaining,
+            consumedQuantity: 0,
+            lossQuantity: 0,
+            remainingQuantity: hiddenRemaining,
+            status: 'actif',
+            productId: product.id,
+            productName: product.name,
+          });
+        }
       }
       allLots.push(...productLots);
     }

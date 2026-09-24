@@ -2,6 +2,12 @@
 
 ## [Unreleased]
 
+### Corrigé (2026-09-25) — Consommé négatif sur les lots FIFO (Graphiques > Stock)
+- **Cause racine** : `ChartsService.stockLots` rattachait le stock d'un mouvement d'entrée sans N° de commande identifiable (comptage manuel, correction de vente...) au dernier lot visible du produit, mais n'ajustait que `remainingQuantity`, jamais `receivedQuantity` — dès que ce lot n'avait pas encore été consommé d'autant, `remainingQuantity` dépassait `receivedQuantity` et `consumedQuantity` devenait négatif (constaté en production sur Chill, Rhino). Corrigé : les deux quantités sont désormais ajustées ensemble. Cas limite corrigé au passage : un lot synthétique est créé quand aucun lot visible n'existe pour accueillir ce stock orphelin, au lieu de l'exclure silencieusement de `totalActiveUnits`.
+- **Bug latent corrigé en même temps** (audit du pipeline Achats → Stock → Graphiques demandé par l'utilisateur) : `PurchasesService.reverseStock` (édition/suppression d'une commande déjà reçue) enregistrait un mouvement `'out'` avec la quantité d'origine de la commande même quand le stock réellement disponible était moindre (clampé à 0) — désynchronisant l'historique des mouvements du stock réel. Le mouvement enregistré porte désormais la quantité réellement retirée.
+- Purement des correctifs de calcul/écriture — `stockLots` recalcule tout à la volée depuis `StockMovement` à chaque appel, donc rétroactif sans migration de données.
+- Tests : 3 nouveaux/révisés (`ChartsService.stockLots`), 2 nouveaux (`PurchasesService.update`/`remove`).
+
 ### Ajouté (2026-09-25) — Gbêlê au litre partout (Stock, Achats, Graphiques), Accueil sans troncature
 - **Stock** : la vignette Gbêlê affiche « Prix de vente attendu » (quantité × prix de référence, un montant total) au lieu d'un taux « FCFA/L ». Le mouvement de stock (Entrée/Sortie/Correction) porte le libellé « (L) » pour ce produit. Groupe « Valeur du stock » : quand Gbêlê est dans le filtre Catégorie, la 3ᵉ vignette devient **« Stock en litres »** (au lieu de « Bouteilles en stock », qui n'a pas de sens pour ce produit) ; Prix d'achat/Prix de vente étaient déjà corrects (prix du Catalogue × stock actuel).
 - **Achats** : le nombre de litres commandés pour Gbêlê se saisit librement (25/50 L n'était qu'un point de départ, plus figé).

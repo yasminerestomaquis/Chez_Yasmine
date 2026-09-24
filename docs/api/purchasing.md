@@ -60,6 +60,7 @@ Contrairement au flux hérité ci-dessous, **`create` fait immédiatement entrer
 
 - **Modification** (`update`) : remplace l'intégralité des lignes — annule d'abord l'effet stock des anciennes lignes, revalide et applique les nouvelles (même validation que `create`). Aucune édition partielle ligne par ligne.
 - **Suppression** (`remove`) : annule l'effet stock de la commande puis la supprime. La décrémentation est **clampée à 0** plutôt que de faire échouer si une partie du stock a déjà été vendue depuis (même principe que les remboursements de crédit — un ajustement/une correction ne doit pas bloquer sur un désalignement comptable mineur).
+  - **Correctif (2026-09-25)** : le mouvement `'out'` enregistré (`reverseStock`, partagé par `update` et `remove`) porte désormais la quantité **réellement retirée** (plafonnée au stock disponible), jamais la quantité d'origine de la commande. Avant ce correctif, corriger ou supprimer une commande déjà partiellement vendue enregistrait un mouvement `'out'` sur-évalué (ex. commande de 24, seulement 10 encore en stock → mouvement de -24 quand même), désynchronisant l'historique des mouvements de `product.stockQuantity` et corrompant en aval la reconstruction des lots FIFO (`computeFifoLots`, Graphiques > Stock — voir `docs/api/charts.md`). Aucun mouvement n'est créé si le stock est déjà à 0.
 
 ### Commande en attente (projection, 2026-09-20)
 
