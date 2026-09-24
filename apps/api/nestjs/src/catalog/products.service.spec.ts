@@ -5,7 +5,7 @@ import type { PrismaService } from '../prisma/prisma.service.js';
 import { ProductsService } from './products.service.js';
 
 function makePrismaMock() {
-  return {
+  const prisma: any = {
     product: {
       findMany: vi.fn(),
       findFirst: vi.fn(),
@@ -15,7 +15,12 @@ function makePrismaMock() {
     },
     category: { findFirst: vi.fn() },
     supplier: { findFirst: vi.fn() },
+    stockMovement: { create: vi.fn() },
   };
+  // Simule $transaction(callback) en exécutant le callback avec `prisma`
+  // lui-même comme `tx` — suffisant pour ces tests (mocks partagés).
+  prisma.$transaction = vi.fn((callback: (tx: typeof prisma) => unknown) => callback(prisma));
+  return prisma;
 }
 
 describe('ProductsService', () => {
@@ -30,7 +35,7 @@ describe('ProductsService', () => {
   it('rejects creating a product with a categoryId from another establishment', async () => {
     prisma.category.findFirst.mockResolvedValue(null);
     await expect(
-      service.create('est-1', { name: 'Bière', salePrice: 1000, categoryId: 'cat-from-another-establishment' }),
+      service.create('est-1', 'user-1', { name: 'Bière', salePrice: 1000, categoryId: 'cat-from-another-establishment' }),
     ).rejects.toBeInstanceOf(BadRequestException);
     expect(prisma.category.findFirst).toHaveBeenCalledWith({
       where: { id: 'cat-from-another-establishment', establishmentId: 'est-1' },
@@ -41,27 +46,41 @@ describe('ProductsService', () => {
   it('rejects creating a product with a supplierId from another establishment', async () => {
     prisma.supplier.findFirst.mockResolvedValue(null);
     await expect(
-      service.create('est-1', { name: 'Bière', salePrice: 1000, supplierId: 'sup-from-another-establishment' }),
+      service.create('est-1', 'user-1', { name: 'Bière', salePrice: 1000, supplierId: 'sup-from-another-establishment' }),
     ).rejects.toBeInstanceOf(BadRequestException);
     expect(prisma.product.create).not.toHaveBeenCalled();
   });
 
   it('creates a product when references are omitted', async () => {
     prisma.product.create.mockResolvedValue({ id: 'prod-1' });
-    await service.create('est-1', { name: 'Bière', salePrice: 1000 });
+    await service.create('est-1', 'user-1', { name: 'Bière', salePrice: 1000 });
     expect(prisma.product.create).toHaveBeenCalledWith({
       data: expect.objectContaining({ establishmentId: 'est-1', name: 'Bière', salePrice: 1000, stockQuantity: 0, status: 'active' }),
     });
   });
 
+  it("n'enregistre aucun mouvement de stock quand le produit est créé sans stock initial (0, valeur par défaut)", async () => {
+    prisma.product.create.mockResolvedValue({ id: 'prod-1' });
+    await service.create('est-1', 'user-1', { name: 'Bière', salePrice: 1000 });
+    expect(prisma.stockMovement.create).not.toHaveBeenCalled();
+  });
+
+  it('enregistre un mouvement "in" pour le stock initial saisi à la création (régression : ce stock était auparavant invisible pour les lots FIFO de Graphiques > Stock, 2026-09-25)', async () => {
+    prisma.product.create.mockResolvedValue({ id: 'prod-1' });
+    await service.create('est-1', 'user-1', { name: 'Bière', salePrice: 1000, stockQuantity: 8 });
+    expect(prisma.stockMovement.create).toHaveBeenCalledWith({
+      data: { productId: 'prod-1', type: 'in', quantity: 8, reason: 'Stock initial à la création du produit', createdBy: 'user-1' },
+    });
+  });
+
   it('create() rejects a missing salePrice for a category without variable pricing', async () => {
-    await expect(service.create('est-1', { name: 'Bière' })).rejects.toBeInstanceOf(BadRequestException);
+    await expect(service.create('est-1', 'user-1', { name: 'Bière' })).rejects.toBeInstanceOf(BadRequestException);
     expect(prisma.product.create).not.toHaveBeenCalled();
   });
 
   it('create() passes unitSalePrice through for a fixed-price category (ex. vente à l\'unité en plus du lot)', async () => {
     prisma.product.create.mockResolvedValue({ id: 'prod-1' });
-    await service.create('est-1', { name: 'Heineken 33', salePrice: 2000, unitSalePrice: 700 });
+    await service.create('est-1', 'user-1', { name: 'Heineken 33', salePrice: 2000, unitSalePrice: 700 });
     expect(prisma.product.create).toHaveBeenCalledWith({
       data: expect.objectContaining({ salePrice: 2000, unitSalePrice: 700 }),
     });
@@ -72,7 +91,7 @@ describe('ProductsService', () => {
       prisma.category.findFirst.mockResolvedValue({ id: 'cat-poulets', hasVariablePricing: true });
       prisma.product.create.mockResolvedValue({ id: 'prod-1' });
 
-      await expect(service.create('est-1', { name: 'Poulet braisé', categoryId: 'cat-poulets' })).resolves.toEqual({
+      await expect(service.create('est-1', 'user-1', { name: 'Poulet braisé', categoryId: 'cat-poulets' })).resolves.toEqual({
         id: 'prod-1',
       });
     });
@@ -81,7 +100,7 @@ describe('ProductsService', () => {
       prisma.category.findFirst.mockResolvedValue({ id: 'cat-poulets', hasVariablePricing: true });
       prisma.product.create.mockResolvedValue({ id: 'prod-1' });
 
-      await service.create('est-1', {
+      await service.create('est-1', 'user-1', {
         name: 'Poulet braisé',
         categoryId: 'cat-poulets',
         purchasePrice: 1000, // ignoré : jamais fixé côté catalogue pour cette catégorie
@@ -124,7 +143,7 @@ describe('ProductsService', () => {
     it('create() allows a missing salePrice, keeps purchasePrice, and stores the reference sale price', async () => {
       prisma.product.create.mockResolvedValue({ id: 'prod-1' });
 
-      await service.create('est-1', {
+      await service.create('est-1', 'user-1', {
         name: 'Gbêlê',
         unit: 'litre',
         purchasePrice: 500,
@@ -146,7 +165,7 @@ describe('ProductsService', () => {
     it('create() forces salePrice to null even if the client sent one', async () => {
       prisma.product.create.mockResolvedValue({ id: 'prod-1' });
 
-      await service.create('est-1', { name: 'Gbêlê', requiresPriceAtSale: true, salePrice: 800 });
+      await service.create('est-1', 'user-1', { name: 'Gbêlê', requiresPriceAtSale: true, salePrice: 800 });
 
       expect(prisma.product.create).toHaveBeenCalledWith({
         data: expect.objectContaining({ salePrice: null }),
@@ -156,7 +175,7 @@ describe('ProductsService', () => {
     it('create() ignores referenceSalePrice when requiresPriceAtSale is not set', async () => {
       prisma.product.create.mockResolvedValue({ id: 'prod-1' });
 
-      await service.create('est-1', { name: 'Bière', salePrice: 1000, referenceSalePrice: 800 });
+      await service.create('est-1', 'user-1', { name: 'Bière', salePrice: 1000, referenceSalePrice: 800 });
 
       expect(prisma.product.create).toHaveBeenCalledWith({
         data: expect.objectContaining({ requiresPriceAtSale: false, referenceSalePrice: null }),

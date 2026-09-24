@@ -1,4 +1,5 @@
-import { Body, Controller, Delete, Get, Param, Patch, Post, UseGuards } from '@nestjs/common';
+import { Body, Controller, Delete, Get, Param, Patch, Post, Req, UseGuards } from '@nestjs/common';
+import type { Request } from 'express';
 import { PermissionsGuard } from '../auth/permissions.guard.js';
 import { RequirePermissions } from '../auth/permissions.decorator.js';
 import { SupabaseJwtGuard } from '../auth/supabase-jwt.guard.js';
@@ -29,8 +30,8 @@ export class ProductsController {
 
   @Post()
   @RequirePermissions('products.manage')
-  create(@Param('establishmentId') establishmentId: string, @Body() dto: CreateProductDto) {
-    return this.products.create(establishmentId, dto);
+  create(@Req() request: Request, @Param('establishmentId') establishmentId: string, @Body() dto: CreateProductDto) {
+    return this.products.create(establishmentId, request.user!.sub, dto);
   }
 
   @Patch(':productId')

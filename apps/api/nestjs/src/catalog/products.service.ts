@@ -27,7 +27,21 @@ export class ProductsService {
     return product;
   }
 
-  async create(establishmentId: string, dto: CreateProductDto) {
+  /**
+   * Le stock initial saisi à la création (`dto.stockQuantity`) écrit
+   * directement `product.stockQuantity`, sans mouvement de stock associé —
+   * jusqu'ici. Ce stock restait donc invisible pour `computeFifoLots`
+   * (`ChartsService.stockLots`, Graphiques > Stock), qui ne reconstruit les
+   * lots qu'à partir de `StockMovement` : la somme des lots d'un produit créé
+   * avec un stock initial non nul ne pouvait jamais rejoindre son
+   * `stockQuantity` réel (écart constaté en production sur ~40% des produits
+   * à prix par casier, 2026-09-25). Un mouvement `'in'` compagnon (sans N° de
+   * commande — ce stock n'a jamais été reçu via une commande) corrige ça ; il
+   * devient, comme tout mouvement sans référence pour une catégorie gérée par
+   * lots, rattaché au dernier lot visible ou un lot synthétique (voir le
+   * correctif dans `ChartsService.stockLots`).
+   */
+  async create(establishmentId: string, userId: string, dto: CreateProductDto) {
     await this.assertReferencesBelongToEstablishment(establishmentId, dto.categoryId, dto.supplierId);
     const hasVariablePricing = await this.categoryHasVariablePricing(establishmentId, dto.categoryId);
     // requiresPriceAtSale : produit de catégorie fixe (achat à prix connu,
@@ -38,33 +52,42 @@ export class ProductsService {
     if (!manualPriceAtSale && dto.salePrice == null) {
       throw new BadRequestException('Le prix de vente est requis pour cette catégorie');
     }
-    return this.prisma.product.create({
-      data: {
-        establishmentId,
-        name: dto.name,
-        categoryId: dto.categoryId,
-        supplierId: dto.supplierId,
-        reference: dto.reference,
-        description: dto.description,
-        barcode: dto.barcode,
-        qrCode: dto.qrCode,
-        unit: dto.unit,
-        // Catégorie à prix variable (ex. Poulets/Poissons/Plats africains) :
-        // jamais de prix d'achat/de vente dans le catalogue, quoi qu'envoie
-        // le client — prix de vente saisi en caisse, achat suivi via la
-        // dépense "Marché" (voir docs/api/catalog.md).
-        purchasePrice: hasVariablePricing ? null : dto.purchasePrice,
-        salePrice: manualPriceAtSale ? null : dto.salePrice,
-        unitSalePrice: hasVariablePricing ? null : dto.unitSalePrice,
-        requiresPriceAtSale: dto.requiresPriceAtSale ?? false,
-        referenceSalePrice: dto.requiresPriceAtSale ? dto.referenceSalePrice : null,
-        bottlesPerCase: dto.bottlesPerCase,
-        purchasePricePerCase: dto.purchasePricePerCase,
-        vatRate: dto.vatRate,
-        minStock: dto.minStock,
-        stockQuantity: dto.stockQuantity ?? 0,
-        status: dto.status ?? 'active',
-      },
+    const initialStock = dto.stockQuantity ?? 0;
+    return this.prisma.$transaction(async (tx) => {
+      const product = await tx.product.create({
+        data: {
+          establishmentId,
+          name: dto.name,
+          categoryId: dto.categoryId,
+          supplierId: dto.supplierId,
+          reference: dto.reference,
+          description: dto.description,
+          barcode: dto.barcode,
+          qrCode: dto.qrCode,
+          unit: dto.unit,
+          // Catégorie à prix variable (ex. Poulets/Poissons/Plats africains) :
+          // jamais de prix d'achat/de vente dans le catalogue, quoi qu'envoie
+          // le client — prix de vente saisi en caisse, achat suivi via la
+          // dépense "Marché" (voir docs/api/catalog.md).
+          purchasePrice: hasVariablePricing ? null : dto.purchasePrice,
+          salePrice: manualPriceAtSale ? null : dto.salePrice,
+          unitSalePrice: hasVariablePricing ? null : dto.unitSalePrice,
+          requiresPriceAtSale: dto.requiresPriceAtSale ?? false,
+          referenceSalePrice: dto.requiresPriceAtSale ? dto.referenceSalePrice : null,
+          bottlesPerCase: dto.bottlesPerCase,
+          purchasePricePerCase: dto.purchasePricePerCase,
+          vatRate: dto.vatRate,
+          minStock: dto.minStock,
+          stockQuantity: initialStock,
+          status: dto.status ?? 'active',
+        },
+      });
+      if (initialStock > 0) {
+        await tx.stockMovement.create({
+          data: { productId: product.id, type: 'in', quantity: initialStock, reason: 'Stock initial à la création du produit', createdBy: userId },
+        });
+      }
+      return product;
     });
   }
 

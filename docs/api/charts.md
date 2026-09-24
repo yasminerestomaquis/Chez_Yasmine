@@ -134,6 +134,17 @@ Principe demandé : un lot `L00N` doit correspondre exactement à la commande N�
 - Catégories à prix par casier : chaque réception d'achat porte déjà `reason: "Commande n°X"` (`PurchasesService`), donc rien à changer côté saisie — le principe s'applique automatiquement à l'historique existant.
 - Catégories à prix variable : **aucun flux d'achat automatisé n'existe pour elles** (exclues du module Achats — voir `docs/api/purchasing.md`). Une entrée manuelle de stock (`POST .../stock-movements`, type `'in'`) sur un produit de ces catégories exige donc désormais un **N° de marché** (`CreateStockMovementDto.marketNumber`), validé contre une dépense "Marché" déjà enregistrée pour l'établissement (`StockMovementsService.create`, `BadRequestException` sinon) ; le motif stocké est construit automatiquement (`"Marché n°X — <motif utilisateur>"`), pour rester parsable par la même expression régulière.
 
+### Audit du pipeline complet Achats → Stock → Graphiques (2026-09-25)
+
+Suite au signalement d'un « Consommé » négatif (voir correctif ci-dessous), l'ensemble du pipeline a été audité (entrée via Achats en respectant `bottlesPerCase`, récupération par Stock, sorties Caisse/Tables, récupération par Stock, décompte par Graphiques). Résultat :
+
+- Achats (`PurchasesService.resolveLines`), Caisse (`SalesService`, décrémentation atomique avec garde `stockQuantity: { gte: quantity }`) et Tables (délègue entièrement à Caisse, ne touche jamais le stock directement) sont sains.
+- Trois faiblesses réelles trouvées et corrigées (voir aussi `docs/api/purchasing.md` et `docs/api/catalog.md`) :
+  1. Le « Consommé » négatif lui-même (ci-dessous).
+  2. `PurchasesService.reverseStock` enregistrait la quantité d'origine de la commande au lieu de la quantité réellement retirée quand le stock disponible était moindre.
+  3. `ProductsService.create` n'enregistrait aucun mouvement de stock pour le « Stock initial » saisi à la création d'un produit — ce stock restait invisible pour `computeFifoLots`.
+- **État constaté sur les produits existants** (avant correctif n°3, donc rétroactivement toujours vrai pour les produits déjà créés) : 15 produits sur 37 à catégorie gérée par lots ont un stock (`product.stockQuantity`) supérieur à la somme de leurs lots actifs — écart entre -1 et -52 unités selon le produit, entièrement expliqué par un stock initial saisi au Catalogue avant l'existence d'un mouvement compagnon. Le décompte total (`totalActiveUnits`) et par produit reste donc **inférieur à la réalité** pour ces 15 produits tant qu'aucune régularisation rétroactive (mouvement `'in'` de rattrapage, hors code applicatif) n'est appliquée. La vignette Stock (`stock_page.dart`, basée sur `product.stockQuantity`) n'est pas affectée — seul le sous-module Graphiques > Stock (basé sur les lots) l'est.
+
 ### Correctif : « Consommé » négatif sur un lot visible (2026-09-25)
 
 Symptôme signalé en production : certains lots (ex. Chill, Rhino) affichaient un `consumedQuantity` négatif et un `remainingQuantity` supérieur au `receivedQuantity` de la commande (ex. reçu 12, restant 13, consommé -1).
