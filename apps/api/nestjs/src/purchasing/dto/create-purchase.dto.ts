@@ -5,10 +5,28 @@ export class PurchaseItemDto {
   @IsUUID()
   productId!: string;
 
-  /** Nbre de casiers commandés — bottlesPerCase/purchasePricePerCase sont dérivés côté serveur depuis le Catalogue, jamais acceptés du client. */
+  /**
+   * Nbre de casiers commandés — bottlesPerCase/purchasePricePerCase sont
+   * dérivés côté serveur depuis le Catalogue, jamais acceptés du client.
+   * Requis pour un produit à prix par casier (Bières, Vins, Sucreries),
+   * absent pour un produit à prix de référence variable commandé au litre
+   * (ex. Gbêlê — voir `litersOrdered`).
+   */
+  @IsOptional()
   @IsInt()
   @Min(1)
-  casesOrdered!: number;
+  casesOrdered?: number;
+
+  /**
+   * Litres commandés — uniquement pour un produit à prix de référence
+   * variable (`Product.referenceSalePrice`, ex. Gbêlê), vendu en jerricans
+   * de 25 ou 50 L (décision utilisateur du 2026-09-24) : le prix d'achat par
+   * litre (`Product.purchasePrice`, éditable au Catalogue) est dérivé côté
+   * serveur, jamais accepté du client — voir `PurchasesService.resolveLines`.
+   */
+  @IsOptional()
+  @IsIn([25, 50])
+  litersOrdered?: 25 | 50;
 }
 
 export class CreatePurchaseDto {

@@ -785,7 +785,15 @@ class _StockProductRow extends StatelessWidget {
                   ),
                   const SizedBox(height: 4),
                   Text(
-                    'Stock actuel : ${product.stockQuantity.toStringAsFixed(0)}',
+                    product.isReferencePriced
+                        // Gbêlê : stock et prix de vente en litres (demande
+                        // utilisateur du 2026-09-24) — 2 décimales, comme le
+                        // reste de l'app pour une quantité fractionnaire
+                        // (ex. `LossPricingChoice`), plutôt que l'entier
+                        // habituel de cette ligne.
+                        ? 'Stock actuel : ${product.stockQuantity.toStringAsFixed(2)} L — '
+                              'Prix de vente : ${formatAmount(product.referenceSalePrice!)} FCFA/L'
+                        : 'Stock actuel : ${product.stockQuantity.toStringAsFixed(0)}',
                     style: TextStyle(
                       fontSize: 12,
                       fontWeight: FontWeight.w600,

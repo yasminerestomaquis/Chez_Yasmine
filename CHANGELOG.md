@@ -2,6 +2,11 @@
 
 ## [Unreleased]
 
+### Ajouté (2026-09-24) — Gbêlê : Stock en litres, Achats au litre (25/50 L)
+- **Stock** : la vignette du produit Gbêlê affiche « Stock actuel : X,XX L — Prix de vente : Y FCFA/L » au lieu de l'affichage habituel (`Product.isReferencePriced`).
+- **Achats** : Gbêlê se commande désormais par jerrican de **25 ou 50 L**, au prix d'achat par litre du Catalogue (`Product.purchasePrice`, déjà éditable) — plus de « Nbre de casiers ». L'Historique et l'édition d'une commande distinguent casiers et litres (`Purchase.totalCases`/`totalLiters`).
+- Tests : 4 Flutter (`Product.isReferencePriced`), 4 NestJS (`resolveLines`), 7 Flutter (`purchasing_models`).
+
 ### Ajouté (2026-09-24) — Gbêlê : vente par montant payé (Caisse et Salle)
 - Pour un produit à prix de référence variable (`Product.referenceSalePrice`, ex. Gbêlê à 3 000 FCFA/L), le caissier saisit désormais le **montant payé** (ex. 100 FCFA) au lieu d'un prix — le serveur en déduit la quantité (0,03 L) et le prix unitaire, avec un aperçu affiché à la saisie (« ≈ 0,03 L »). S'applique en Caisse et dans les additions (Salle).
 - Nouveau : `SaleItemDto.amountPaid` / `AddOrderItemDto.amountPaid`, fonction pure `resolveReferencePriceLine` (`src/pos/reference-price.ts`).

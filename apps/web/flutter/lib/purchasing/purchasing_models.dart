@@ -49,6 +49,14 @@ class PurchaseItem {
   double get totalBottles => casesOrdered * bottlesPerCase;
   double get lineTotal => casesOrdered * purchasePricePerCase;
 
+  /// Ligne commandée au litre (produit à prix de référence variable, ex.
+  /// Gbêlê — décision utilisateur du 2026-09-24) plutôt que par casier :
+  /// `casesOrdered`/`purchasePricePerCase` réutilisés avec un "casier"
+  /// fictif d'1 litre (`bottlesPerCase == 1`), voir `PurchasesService.
+  /// resolveLines`. Un vrai casier compte toujours plus d'une bouteille,
+  /// donc ce marqueur ne peut pas être confondu avec une commande normale.
+  bool get isLiters => bottlesPerCase == 1;
+
   factory PurchaseItem.fromJson(Map<String, dynamic> json) => PurchaseItem(
         productId: json['productId'] as String,
         productName: (json['product'] as Map<String, dynamic>?)?['name'] as String? ?? '',
@@ -62,6 +70,18 @@ class PurchaseItem {
 }
 
 const purchaseStatusLabels = {'pending': 'En attente', 'received': 'Reçu', 'cancelled': 'Annulé'};
+
+/// "X casier(s)", "Y L", ou les deux combinés (commande mêlant Bières et
+/// Gbêlê par exemple) — voir `Purchase.totalCases`/`totalLiters` (décision
+/// utilisateur du 2026-09-24). Partagé entre `purchases_page.dart` et
+/// `purchase_order_detail_page.dart`.
+String purchaseQuantitySummary(Purchase purchase) {
+  final parts = [
+    if (purchase.totalCases > 0) '${purchase.totalCases.toStringAsFixed(0)} casier(s)',
+    if (purchase.totalLiters > 0) '${purchase.totalLiters.toStringAsFixed(0)} L',
+  ];
+  return parts.isEmpty ? '0 casier(s)' : parts.join(' + ');
+}
 
 class Purchase {
   Purchase({
@@ -87,7 +107,11 @@ class Purchase {
   /// Commande en attente : projection, aucune entrée de stock tant qu'elle n'est pas validée.
   bool get isPending => status == 'pending';
 
-  double get totalCases => items.fold(0, (sum, i) => sum + i.casesOrdered);
+  double get totalCases => items.where((i) => !i.isLiters).fold(0, (sum, i) => sum + i.casesOrdered);
+
+  /// Litres commandés (lignes à prix de référence variable, ex. Gbêlê) — séparés
+  /// de [totalCases], que mélanger n'aurait pas de sens (décision utilisateur du 2026-09-24).
+  double get totalLiters => items.where((i) => i.isLiters).fold(0, (sum, i) => sum + i.casesOrdered);
 
   factory Purchase.fromJson(Map<String, dynamic> json) => Purchase(
         id: json['id'] as String,

@@ -53,6 +53,10 @@ Côté Flutter, `StockPage` reçoit `roleName` et, pour le Serveur (`roleName ==
 
 Le masquage de « Valeur du stock » par rôle codé en dur ci-dessus est remplacé par une permission dédiée — voir la section suivante.
 
+## Ajout (2026-09-24) — vignette produit Gbêlê en litres
+
+Pour un produit à prix de référence variable (`Product.isReferencePriced`, ex. Gbêlê), `_StockProductRow` affiche « Stock actuel : X,XX L — Prix de vente : Y FCFA/L » (2 décimales, `referenceSalePrice`) au lieu de « Stock actuel : X » — seul ce produit, tous les autres gardent l'affichage habituel.
+
 ## Ajout (2026-09-22) — groupe « Valeur du stock » par permission, filtrable par catégorie
 
 Demande utilisateur : le groupe « Valeur du stock » (prix d'achat et prix de vente du stock) ne doit être visible que par le Super Administrateur par défaut, avec la possibilité d'accorder ou de refuser cette visibilité aux autres rôles depuis « Gestion des permissions ».

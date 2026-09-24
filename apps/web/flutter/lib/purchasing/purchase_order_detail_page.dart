@@ -41,7 +41,7 @@ class _PurchaseOrderDetailPageState extends State<PurchaseOrderDetailPage> {
   bool _isEditing = false;
   bool _isBusy = false;
 
-  List<Product> _caseProducts = [];
+  List<Product> _orderableProducts = [];
   Map<String, Product> _productsById = {};
   List<Supplier> _suppliers = [];
   late List<_EditLine> _editLines;
@@ -70,8 +70,8 @@ class _PurchaseOrderDetailPageState extends State<PurchaseOrderDetailPage> {
         : await widget.repository.listSuppliers();
     if (!mounted) return;
     setState(() {
-      _caseProducts = products
-          .where((p) => p.status == 'active' && p.hasCasePricing)
+      _orderableProducts = products
+          .where((p) => p.status == 'active' && (p.hasCasePricing || p.isReferencePriced))
           .toList();
       _productsById = {for (final p in products) p.id: p};
       _suppliers = suppliers;
@@ -144,7 +144,7 @@ class _PurchaseOrderDetailPageState extends State<PurchaseOrderDetailPage> {
       builder: (_) => SimpleDialog(
         title: const Text('Choisir un produit'),
         children: [
-          for (final product in _caseProducts)
+          for (final product in _orderableProducts)
             SimpleDialogOption(
               onPressed: () => Navigator.of(context).pop(product),
               child: Text(product.name),
@@ -174,7 +174,10 @@ class _PurchaseOrderDetailPageState extends State<PurchaseOrderDetailPage> {
         orderDate: _orderDate,
         items: _editLines
             .map(
-              (l) => {'productId': l.productId, 'casesOrdered': l.casesOrdered},
+              (l) => {
+                'productId': l.productId,
+                if (l.isLiters) 'litersOrdered': l.casesOrdered.toInt() else 'casesOrdered': l.casesOrdered,
+              },
             )
             .toList(),
       );
@@ -202,7 +205,7 @@ class _PurchaseOrderDetailPageState extends State<PurchaseOrderDetailPage> {
         title: const Text('Valider cette commande ?'),
         content: Text(
           'La commande n°${_purchase.orderNumber} passera de « En attente » à « Validée » : '
-          '${_purchase.totalCases.toStringAsFixed(0)} casier(s) entreront en stock.',
+          '${purchaseQuantitySummary(_purchase)} entreront en stock.',
         ),
         actions: [
           TextButton(onPressed: () => Navigator.of(context).pop(false), child: const Text('Annuler')),
@@ -215,7 +218,14 @@ class _PurchaseOrderDetailPageState extends State<PurchaseOrderDetailPage> {
     try {
       final updated = await widget.repository.updatePurchase(
         _purchase.id,
-        items: _purchase.items.map((l) => {'productId': l.productId, 'casesOrdered': l.casesOrdered}).toList(),
+        items: _purchase.items
+            .map(
+              (l) => {
+                'productId': l.productId,
+                if (l.isLiters) 'litersOrdered': l.casesOrdered.toInt() else 'casesOrdered': l.casesOrdered,
+              },
+            )
+            .toList(),
         confirm: true,
       );
       if (!mounted) return;
@@ -276,8 +286,11 @@ class _PurchaseOrderDetailPageState extends State<PurchaseOrderDetailPage> {
   @override
   Widget build(BuildContext context) {
     final totalCases = _isEditing
-        ? _editLines.fold<double>(0, (sum, l) => sum + l.casesOrdered)
-        : _purchase.items.fold<double>(0, (sum, l) => sum + l.casesOrdered);
+        ? _editLines.where((l) => !l.isLiters).fold<double>(0, (sum, l) => sum + l.casesOrdered)
+        : _purchase.totalCases;
+    final totalLiters = _isEditing
+        ? _editLines.where((l) => l.isLiters).fold<double>(0, (sum, l) => sum + l.casesOrdered)
+        : _purchase.totalLiters;
     final totalPrice = _isEditing
         ? _editLines.fold<double>(0, (sum, l) => sum + l.lineTotal)
         : _purchase.items.fold<double>(0, (sum, l) => sum + l.lineTotal);
@@ -386,7 +399,7 @@ class _PurchaseOrderDetailPageState extends State<PurchaseOrderDetailPage> {
                           leading: _thumbnail(line.productId),
                           title: Text(line.productName),
                           subtitle: Text(
-                            '${formatAmount(line.purchasePricePerCase)} FCFA/casier',
+                            '${formatAmount(line.purchasePricePerCase)} FCFA/${line.isLiters ? "L" : "casier"}',
                           ),
                           trailing: Row(
                             mainAxisSize: MainAxisSize.min,
@@ -397,8 +410,8 @@ class _PurchaseOrderDetailPageState extends State<PurchaseOrderDetailPage> {
                                   initialValue: line.casesOrdered
                                       .toStringAsFixed(0),
                                   keyboardType: TextInputType.number,
-                                  decoration: const InputDecoration(
-                                    labelText: 'Casiers',
+                                  decoration: InputDecoration(
+                                    labelText: line.isLiters ? 'Litres' : 'Casiers',
                                   ),
                                   onChanged: (v) => setState(
                                     () => line.casesOrdered =
@@ -423,8 +436,11 @@ class _PurchaseOrderDetailPageState extends State<PurchaseOrderDetailPage> {
                           leading: _thumbnail(line.productId),
                           title: Text(line.productName),
                           subtitle: Text(
-                            '${formatAmount(line.purchasePricePerCase)} FCFA/casier × '
-                            '${line.casesOrdered.toStringAsFixed(0)} casier(s)',
+                            line.isLiters
+                                ? '${formatAmount(line.purchasePricePerCase)} FCFA/L × '
+                                      '${line.casesOrdered.toStringAsFixed(0)} L'
+                                : '${formatAmount(line.purchasePricePerCase)} FCFA/casier × '
+                                      '${line.casesOrdered.toStringAsFixed(0)} casier(s)',
                           ),
                           trailing: Text(
                             '${formatAmount(line.lineTotal)} FCFA',
@@ -444,10 +460,17 @@ class _PurchaseOrderDetailPageState extends State<PurchaseOrderDetailPage> {
                       style: TextStyle(fontWeight: FontWeight.bold),
                     ),
                     const Spacer(),
-                    Text(
-                      '${totalCases.toStringAsFixed(0)} casier(s)',
-                      style: const TextStyle(fontWeight: FontWeight.bold),
-                    ),
+                    if (totalCases > 0)
+                      Text(
+                        '${totalCases.toStringAsFixed(0)} casier(s)',
+                        style: const TextStyle(fontWeight: FontWeight.bold),
+                      ),
+                    if (totalCases > 0 && totalLiters > 0) const SizedBox(width: 8),
+                    if (totalLiters > 0)
+                      Text(
+                        '${totalLiters.toStringAsFixed(0)} L',
+                        style: const TextStyle(fontWeight: FontWeight.bold),
+                      ),
                     const SizedBox(width: 16),
                     Text(
                       '${formatAmount(totalPrice)} FCFA',
@@ -513,6 +536,10 @@ class _EditLine {
 
   double get lineTotal => casesOrdered * purchasePricePerCase;
 
+  /// Ligne au litre (ex. Gbêlê) plutôt qu'au casier — même marqueur que
+  /// `PurchaseItem.isLiters` (décision utilisateur du 2026-09-24).
+  bool get isLiters => bottlesPerCase == 1;
+
   factory _EditLine.fromItem(PurchaseItem item) => _EditLine(
     productId: item.productId,
     productName: item.productName,
@@ -521,11 +548,22 @@ class _EditLine {
     casesOrdered: item.casesOrdered,
   );
 
-  factory _EditLine.fromProduct(Product product) => _EditLine(
-    productId: product.id,
-    productName: product.name,
-    bottlesPerCase: product.bottlesPerCase ?? 0,
-    purchasePricePerCase: product.purchasePricePerCase ?? 0,
-    casesOrdered: 1,
-  );
+  factory _EditLine.fromProduct(Product product) {
+    if (product.isReferencePriced) {
+      return _EditLine(
+        productId: product.id,
+        productName: product.name,
+        bottlesPerCase: 1,
+        purchasePricePerCase: product.purchasePrice ?? 0,
+        casesOrdered: 25,
+      );
+    }
+    return _EditLine(
+      productId: product.id,
+      productName: product.name,
+      bottlesPerCase: product.bottlesPerCase ?? 0,
+      purchasePricePerCase: product.purchasePricePerCase ?? 0,
+      casesOrdered: 1,
+    );
+  }
 }

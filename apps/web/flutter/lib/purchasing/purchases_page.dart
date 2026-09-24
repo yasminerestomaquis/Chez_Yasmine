@@ -63,7 +63,10 @@ class _PurchasesPageState extends State<PurchasesPage>
 
   late Future<void> _future = _load();
   List<Supplier> _suppliers = [];
-  List<Product> _caseProducts = [];
+  // Produits commandables : prix par casier (Bières, Vins, Sucreries) OU
+  // prix de référence variable commandé au litre (ex. Gbêlê — décision
+  // utilisateur du 2026-09-24, voir `Product.isReferencePriced`).
+  List<Product> _orderableProducts = [];
   List<Purchase> _purchases = [];
 
   // État de la commande en cours (partagé entre "Créer une commande" et "Liste de commandes").
@@ -75,6 +78,8 @@ class _PurchasesPageState extends State<PurchasesPage>
   // Ligne en cours de configuration dans "Créer une commande".
   Product? _selectedProduct;
   final _casesOrderedController = TextEditingController(text: '1');
+  // Choix 25 L / 50 L pour un produit à prix de référence variable (ex. Gbêlê).
+  int _litersOrdered = 25;
 
   @override
   void initState() {
@@ -95,8 +100,8 @@ class _PurchasesPageState extends State<PurchasesPage>
         ? <Supplier>[]
         : await _repository.listSuppliers();
     final purchases = await _repository.listPurchases();
-    _caseProducts = products
-        .where((p) => p.status == 'active' && p.hasCasePricing)
+    _orderableProducts = products
+        .where((p) => p.status == 'active' && (p.hasCasePricing || p.isReferencePriced))
         .toList();
     _suppliers = suppliers;
     _purchases = purchases;
@@ -122,15 +127,16 @@ class _PurchasesPageState extends State<PurchasesPage>
       builder: (_) => SimpleDialog(
         title: const Text('Choisir un produit'),
         children: [
-          if (_caseProducts.isEmpty)
+          if (_orderableProducts.isEmpty)
             const Padding(
               padding: EdgeInsets.symmetric(horizontal: 24, vertical: 8),
               child: Text(
-                'Aucun produit à prix par casier. Activez "Prix par casier" sur une catégorie '
-                '(ex. Bières, Vins, Sucreries) dans le Catalogue.',
+                'Aucun produit commandable. Activez "Prix par casier" sur une catégorie '
+                '(ex. Bières, Vins, Sucreries) dans le Catalogue, ou "Prix de vente saisi à la '
+                'vente" avec un prix de référence (ex. Gbêlê).',
               ),
             ),
-          for (final product in _caseProducts)
+          for (final product in _orderableProducts)
             SimpleDialogOption(
               onPressed: () => Navigator.of(context).pop(product),
               child: Text(product.name),
@@ -142,6 +148,7 @@ class _PurchasesPageState extends State<PurchasesPage>
     setState(() {
       _selectedProduct = chosen;
       _casesOrderedController.text = '1';
+      _litersOrdered = 25;
     });
   }
 
@@ -160,6 +167,15 @@ class _PurchasesPageState extends State<PurchasesPage>
   void _addLineToOrder() {
     final product = _selectedProduct;
     if (product == null) return;
+    if (product.isReferencePriced) {
+      setState(() {
+        _draftLines.add(_DraftLine(product: product, casesOrdered: _litersOrdered.toDouble(), isLiters: true));
+        _selectedProduct = null;
+        _litersOrdered = 25;
+      });
+      _tabController.animateTo(1);
+      return;
+    }
     final cases = double.tryParse(
       _casesOrderedController.text.trim().replaceAll(',', '.'),
     );
@@ -189,7 +205,7 @@ class _PurchasesPageState extends State<PurchasesPage>
         .map(
           (l) => {
             'productId': l.product.id,
-            'casesOrdered': l.casesOrdered,
+            if (l.isLiters) 'litersOrdered': l.casesOrdered.toInt() else 'casesOrdered': l.casesOrdered,
           },
         )
         .toList();
@@ -426,6 +442,7 @@ class _PurchasesPageState extends State<PurchasesPage>
 
   Widget _buildSelectedProductCard() {
     final product = _selectedProduct!;
+    if (product.isReferencePriced) return _buildSelectedReferencePricedCard(product);
     final cases =
         double.tryParse(
           _casesOrderedController.text.trim().replaceAll(',', '.'),
@@ -487,11 +504,68 @@ class _PurchasesPageState extends State<PurchasesPage>
     );
   }
 
-  Widget _buildListTab() {
-    final totalCases = _draftLines.fold<double>(
-      0,
-      (sum, l) => sum + l.casesOrdered,
+  /// Produit à prix de référence variable (ex. Gbêlê) : commandé par
+  /// jerrican de 25 ou 50 L, au prix d'achat par litre du Catalogue — pas de
+  /// "casiers", pas de bouteilles (décision utilisateur du 2026-09-24).
+  Widget _buildSelectedReferencePricedCard(Product product) {
+    final purchasePrice = product.purchasePrice ?? 0;
+    final total = _litersOrdered * purchasePrice;
+    return Card(
+      child: Padding(
+        padding: const EdgeInsets.all(16),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.stretch,
+          children: [
+            Row(
+              children: [
+                _thumbnail(product),
+                const SizedBox(width: 12),
+                Expanded(
+                  child: Text(
+                    product.name,
+                    style: const TextStyle(fontWeight: FontWeight.w600, fontSize: 16),
+                  ),
+                ),
+                TextButton(onPressed: _pickProduct, child: const Text('Changer')),
+              ],
+            ),
+            const SizedBox(height: 12),
+            _readOnlyField("Prix d'achat par litre", '${formatAmount(purchasePrice)} FCFA'),
+            const SizedBox(height: 12),
+            const Text('Litres commandés'),
+            const SizedBox(height: 6),
+            SegmentedButton<int>(
+              segments: const [
+                ButtonSegment(value: 25, label: Text('25 L')),
+                ButtonSegment(value: 50, label: Text('50 L')),
+              ],
+              selected: {_litersOrdered},
+              onSelectionChanged: (selection) => setState(() => _litersOrdered = selection.first),
+            ),
+            const SizedBox(height: 12),
+            _readOnlyField('Total', '${formatAmount(total)} FCFA'),
+            const SizedBox(height: 16),
+            FilledButton(
+              onPressed: purchasePrice > 0 ? _addLineToOrder : null,
+              child: const Text('Ajouter la commande'),
+            ),
+          ],
+        ),
+      ),
     );
+  }
+
+  Widget _buildListTab() {
+    // Casiers et litres additionnés séparément — les mélanger dans un seul
+    // total n'aurait pas de sens (une commande peut contenir à la fois des
+    // Bières au casier et du Gbêlê au litre, décision utilisateur du
+    // 2026-09-24).
+    final totalCases = _draftLines
+        .where((l) => !l.isLiters)
+        .fold<double>(0, (sum, l) => sum + l.casesOrdered);
+    final totalLiters = _draftLines
+        .where((l) => l.isLiters)
+        .fold<double>(0, (sum, l) => sum + l.casesOrdered);
     final totalPrice = _draftLines.fold<double>(
       0,
       (sum, l) => sum + l.lineTotal,
@@ -532,8 +606,11 @@ class _PurchasesPageState extends State<PurchasesPage>
                         leading: _thumbnail(line.product, size: 44),
                         title: Text(line.product.name),
                         subtitle: Text(
-                          '${formatAmount(line.purchasePricePerCase)} FCFA/casier × '
-                          '${line.casesOrdered.toStringAsFixed(0)} casier(s) = ${formatAmount(line.lineTotal)} FCFA',
+                          line.isLiters
+                              ? '${formatAmount(line.purchasePricePerCase)} FCFA/L × '
+                                    '${line.casesOrdered.toStringAsFixed(0)} L = ${formatAmount(line.lineTotal)} FCFA'
+                              : '${formatAmount(line.purchasePricePerCase)} FCFA/casier × '
+                                    '${line.casesOrdered.toStringAsFixed(0)} casier(s) = ${formatAmount(line.lineTotal)} FCFA',
                         ),
                         trailing: IconButton(
                           icon: const Icon(Icons.delete_outline),
@@ -554,10 +631,17 @@ class _PurchasesPageState extends State<PurchasesPage>
                     style: TextStyle(fontWeight: FontWeight.bold),
                   ),
                   const Spacer(),
-                  Text(
-                    '${totalCases.toStringAsFixed(0)} casier(s)',
-                    style: const TextStyle(fontWeight: FontWeight.bold),
-                  ),
+                  if (totalCases > 0)
+                    Text(
+                      '${totalCases.toStringAsFixed(0)} casier(s)',
+                      style: const TextStyle(fontWeight: FontWeight.bold),
+                    ),
+                  if (totalCases > 0 && totalLiters > 0) const SizedBox(width: 8),
+                  if (totalLiters > 0)
+                    Text(
+                      '${totalLiters.toStringAsFixed(0)} L',
+                      style: const TextStyle(fontWeight: FontWeight.bold),
+                    ),
                   const SizedBox(width: 16),
                   Text(
                     '${formatAmount(totalPrice)} FCFA',
@@ -607,7 +691,7 @@ class _PurchasesPageState extends State<PurchasesPage>
               'N° ${purchase.orderNumber} — ${purchase.supplier?.name ?? 'Sans fournisseur'}',
             ),
             subtitle: Text(
-              '${_dateFormat.format(purchase.orderDate)} — ${purchase.totalCases.toStringAsFixed(0)} casier(s) — '
+              '${_dateFormat.format(purchase.orderDate)} — ${purchaseQuantitySummary(purchase)} — '
               '${formatAmount(purchase.total)} FCFA',
             ),
             onTap: () async {
@@ -647,11 +731,15 @@ Widget _readOnlyField(String label, String value) => InputDecorator(
 );
 
 class _DraftLine {
-  _DraftLine({required this.product, required this.casesOrdered});
+  _DraftLine({required this.product, required this.casesOrdered, this.isLiters = false});
 
   final Product product;
+  // Litres commandés quand [isLiters] est vrai (ex. Gbêlê, 25 ou 50 L) —
+  // même champ que le nombre de casiers, pour ne pas dupliquer toute la
+  // logique de total/soumission (décision utilisateur du 2026-09-24).
   final double casesOrdered;
+  final bool isLiters;
 
-  double get purchasePricePerCase => product.purchasePricePerCase ?? 0;
+  double get purchasePricePerCase => isLiters ? (product.purchasePrice ?? 0) : (product.purchasePricePerCase ?? 0);
   double get lineTotal => casesOrdered * purchasePricePerCase;
 }

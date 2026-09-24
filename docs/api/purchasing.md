@@ -65,6 +65,10 @@ Contrairement au flux hérité ci-dessous, **`create` fait immédiatement entrer
 
 `POST` accepte `status: 'pending'` : la commande est enregistrée (`Purchase.status = 'pending'`) **sans aucun effet de stock**. `PATCH` avec `confirm: true` la valide (`received`) et fait entrer le stock (motif « Commande n°X ») ; sans `confirm`, modifier une commande en attente ne touche pas au stock, et la supprimer non plus. Les commandes en attente sont exclues des N° de commande proposés (Pertes/Stock) et de la validation des lots (Graphiques > Stock).
 
+### Commande au litre pour un produit à prix de référence variable (ex. Gbêlê — décision utilisateur du 2026-09-24)
+
+`PurchaseItemDto` accepte `litersOrdered` (25 ou 50, `@IsIn`) à la place de `casesOrdered` pour un produit avec `requiresPriceAtSale`/`referenceSalePrice` et une catégorie qui n'est PAS `hasCasePricing` (ex. Gbêlê) — jerricans de 25 ou 50 L, prix d'achat par litre lu depuis `Product.purchasePrice` (éditable au Catalogue, jamais accepté du client). `PurchasesService.resolveLines` réutilise les colonnes `casesOrdered`/`bottlesPerCase`/`purchasePricePerCase` de `PurchaseItem` avec un « casier » fictif d'1 litre (`bottlesPerCase: 1`) plutôt qu'un nouveau schéma dédié — `quantity`/`unitPrice` (litres, prix/L) restent corrects sans changement structurel, et `PurchaseItem.isLiters` (Flutter, `bottlesPerCase == 1`) permet à l'UI de savoir quand afficher « L » plutôt que « casier(s) » (un vrai casier compte toujours plus d'une bouteille). `Purchase.totalCases`/`totalLiters` (Flutter) restent deux totaux séparés — les additionner n'aurait pas de sens sur une commande qui mélangerait Bières et Gbêlê.
+
 ## Flux hérité (`pending` → `receive`/`cancel`)
 
 `receive`/`cancel` restent en place, dépréciés, pour les achats `pending` créés avant cette migration (l'ancien flux "achat classique" créait toujours en `pending`, sans passer par le casier). Jamais utilisés par le nouveau flux, qui crée directement en `received`.

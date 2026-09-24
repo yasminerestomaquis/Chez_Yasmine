@@ -119,6 +119,14 @@ class Product {
   /// critère que côté serveur (`ReportsService.paymentCategoryBreakdown`).
   bool get isBoissonsGroup => hasCasePricing || isBeverage;
 
+  /// Produit à prix de RÉFÉRENCE variable (ex. Gbêlê : achat connu au litre,
+  /// prix de vente saisi à chaque vente comme un MONTANT payé, voir
+  /// `docs/api/pos.md`) — catégorie fixe (ni casier, ni prix variable
+  /// "classique"), `requiresPriceAtSale` et `referenceSalePrice` renseignés.
+  /// Décision utilisateur du 2026-09-24 : Stock/Achats l'affichent/le
+  /// commandent en litres plutôt qu'en unités génériques.
+  bool get isReferencePriced => requiresPriceAtSale && referenceSalePrice != null && !hasCasePricing && !hasVariablePricing;
+
   factory Product.fromJson(Map<String, dynamic> json) => Product(
         id: json['id'] as String,
         name: json['name'] as String,

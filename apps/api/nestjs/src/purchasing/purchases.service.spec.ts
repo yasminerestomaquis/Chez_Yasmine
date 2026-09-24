@@ -37,6 +37,18 @@ const caseProduct = (over: Partial<{ id: string; name: string; bottlesPerCase: n
   category: { hasCasePricing: true },
 });
 
+/** Produit à prix de référence variable commandé au litre (ex. Gbêlê — décision utilisateur du 2026-09-24). */
+const referencePricedProduct = (over: Partial<{ id: string; name: string; purchasePrice: number | null }> = {}) => ({
+  id: over.id ?? 'p1',
+  establishmentId: 'est-1',
+  name: over.name ?? 'Gbêlê',
+  requiresPriceAtSale: true,
+  referenceSalePrice: new Decimal(3000),
+  purchasePrice: over.purchasePrice === null ? null : new Decimal(over.purchasePrice ?? 1100),
+  stockQuantity: new Decimal(39.5),
+  category: { hasCasePricing: false },
+});
+
 describe('PurchasesService.create', () => {
   let prisma: ReturnType<typeof makePrismaMock>;
   let service: PurchasesService;
@@ -319,6 +331,51 @@ describe('PurchasesService.cancel (flux hérité)', () => {
 
     expect(prisma.purchase.update).toHaveBeenCalledWith({ where: { id: 'purchase-1' }, data: { status: 'cancelled' } });
     expect(prisma.stockMovement.create).not.toHaveBeenCalled();
+  });
+});
+
+describe('Achat au litre pour un produit à prix de référence variable (Gbêlê, 2026-09-24)', () => {
+  let prisma: ReturnType<typeof makePrismaMock>;
+  let service: PurchasesService;
+
+  beforeEach(() => {
+    vi.mocked(activityNotifierMock.notify).mockClear();
+    prisma = makePrismaMock();
+    service = new PurchasesService(prisma as unknown as PrismaService, activityNotifierMock);
+  });
+
+  it('commande 25 L au prix d\'achat par litre du Catalogue', async () => {
+    (prisma.product as any).findMany.mockResolvedValue([referencePricedProduct()]);
+    (prisma.purchase as any).create.mockResolvedValue({ id: 'purchase-1', supplier: null, items: [] });
+
+    await service.create('est-1', 'user-1', { orderNumber: 1, items: [{ productId: 'p1', litersOrdered: 25 }] } as any);
+
+    expect(prisma.product.update).toHaveBeenCalledWith({ where: { id: 'p1' }, data: { stockQuantity: { increment: 25 } } });
+    expect(prisma.stockMovement.create).toHaveBeenCalledWith({
+      data: { productId: 'p1', type: 'in', quantity: 25, reason: 'Commande n°1', createdBy: 'user-1' },
+    });
+    expect((prisma.purchase as any).create.mock.calls[0][0].data.total).toBe(25 * 1100);
+  });
+
+  it('rejette un produit a prix de reference variable sans litersOrdered', async () => {
+    (prisma.product as any).findMany.mockResolvedValue([referencePricedProduct()]);
+    await expect(
+      service.create('est-1', 'user-1', { orderNumber: 1, items: [{ productId: 'p1' }] } as any),
+    ).rejects.toBeInstanceOf(BadRequestException);
+  });
+
+  it('rejette si le prix d\'achat par litre n\'est pas renseigne au Catalogue', async () => {
+    (prisma.product as any).findMany.mockResolvedValue([referencePricedProduct({ purchasePrice: null })]);
+    await expect(
+      service.create('est-1', 'user-1', { orderNumber: 1, items: [{ productId: 'p1', litersOrdered: 25 }] } as any),
+    ).rejects.toBeInstanceOf(BadRequestException);
+  });
+
+  it('rejette un produit a prix par casier sans casesOrdered (litersOrdered non fourni)', async () => {
+    (prisma.product as any).findMany.mockResolvedValue([caseProduct()]);
+    await expect(
+      service.create('est-1', 'user-1', { orderNumber: 1, items: [{ productId: 'p1' }] } as any),
+    ).rejects.toBeInstanceOf(BadRequestException);
   });
 });
 

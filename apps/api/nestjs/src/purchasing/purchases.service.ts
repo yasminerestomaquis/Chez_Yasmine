@@ -311,10 +311,37 @@ export class PurchasesService {
 
     return items.map((item) => {
       const product = productById.get(item.productId)!;
+      // Produit à prix de référence variable (ex. Gbêlê) : commandé au litre
+      // (25 ou 50 L, jerricans), pas par casier — décision utilisateur du
+      // 2026-09-24. Réutilise les colonnes "casier" avec un casier fictif
+      // d'1 litre (`bottlesPerCase: 1`) : `quantity`/`unitPrice` restent
+      // corrects (litres, prix/L) sans schéma dédié ; l'UI Flutter affiche
+      // "L" au lieu de "casier(s)" pour ces lignes (`Product.isReferencePriced`).
+      if (product.requiresPriceAtSale && product.referenceSalePrice != null && !product.category?.hasCasePricing) {
+        if (!item.litersOrdered) {
+          throw new BadRequestException(`${product.name} : nombre de litres commandés requis (25 ou 50 L)`);
+        }
+        if (product.purchasePrice == null) {
+          throw new BadRequestException(`${product.name} : "Prix d'achat" (par litre) non renseigné dans le Catalogue`);
+        }
+        const purchasePricePerLiter = product.purchasePrice.toNumber();
+        return {
+          productId: product.id,
+          productName: product.name,
+          casesOrdered: item.litersOrdered,
+          bottlesPerCase: 1,
+          purchasePricePerCase: purchasePricePerLiter,
+          quantity: item.litersOrdered,
+          unitPrice: purchasePricePerLiter,
+        };
+      }
       if (!product.category?.hasCasePricing) {
         throw new BadRequestException(
           `${product.name} n'appartient pas à une catégorie à prix par casier (Bières, Vins, Sucreries)`,
         );
+      }
+      if (!item.casesOrdered) {
+        throw new BadRequestException(`${product.name} : nombre de casiers commandés requis`);
       }
       if (!product.bottlesPerCase || product.bottlesPerCase < 1) {
         throw new BadRequestException(`${product.name} : "Nbre de bouteilles par casier" non renseigné dans le Catalogue`);
