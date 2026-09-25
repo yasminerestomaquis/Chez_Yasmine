@@ -8,6 +8,7 @@ import '../charts/charts_repository.dart';
 import '../charts/weekly_bar_chart.dart';
 import '../common/browser_download.dart';
 import '../common/formatting.dart';
+import '../common/gridded_table.dart';
 import '../customers/customers_page.dart';
 import '../losses/losses_page.dart';
 import '../pos/pos_repository.dart';
@@ -328,63 +329,6 @@ class _ReportsPageState extends State<ReportsPage> {
   /// Le dialogue propose aussi « Exporter en PDF » (plus Excel, même
   /// décision), qui réutilise `GET .../reports/beverages-sold.pdf`
   /// (`ReportsRepository.exportBeveragesSoldPdf`).
-  /// Tableau à quadrillage complet (bordures horizontales **et** verticales
-  /// sur chaque cellule, y compris l'en-tête) pour les listings « Boissons
-  /// vendues »/« Plats vendus » — `Table`/`TableBorder.all` plutôt que
-  /// `DataTable`, qui ne trace pas de séparateurs verticaux entre colonnes.
-  /// Défilement horizontal explicite (colonnes) ; le défilement vertical est
-  /// délégué à l'`AlertDialog` (`scrollable: true`) plutôt qu'imbriqué ici,
-  /// pour éviter le conflit de contraintes classique de deux
-  /// `SingleChildScrollView` d'axes opposés l'un dans l'autre. Demande
-  /// utilisateur du 2026-09-25 (le tableau précédent, un `DataTable` simple,
-  /// débordait sans pouvoir défiler et n'avait pas de quadrillage).
-  Widget _griddedSalesTable({
-    required List<String> headers,
-    required List<bool> numericColumns,
-    required List<List<String>> rows,
-    required List<String> totalRow,
-  }) {
-    Widget cell(String text, {required bool numeric, bool bold = false}) {
-      return Padding(
-        padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
-        child: Text(
-          text,
-          textAlign: numeric ? TextAlign.right : TextAlign.left,
-          style: bold ? const TextStyle(fontWeight: FontWeight.bold) : null,
-        ),
-      );
-    }
-
-    return SingleChildScrollView(
-      scrollDirection: Axis.horizontal,
-      child: Table(
-        border: TableBorder.all(color: Theme.of(context).dividerColor),
-        defaultColumnWidth: const IntrinsicColumnWidth(),
-        children: [
-          TableRow(
-            decoration: BoxDecoration(
-              color: Theme.of(context).colorScheme.surfaceContainerHighest,
-            ),
-            children: [
-              for (var i = 0; i < headers.length; i++) cell(headers[i], numeric: numericColumns[i], bold: true),
-            ],
-          ),
-          for (final row in rows)
-            TableRow(
-              children: [
-                for (var i = 0; i < row.length; i++) cell(row[i], numeric: numericColumns[i]),
-              ],
-            ),
-          TableRow(
-            children: [
-              for (var i = 0; i < totalRow.length; i++) cell(totalRow[i], numeric: numericColumns[i], bold: true),
-            ],
-          ),
-        ],
-      ),
-    );
-  }
-
   Future<void> _showBeveragesSoldListing() async {
     final today = DateTime.now();
     final chosen = await _pickExportDates(
@@ -444,7 +388,8 @@ class _ReportsPageState extends State<ReportsPage> {
                       'Aucune vente Bières/Vins/Sucreries sur cette période.',
                     ),
                   )
-                : _griddedSalesTable(
+                : griddedTable(
+                    context,
                     headers: [
                       if (multiDay) 'Date',
                       'Produit',
@@ -578,7 +523,8 @@ class _ReportsPageState extends State<ReportsPage> {
                       'Aucune vente Plats africains/Poissons/Poulets sur cette période.',
                     ),
                   )
-                : _griddedSalesTable(
+                : griddedTable(
+                    context,
                     headers: [
                       if (multiDay) 'Date',
                       'Produit',

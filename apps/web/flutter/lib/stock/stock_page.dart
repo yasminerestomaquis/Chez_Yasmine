@@ -4,7 +4,10 @@ import '../api/api_client.dart';
 import '../catalog/catalog_cache.dart';
 import '../catalog/catalog_repository.dart';
 import '../catalog/models.dart';
+import '../charts/charts_repository.dart';
+import '../common/browser_download.dart';
 import '../common/formatting.dart';
+import '../common/gridded_table.dart';
 import '../theme/app_theme.dart';
 import 'product_stock_history_page.dart';
 import 'stock_models.dart';
@@ -99,6 +102,10 @@ class _StockPageState extends State<StockPage> {
     ApiClient(),
     widget.establishmentId,
   );
+  late final ChartsRepository _charts = ChartsRepository(
+    ApiClient(),
+    widget.establishmentId,
+  );
   late final CatalogCache _cache = CatalogCache(widget.establishmentId);
   late Future<_StockPageData> _future = _load();
 
@@ -148,6 +155,125 @@ class _StockPageState extends State<StockPage> {
 
   void _reload() => setState(() => _future = _load());
 
+  static String _qty(double value) =>
+      value == value.roundToDouble() ? value.toStringAsFixed(0) : value.toStringAsFixed(2);
+
+  /// Listing "Stock actif" (bouton de l'AppBar — demande utilisateur du
+  /// 2026-09-25) : un produit = une ligne, agrégée sur ses seuls lots FIFO
+  /// actifs (`ChartsService.activeStockListing`, même critère que « Lots
+  /// actifs » dans Graphiques > Stock > Détail d'un produit). Tableau à
+  /// quadrillage complet et défilable (`griddedTable`), même principe que les
+  /// listings « Boissons vendues »/« Plats vendus » du module Rapports.
+  Future<void> _showActiveStockListing() async {
+    try {
+      final rows = await _charts.getActiveStockListing();
+      final totals = rows.fold<({double received, double consumed, double consumedRevenue, double loss, double lossRevenue, double remaining, double remainingRevenue})>(
+        (
+          received: 0,
+          consumed: 0,
+          consumedRevenue: 0,
+          loss: 0,
+          lossRevenue: 0,
+          remaining: 0,
+          remainingRevenue: 0,
+        ),
+        (acc, r) => (
+          received: acc.received + r.receivedQuantity,
+          consumed: acc.consumed + r.consumedQuantity,
+          consumedRevenue: acc.consumedRevenue + r.consumedRevenue,
+          loss: acc.loss + r.lossQuantity,
+          lossRevenue: acc.lossRevenue + r.lossRevenue,
+          remaining: acc.remaining + r.remainingQuantity,
+          remainingRevenue: acc.remainingRevenue + r.remainingRevenue,
+        ),
+      );
+
+      if (!mounted) return;
+      final exportRequested = await showDialog<bool>(
+        context: context,
+        builder: (context) => AlertDialog(
+          scrollable: true,
+          title: const Text('Stock actif'),
+          content: SizedBox(
+            width: double.maxFinite,
+            child: rows.isEmpty
+                ? const Padding(
+                    padding: EdgeInsets.symmetric(vertical: 16),
+                    child: Text('Aucun produit avec du stock actif.'),
+                  )
+                : griddedTable(
+                    context,
+                    headers: const [
+                      'Produit',
+                      'Qté reçue',
+                      'Consommé',
+                      'Recette consommé (FCFA)',
+                      'Perdu',
+                      'Recette perdue (FCFA)',
+                      'Restant',
+                      'Recette stock (FCFA)',
+                    ],
+                    numericColumns: const [false, true, true, true, true, true, true, true],
+                    rows: [
+                      for (final r in rows)
+                        [
+                          r.productName,
+                          _qty(r.receivedQuantity),
+                          _qty(r.consumedQuantity),
+                          formatAmount(r.consumedRevenue),
+                          _qty(r.lossQuantity),
+                          formatAmount(r.lossRevenue),
+                          _qty(r.remainingQuantity),
+                          formatAmount(r.remainingRevenue),
+                        ],
+                    ],
+                    totalRow: [
+                      'TOTAL',
+                      _qty(totals.received),
+                      _qty(totals.consumed),
+                      formatAmount(totals.consumedRevenue),
+                      _qty(totals.loss),
+                      formatAmount(totals.lossRevenue),
+                      _qty(totals.remaining),
+                      formatAmount(totals.remainingRevenue),
+                    ],
+                  ),
+          ),
+          actions: [
+            TextButton(
+              onPressed: () => Navigator.of(context).pop(false),
+              child: const Text('Fermer'),
+            ),
+            if (rows.isNotEmpty)
+              FilledButton.icon(
+                onPressed: () => Navigator.of(context).pop(true),
+                icon: const Icon(Icons.picture_as_pdf_outlined),
+                label: const Text('Exporter en PDF'),
+              ),
+          ],
+        ),
+      );
+      if (exportRequested == true) {
+        await _downloadActiveStockListingPdf();
+      }
+    } on ApiException catch (e) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(context)
+          .showSnackBar(SnackBar(content: Text(e.message)));
+    }
+  }
+
+  Future<void> _downloadActiveStockListingPdf() async {
+    try {
+      final result = await _charts.exportActiveStockListingPdf();
+      downloadBytes(result.bytes, result.filename ?? 'Stock actif.pdf');
+    } on ApiException catch (e) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(context)
+          .showSnackBar(SnackBar(content: Text(e.message)));
+    }
+  }
+
   Future<void> _openMovementDialog(Product product) async {
     final created = await showStockMovementDialog(
       context,
@@ -163,7 +289,16 @@ class _StockPageState extends State<StockPage> {
   @override
   Widget build(BuildContext context) {
     return Scaffold(
-      appBar: AppBar(title: const Text('Stock')),
+      appBar: AppBar(
+        title: const Text('Stock'),
+        actions: [
+          IconButton(
+            tooltip: 'Stock actif (listing, export PDF)',
+            icon: const Icon(Icons.picture_as_pdf_outlined),
+            onPressed: _showActiveStockListing,
+          ),
+        ],
+      ),
       body: Column(
         children: [
           Expanded(

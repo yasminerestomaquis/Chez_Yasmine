@@ -158,4 +158,19 @@ class ChartsRepository {
     ) as Map<String, dynamic>;
     return RankingChart.fromJson(json);
   }
+
+  /// Listing "Stock actif" (module Stock, bouton d'export — demande
+  /// utilisateur du 2026-09-25) : un produit = une ligne, agrégée sur ses
+  /// seuls lots actifs.
+  Future<List<ActiveStockListingRow>> getActiveStockListing() async {
+    final json = await _api.get('$_base/active-stock-listing') as List<dynamic>;
+    return json
+        .map((e) => ActiveStockListingRow.fromJson(e as Map<String, dynamic>))
+        .toList();
+  }
+
+  /// Export PDF du même listing, tableau à quadrillage complet.
+  Future<({List<int> bytes, String? filename})> exportActiveStockListingPdf() {
+    return _api.getBytes('$_base/active-stock-listing.pdf');
+  }
 }

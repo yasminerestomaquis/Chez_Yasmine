@@ -12,6 +12,8 @@ GET /establishments/:establishmentId/charts/monthly?metric=revenue|profit&year=Y
 GET /establishments/:establishmentId/charts/top?metric=revenue|profit&from=&to=
 GET /establishments/:establishmentId/charts/stock-lots?productIds=
 GET /establishments/:establishmentId/charts/out-of-stock-products
+GET /establishments/:establishmentId/charts/active-stock-listing
+GET /establishments/:establishmentId/charts/active-stock-listing.pdf
 GET /establishments/:establishmentId/charts/expenses/weekly?weekStart=YYYY-MM-DD
 GET /establishments/:establishmentId/charts/expenses/weekly-by-category?weekStart=&categories=
 GET /establishments/:establishmentId/charts/expenses/monthly?year=YYYY
@@ -165,6 +167,16 @@ Correctif : le stock orphelin est désormais ajouté à **`receivedQuantity` ET 
 ### Sélection multiple, filtre catégorie (revu 2026-09-17 : plus de filtre Produit, catégories multiples)
 
 `productIds` (CSV) accepte un ou plusieurs identifiants produit — plus aucune contrainte de catégorie unique côté serveur depuis le 2026-09-17 (l'ancienne `BadRequestException` "même catégorie" a été retirée). Les lots de tous les produits sélectionnés sont fusionnés dans une seule chronologie, chaque lot portant `productId`/`productName` (utile dès que plus d'un produit est sélectionné).
+
+### Listing « Stock actif » (module Stock, `GET /charts/active-stock-listing[.pdf]`, décision actée 2026-09-25)
+
+Bouton d'export dans l'AppBar du module Stock (`stock_page.dart`, haut à droite) : un listing tous produits, une ligne par produit (jamais deux lignes pour le même), agrégé sur ses seuls lots FIFO de statut `'actif'` — même critère que « Lots actifs » ci-dessus. `ChartsService.activeStockListing` fait la somme, sur ces lots, de `receivedQuantity`/`lossQuantity`/`remainingQuantity` ; produits sans aucun lot actif absents du résultat (jamais approvisionnés, ou entièrement épuisés).
+
+**`consommé` est net des pertes** (`consumedQuantity - lossQuantity` de chaque lot, `lossQuantity` étant une *part* de `consumedQuantity` — voir `StockLot` — pas un total distinct), pour que les colonnes s'additionnent proprement : `reçue = consommé + perdu + restant`. Chaque quantité (Consommé/Perdu/Restant) est valorisée à sa propre « Recette » au même prix de vente unitaire que les pertes (`salePrice` sinon `referenceSalePrice` sinon 0, voir `lossUnitSalePrice`/`reports/loss-revenue.ts`) — cohérent avec le « prix de vente attendu » déjà affiché ailleurs dans Stock.
+
+Colonnes (interface et PDF, huit) : Produit, Qté reçue, Consommé, Recette consommé, Perdu, Recette perdue, Restant, Recette stock — plus une ligne TOTAL sommant chaque colonne numérique. `GET .../active-stock-listing` (JSON, listing à l'écran) et `.../active-stock-listing.pdf` (`StreamableFile`, tableau à quadrillage complet via `drawPdfTable` — désormais partagé dans `src/common/pdf-table.util.ts`, déplacé hors du module Rapports puisque réutilisé ici ; format paysage vu le nombre de colonnes) partagent la même permission que `stock-lots` (`charts.stock_lots`) — même donnée sous-jacente, seulement agrégée différemment.
+
+Côté Flutter, le tableau à l'écran (avant export) réutilise `griddedTable` (`lib/common/gridded_table.dart`, extrait de `ReportsPage` le même jour) — quadrillage complet, défilement horizontal explicite, défilement vertical délégué à `AlertDialog(scrollable: true)`.
 
 ### « Quantité reçue » et le total du bas en litres pour Gbêlê (décision actée 2026-09-25)
 

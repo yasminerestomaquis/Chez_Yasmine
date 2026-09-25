@@ -1,4 +1,5 @@
 import { Decimal } from '@prisma/client';
+import { PDFParse } from 'pdf-parse';
 import { describe, expect, it, vi } from 'vitest';
 import type { PrismaService } from '../prisma/prisma.service.js';
 import { ChartsService } from './charts.service.js';
@@ -720,5 +721,106 @@ describe('ChartsService — sous-module Dépenses', () => {
     expect(result.groupBy).toBe('category');
     expect(result.items).toHaveLength(10);
     expect(result.items[0].name).toBe('Cat11');
+  });
+});
+
+describe('ChartsService.activeStockListing', () => {
+  it('groups a product into a single row summed across its active lots only, net of losses', async () => {
+    const prisma = makePrismaMock();
+    const service = new ChartsService(prisma as unknown as PrismaService);
+    prisma.product.findMany.mockResolvedValue([
+      { id: 'p1', name: 'Bière', salePrice: new Decimal(1000), referenceSalePrice: null },
+    ]);
+    prisma.stockMovement.findMany.mockResolvedValue([
+      // Deux lots reçus séparément (deux mouvements 'in') pour vérifier
+      // qu'ils sont bien regroupés en UNE ligne par produit.
+      { productId: 'p1', type: 'in', quantity: new Decimal(50), createdAt: new Date('2026-09-01T08:00:00Z'), reason: null },
+      { productId: 'p1', type: 'in', quantity: new Decimal(30), createdAt: new Date('2026-09-05T08:00:00Z'), reason: null },
+      { productId: 'p1', type: 'sale', quantity: new Decimal(20), createdAt: new Date('2026-09-06T08:00:00Z'), reason: null },
+      { productId: 'p1', type: 'loss', quantity: new Decimal(5), createdAt: new Date('2026-09-07T08:00:00Z'), reason: null },
+    ]);
+
+    const result = await service.activeStockListing('est-1');
+
+    expect(result).toHaveLength(1);
+    // Reçue 80, vendu+perdu 25 au total (20 vente + 5 perte), restant 55.
+    // "consommé" est net des pertes (20), pour que reçue = consommé + perdu + restant.
+    expect(result[0]).toEqual({
+      productId: 'p1',
+      productName: 'Bière',
+      receivedQuantity: 80,
+      consumedQuantity: 20,
+      consumedRevenue: 20000,
+      lossQuantity: 5,
+      lossRevenue: 5000,
+      remainingQuantity: 55,
+      remainingRevenue: 55000,
+    });
+  });
+
+  it('excludes a product with no active lot (never received, or fully depleted)', async () => {
+    const prisma = makePrismaMock();
+    const service = new ChartsService(prisma as unknown as PrismaService);
+    prisma.product.findMany.mockResolvedValue([
+      { id: 'p1', name: 'Jamais approvisionné', salePrice: new Decimal(1000), referenceSalePrice: null },
+      { id: 'p2', name: 'Épuisé', salePrice: new Decimal(500), referenceSalePrice: null },
+    ]);
+    prisma.stockMovement.findMany.mockResolvedValue([
+      { productId: 'p2', type: 'in', quantity: new Decimal(10), createdAt: new Date('2026-09-01T08:00:00Z'), reason: null },
+      { productId: 'p2', type: 'sale', quantity: new Decimal(10), createdAt: new Date('2026-09-02T08:00:00Z'), reason: null },
+    ]);
+
+    const result = await service.activeStockListing('est-1');
+
+    expect(result).toEqual([]);
+  });
+
+  it('falls back to referenceSalePrice when salePrice is null (ex. Gbêlê)', async () => {
+    const prisma = makePrismaMock();
+    const service = new ChartsService(prisma as unknown as PrismaService);
+    prisma.product.findMany.mockResolvedValue([
+      { id: 'p1', name: 'Gbêlê', salePrice: null, referenceSalePrice: new Decimal(3000) },
+    ]);
+    prisma.stockMovement.findMany.mockResolvedValue([
+      { productId: 'p1', type: 'in', quantity: new Decimal(25), createdAt: new Date('2026-09-01T08:00:00Z'), reason: null },
+    ]);
+
+    const result = await service.activeStockListing('est-1');
+
+    expect(result[0].remainingQuantity).toBe(25);
+    expect(result[0].remainingRevenue).toBe(75000);
+  });
+});
+
+async function chartsPdfText(buffer: Buffer): Promise<string> {
+  const parser = new PDFParse({ data: buffer });
+  const result = await parser.getText();
+  await parser.destroy();
+  return result.text;
+}
+
+describe('ChartsService.activeStockListingPdf', () => {
+  it('renders a real, readable PDF with each product, its columns, and a TOTAL row', async () => {
+    const prisma = makePrismaMock();
+    const service = new ChartsService(prisma as unknown as PrismaService);
+    prisma.product.findMany.mockResolvedValue([
+      { id: 'p1', name: 'Bière', salePrice: new Decimal(1000), referenceSalePrice: null },
+      { id: 'p2', name: 'Gbêlê', salePrice: null, referenceSalePrice: new Decimal(3000) },
+    ]);
+    prisma.stockMovement.findMany.mockResolvedValue([
+      { productId: 'p1', type: 'in', quantity: new Decimal(50), createdAt: new Date('2026-09-01T08:00:00Z'), reason: null },
+      { productId: 'p1', type: 'sale', quantity: new Decimal(20), createdAt: new Date('2026-09-02T08:00:00Z'), reason: null },
+      { productId: 'p2', type: 'in', quantity: new Decimal(25), createdAt: new Date('2026-09-01T08:00:00Z'), reason: null },
+    ]);
+
+    const { buffer, filename } = await service.activeStockListingPdf('est-1');
+    const text = await chartsPdfText(buffer);
+
+    expect(filename).toBe('Stock actif.pdf');
+    expect(text).toContain('Stock actif');
+    expect(text).toContain('Bière');
+    expect(text).toContain('Gbêlê');
+    expect(text).toContain('TOTAL');
+    expect(text).toContain('75 000'); // 25 restant × 3000 (Gbêlê)
   });
 });

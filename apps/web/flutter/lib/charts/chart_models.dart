@@ -209,3 +209,42 @@ class OutOfStockProduct {
         stockQuantity: (json['stockQuantity'] as num).toDouble(),
       );
 }
+
+/// Listing "Stock actif" (module Stock) — un produit = une ligne, agrégée sur
+/// ses seuls lots FIFO actifs — voir `ChartsService.activeStockListing`.
+class ActiveStockListingRow {
+  ActiveStockListingRow({
+    required this.productId,
+    required this.productName,
+    required this.receivedQuantity,
+    required this.consumedQuantity,
+    required this.consumedRevenue,
+    required this.lossQuantity,
+    required this.lossRevenue,
+    required this.remainingQuantity,
+    required this.remainingRevenue,
+  });
+
+  final String productId;
+  final String productName;
+  final double receivedQuantity;
+  final double consumedQuantity;
+  final double consumedRevenue;
+  final double lossQuantity;
+  final double lossRevenue;
+  final double remainingQuantity;
+  final double remainingRevenue;
+
+  factory ActiveStockListingRow.fromJson(Map<String, dynamic> json) =>
+      ActiveStockListingRow(
+        productId: json['productId'] as String,
+        productName: json['productName'] as String,
+        receivedQuantity: (json['receivedQuantity'] as num).toDouble(),
+        consumedQuantity: (json['consumedQuantity'] as num).toDouble(),
+        consumedRevenue: (json['consumedRevenue'] as num).toDouble(),
+        lossQuantity: (json['lossQuantity'] as num).toDouble(),
+        lossRevenue: (json['lossRevenue'] as num).toDouble(),
+        remainingQuantity: (json['remainingQuantity'] as num).toDouble(),
+        remainingRevenue: (json['remainingRevenue'] as num).toDouble(),
+      );
+}

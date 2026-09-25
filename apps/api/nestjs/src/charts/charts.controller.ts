@@ -1,4 +1,4 @@
-import { Controller, ForbiddenException, Get, Param, Query, Req, UseGuards } from '@nestjs/common';
+import { Controller, ForbiddenException, Get, Param, Query, Req, StreamableFile, UseGuards } from '@nestjs/common';
 import type { Request } from 'express';
 import { AuthorizationService } from '../auth/authorization.service.js';
 import { PermissionsGuard } from '../auth/permissions.guard.js';
@@ -101,6 +101,24 @@ export class ChartsController {
   async outOfStockProducts(@Req() request: Request, @Param('establishmentId') establishmentId: string) {
     await this.require(request, establishmentId, STOCK_OUT_PERMISSION);
     return this.charts.outOfStockProducts(establishmentId);
+  }
+
+  /**
+   * Listing "Stock actif" (module Stock — demande utilisateur du
+   * 2026-09-25), même permission que `stock-lots` : une agrégation par
+   * produit des mêmes lots FIFO actifs.
+   */
+  @Get('active-stock-listing')
+  async activeStockListing(@Req() request: Request, @Param('establishmentId') establishmentId: string) {
+    await this.require(request, establishmentId, STOCK_LOTS_PERMISSION);
+    return this.charts.activeStockListing(establishmentId);
+  }
+
+  @Get('active-stock-listing.pdf')
+  async activeStockListingPdf(@Req() request: Request, @Param('establishmentId') establishmentId: string): Promise<StreamableFile> {
+    await this.require(request, establishmentId, STOCK_LOTS_PERMISSION);
+    const { buffer, filename } = await this.charts.activeStockListingPdf(establishmentId);
+    return new StreamableFile(buffer, { type: 'application/pdf', disposition: `attachment; filename="${filename}"` });
   }
 
   @Get('expenses/weekly')

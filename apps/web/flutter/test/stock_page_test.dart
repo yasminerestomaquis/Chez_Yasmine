@@ -137,4 +137,26 @@ void main() {
     expect(find.text('Stock'), findsOneWidget);
     expect(find.byType(CircularProgressIndicator), findsNothing);
   });
+
+  testWidgets(
+    'tapping the "Stock actif" export button surfaces a snackbar instead of crashing when no backend is reachable (2026-09-25)',
+    (tester) async {
+      await tester.pumpWidget(
+        const MaterialApp(home: StockPage(establishmentId: 'est-1', roleName: 'Gérant')),
+      );
+      await tester.pumpAndSettle();
+
+      expect(find.byTooltip('Stock actif (listing, export PDF)'), findsOneWidget);
+
+      await tester.tap(find.byTooltip('Stock actif (listing, export PDF)'));
+      // Même raison que le test de changement de période dans
+      // reports_page_test.dart : pumpAndSettle (pas un seul pump) exerce la
+      // course entre le rejet réseau instantané de flutter_test et la
+      // souscription du FutureBuilder/du gestionnaire d'erreur.
+      await tester.pumpAndSettle();
+
+      expect(find.text('Stock actif'), findsNothing); // le dialogue ne s'ouvre pas sur erreur réseau
+      expect(find.byType(SnackBar), findsOneWidget);
+    },
+  );
 }

@@ -1,5 +1,7 @@
 import { Injectable, NotFoundException } from '@nestjs/common';
+import PDFDocument from 'pdfkit';
 import { effectiveUnitCost } from '../catalog/product-cost.util.js';
+import { drawPdfTable, formatFcfa } from '../common/pdf-table.util.js';
 import { PrismaService } from '../prisma/prisma.service.js';
 import { computeFifoLots, type StockLot, type StockLotMovementType } from '../stock/stock-lots.js';
 import type { ChartMetric } from './dto/chart-query.dto.js';
@@ -596,6 +598,168 @@ export class ChartsService {
       historyLots: allLots,
       totalActiveUnits: activeLots.reduce((sum, lot) => sum + lot.remainingQuantity, 0),
     };
+  }
+
+  /**
+   * Listing "Stock actif" (module Stock, bouton d'export — demande
+   * utilisateur du 2026-09-25) : un produit = une ligne, agrégée sur ses seuls
+   * lots FIFO de statut `'actif'` (`computeFifoLots`, même critère que l'onglet
+   * "Lots actifs" de Graphiques > Stock > Détail d'un produit — un lot devient
+   * `'epuise'` dès que sa quantité restante atteint 0, voir `stock-lots.ts`).
+   * Produits sans aucun lot actif (jamais approvisionnés, ou entièrement
+   * épuisés) absents du résultat — ce listing ne porte que sur le stock
+   * réellement présent.
+   *
+   * `lossQuantity` d'un lot est une **part** de `consumedQuantity` (voir
+   * `StockLot`), pas un total distinct : `consommé` ci-dessous est donc net
+   * des pertes (`consumedQuantity - lossQuantity`) pour que les colonnes
+   * s'additionnent proprement (`reçue = consommé + perdu + restant`), plutôt
+   * que de compter deux fois la part perdue.
+   *
+   * Chaque quantité est valorisée au même prix de vente unitaire que les
+   * pertes (`salePrice` sinon `referenceSalePrice` sinon 0 — voir
+   * `lossUnitSalePrice`, `reports/loss-revenue.ts`), cohérent avec le "prix de
+   * vente attendu du stock actuel" déjà affiché ailleurs dans le module Stock.
+   */
+  async activeStockListing(establishmentId: string): Promise<
+    {
+      productId: string;
+      productName: string;
+      receivedQuantity: number;
+      consumedQuantity: number;
+      consumedRevenue: number;
+      lossQuantity: number;
+      lossRevenue: number;
+      remainingQuantity: number;
+      remainingRevenue: number;
+    }[]
+  > {
+    const products = await this.prisma.product.findMany({
+      where: { establishmentId, status: 'active' },
+      select: { id: true, name: true, salePrice: true, referenceSalePrice: true },
+      orderBy: { name: 'asc' },
+    });
+
+    const movements = await this.prisma.stockMovement.findMany({
+      where: { productId: { in: products.map((p) => p.id) } },
+      orderBy: { createdAt: 'asc' },
+      select: { productId: true, type: true, quantity: true, createdAt: true, reason: true },
+    });
+
+    const rows: {
+      productId: string;
+      productName: string;
+      receivedQuantity: number;
+      consumedQuantity: number;
+      consumedRevenue: number;
+      lossQuantity: number;
+      lossRevenue: number;
+      remainingQuantity: number;
+      remainingRevenue: number;
+    }[] = [];
+    for (const product of products) {
+      const productMovements = movements
+        .filter((m) => m.productId === product.id)
+        .map((m) => ({ type: m.type as StockLotMovementType, quantity: m.quantity.toNumber(), createdAt: m.createdAt, reason: m.reason }));
+      const activeLots = computeFifoLots(productMovements).filter((lot) => lot.status === 'actif');
+      if (activeLots.length === 0) continue;
+
+      const receivedQuantity = activeLots.reduce((sum, lot) => sum + lot.receivedQuantity, 0);
+      const lossQuantity = activeLots.reduce((sum, lot) => sum + lot.lossQuantity, 0);
+      const totalConsumed = activeLots.reduce((sum, lot) => sum + lot.consumedQuantity, 0);
+      const consumedQuantity = totalConsumed - lossQuantity;
+      const remainingQuantity = activeLots.reduce((sum, lot) => sum + lot.remainingQuantity, 0);
+      const unitPrice = product.salePrice?.toNumber() ?? product.referenceSalePrice?.toNumber() ?? 0;
+
+      rows.push({
+        productId: product.id,
+        productName: product.name,
+        receivedQuantity,
+        consumedQuantity,
+        consumedRevenue: consumedQuantity * unitPrice,
+        lossQuantity,
+        lossRevenue: lossQuantity * unitPrice,
+        remainingQuantity,
+        remainingRevenue: remainingQuantity * unitPrice,
+      });
+    }
+    return rows;
+  }
+
+  /**
+   * Export PDF du listing `activeStockListing` ci-dessus — tableau à
+   * quadrillage complet (`drawPdfTable`, même principe que les exports du
+   * module Rapports), format paysage plutôt que portrait vu le nombre de
+   * colonnes (8). Une ligne TOTAL somme chaque colonne.
+   */
+  async activeStockListingPdf(establishmentId: string): Promise<{ buffer: Buffer; filename: string }> {
+    const rows = await this.activeStockListing(establishmentId);
+
+    const totals = rows.reduce(
+      (acc, r) => ({
+        receivedQuantity: acc.receivedQuantity + r.receivedQuantity,
+        consumedQuantity: acc.consumedQuantity + r.consumedQuantity,
+        consumedRevenue: acc.consumedRevenue + r.consumedRevenue,
+        lossQuantity: acc.lossQuantity + r.lossQuantity,
+        lossRevenue: acc.lossRevenue + r.lossRevenue,
+        remainingQuantity: acc.remainingQuantity + r.remainingQuantity,
+        remainingRevenue: acc.remainingRevenue + r.remainingRevenue,
+      }),
+      { receivedQuantity: 0, consumedQuantity: 0, consumedRevenue: 0, lossQuantity: 0, lossRevenue: 0, remainingQuantity: 0, remainingRevenue: 0 },
+    );
+
+    const doc = new PDFDocument({ margin: 30, size: 'A4', layout: 'landscape' });
+    const chunks: Buffer[] = [];
+    doc.on('data', (chunk: Buffer) => chunks.push(chunk));
+    const done = new Promise<void>((resolve) => doc.on('end', () => resolve()));
+
+    doc.fontSize(14).font('Helvetica-Bold').text('Stock actif', { align: 'left' });
+    doc.fontSize(10).font('Helvetica').text(`${rows.length} produit${rows.length > 1 ? 's' : ''}`);
+    doc.moveDown(0.5);
+
+    const qty = (n: number) => (Number.isInteger(n) ? n.toString() : n.toFixed(2));
+
+    drawPdfTable(
+      doc,
+      [
+        { header: 'Produit', width: 150 },
+        { header: 'Qté reçue', width: 70, align: 'right' },
+        { header: 'Consommé', width: 70, align: 'right' },
+        { header: 'Recette consommé (FCFA)', width: 100, align: 'right' },
+        { header: 'Perdu', width: 60, align: 'right' },
+        { header: 'Recette perdue (FCFA)', width: 95, align: 'right' },
+        { header: 'Restant', width: 65, align: 'right' },
+        { header: 'Recette stock (FCFA)', width: 95, align: 'right' },
+      ],
+      [
+        ...rows.map((r) => [
+          r.productName,
+          qty(r.receivedQuantity),
+          qty(r.consumedQuantity),
+          formatFcfa(r.consumedRevenue),
+          qty(r.lossQuantity),
+          formatFcfa(r.lossRevenue),
+          qty(r.remainingQuantity),
+          formatFcfa(r.remainingRevenue),
+        ]),
+        [
+          'TOTAL',
+          qty(totals.receivedQuantity),
+          qty(totals.consumedQuantity),
+          formatFcfa(totals.consumedRevenue),
+          qty(totals.lossQuantity),
+          formatFcfa(totals.lossRevenue),
+          qty(totals.remainingQuantity),
+          formatFcfa(totals.remainingRevenue),
+        ],
+      ],
+      { boldRowIndexes: new Set([rows.length]) },
+    );
+
+    doc.end();
+    await done;
+    const buffer = Buffer.concat(chunks);
+    return { buffer, filename: 'Stock actif.pdf' };
   }
 
   /** "Top des produits épuisés" (sous-module Stock) : produits actifs en rupture (stockQuantity ≤ 0), triés par ordre alphabétique croissant — seul critère "croissant" disponible en l'absence d'un autre axe numérique demandé. */

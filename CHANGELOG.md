@@ -2,6 +2,13 @@
 
 ## [Unreleased]
 
+### Ajouté (2026-09-25) — Stock : listing « Stock actif » (bouton d'export, haut droite de l'AppBar)
+- Nouveau bouton dans le module Stock (icône PDF, haut à droite) : ouvre un listing — une ligne par produit, agrégée sur ses seuls lots FIFO **actifs** (même critère que Graphiques > Stock > Détail d'un produit > « Lots actifs ») — avec colonnes Produit, Qté reçue, Consommé, Recette consommé, Perdu, Recette perdue, Restant, Recette stock, plus une ligne TOTAL. Tableau à quadrillage complet et défilable à l'écran (`griddedTable`, extrait du module Rapports pour être réutilisé), export PDF au même quadrillage (format paysage).
+- « Consommé » est net des pertes (`consumedQuantity - lossQuantity`) pour que Reçue = Consommé + Perdu + Restant ; chaque quantité valorisée au prix de vente unitaire (même règle que les pertes).
+- Nouvelles routes `GET .../charts/active-stock-listing` (JSON) et `.../active-stock-listing.pdf` (`StreamableFile`), même permission que `stock-lots` (`charts.stock_lots`).
+- `drawPdfTable`/`formatFcfa` déplacés de `reports/` vers `common/pdf-table.util.ts` (partagés entre Rapports et ce nouveau listing).
+- Tests : 4 backend (`charts.service.spec.ts`, dont relecture du PDF via `pdf-parse`), 1 widget Flutter nouveau. 465/465 backend, 180/180 Flutter.
+
 ### Corrigé (2026-09-25) — Listing « Boissons vendues »/« Plats vendus » : débordement sans défilement, pas de quadrillage
 - Le tableau affiché avant export (un `DataTable` Material) débordait sans pouvoir défiler (ni horizontalement pour les colonnes coupées, ni verticalement au-delà de quelques lignes) et ne traçait aucune bordure verticale entre colonnes.
 - Remplacé par un `Table`/`TableBorder.all` (quadrillage complet, horizontal et vertical) scrollable horizontalement ; le défilement vertical passe par `AlertDialog(scrollable: true)`. Un seul widget partagé (`ReportsPage._griddedSalesTable`) entre les deux listings.

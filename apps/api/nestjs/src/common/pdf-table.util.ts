@@ -1,5 +1,17 @@
 import PDFDocument from 'pdfkit';
 
+/** "147000" → "147 000" — même convention que `formatAmount` côté Flutter (lib/common/formatting.dart). */
+export function formatFcfa(value: number): string {
+  const rounded = Math.round(value);
+  const digits = Math.abs(rounded).toString();
+  let out = '';
+  for (let i = 0; i < digits.length; i++) {
+    if (i > 0 && (digits.length - i) % 3 === 0) out += ' ';
+    out += digits[i];
+  }
+  return rounded < 0 ? `-${out}` : out;
+}
+
 export interface PdfTableColumn {
   header: string;
   width: number;
