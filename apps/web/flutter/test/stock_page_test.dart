@@ -139,21 +139,14 @@ void main() {
   });
 
   testWidgets(
-    'the "Stock actif" export button is only visible to Super Administrateur (2026-09-25)',
+    'the "Stock actif" export button stays hidden when its permission (stock.active_listing) cannot be checked (2026-09-25)',
     (tester) async {
-      for (final role in ['Gérant', 'Caissier', 'Serveur', 'Propriétaire']) {
-        await tester.pumpWidget(
-          MaterialApp(home: StockPage(establishmentId: 'est-1', roleName: role)),
-        );
-        await tester.pumpAndSettle();
-
-        expect(
-          find.byTooltip('Stock actif (listing, export PDF)'),
-          findsNothing,
-          reason: '$role ne doit pas voir le bouton',
-        );
-      }
-
+      // Gating est désormais fait par permission serveur (accordable/
+      // révocable rôle par rôle depuis "Gestion des permissions" > Stock),
+      // pas par nom de rôle codé en dur — flutter_test répond 400 instantané
+      // à toute requête réseau, donc `_stockPermissions` retombe sur
+      // l'ensemble vide et le bouton reste masqué, quel que soit le rôle
+      // passé ici (voir aussi `canViewValue`, même limitation de test).
       await tester.pumpWidget(
         const MaterialApp(
           home: StockPage(establishmentId: 'est-1', roleName: 'Super Administrateur'),
@@ -161,34 +154,7 @@ void main() {
       );
       await tester.pumpAndSettle();
 
-      expect(find.byTooltip('Stock actif (listing, export PDF)'), findsOneWidget);
-    },
-  );
-
-  testWidgets(
-    'tapping the "Stock actif" export button surfaces a snackbar instead of crashing when no backend is reachable (2026-09-25)',
-    (tester) async {
-      await tester.pumpWidget(
-        const MaterialApp(
-          home: StockPage(establishmentId: 'est-1', roleName: 'Super Administrateur'),
-        ),
-      );
-      await tester.pumpAndSettle();
-
-      expect(find.byTooltip('Stock actif (listing, export PDF)'), findsOneWidget);
-
-      await tester.tap(find.byTooltip('Stock actif (listing, export PDF)'));
-      // Même raison que le test de changement de période dans
-      // reports_page_test.dart : pumpAndSettle (pas un seul pump) exerce la
-      // course entre le rejet réseau instantané de flutter_test et la
-      // souscription du FutureBuilder/du gestionnaire d'erreur. Le premier
-      // appel réseau du nouveau flux (choix des catégories) est
-      // `listCategories()`, qui échoue avant même d'ouvrir le sélecteur.
-      await tester.pumpAndSettle();
-
-      expect(find.text('Stock actif — choisir les catégories'), findsNothing);
-      expect(find.text('Stock actif'), findsNothing); // le dialogue ne s'ouvre pas sur erreur réseau
-      expect(find.byType(SnackBar), findsOneWidget);
+      expect(find.byTooltip('Stock actif (listing, export PDF)'), findsNothing);
     },
   );
 }

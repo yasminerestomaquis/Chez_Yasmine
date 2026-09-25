@@ -1,17 +1,44 @@
-import { Controller, Get, Header, Param, Query, StreamableFile, UseGuards } from '@nestjs/common';
+import { Controller, ForbiddenException, Get, Header, Param, Query, Req, StreamableFile, UseGuards } from '@nestjs/common';
+import type { Request } from 'express';
+import { AuthorizationService } from '../auth/authorization.service.js';
 import { PermissionsGuard } from '../auth/permissions.guard.js';
 import { RequirePermissions } from '../auth/permissions.decorator.js';
 import { SupabaseJwtGuard } from '../auth/supabase-jwt.guard.js';
 import { BeveragesSoldQueryDto } from './dto/beverages-sold-query.dto.js';
 import { PlatsSoldQueryDto } from './dto/plats-sold-query.dto.js';
 import { ReportQueryDto } from './dto/report-query.dto.js';
+import {
+  REPORTS_BEVERAGES_SOLD_PERMISSION,
+  REPORTS_EXPORT_PERMISSION,
+  REPORTS_PLATS_SOLD_PERMISSION,
+  reportsPermissionsOf,
+} from './report-permissions.js';
 import { ReportsService } from './reports.service.js';
 
 @Controller('establishments/:establishmentId/reports')
 @UseGuards(SupabaseJwtGuard, PermissionsGuard)
 @RequirePermissions('reports.view')
 export class ReportsController {
-  constructor(private readonly reports: ReportsService) {}
+  constructor(
+    private readonly reports: ReportsService,
+    private readonly authorization: AuthorizationService,
+  ) {}
+
+  private async require(request: Request, establishmentId: string, code: string): Promise<void> {
+    const userId = request.user?.sub;
+    const allowed = userId ? await this.authorization.hasAllPermissions(userId, establishmentId, [code]) : false;
+    if (!allowed) {
+      throw new ForbiddenException(`Permission(s) manquante(s) : ${code}`);
+    }
+  }
+
+  /** Boutons Rapports que l'appelant a le droit d'utiliser — l'écran masque les autres (voir report-permissions.ts). */
+  @Get('permissions')
+  async myPermissions(@Req() request: Request, @Param('establishmentId') establishmentId: string) {
+    const userId = request.user?.sub;
+    const granted = userId ? await this.authorization.getPermissionCodes(userId, establishmentId) : new Set<string>();
+    return { permissions: reportsPermissionsOf(granted) };
+  }
 
   @Get('summary')
   summary(@Param('establishmentId') establishmentId: string, @Query() query: ReportQueryDto) {
@@ -26,7 +53,8 @@ export class ReportsController {
   @Get('summary.csv')
   @Header('Content-Type', 'text/csv; charset=utf-8')
   @Header('Content-Disposition', 'attachment; filename="rapport.csv"')
-  summaryCsv(@Param('establishmentId') establishmentId: string, @Query() query: ReportQueryDto) {
+  async summaryCsv(@Req() request: Request, @Param('establishmentId') establishmentId: string, @Query() query: ReportQueryDto) {
+    await this.require(request, establishmentId, REPORTS_EXPORT_PERMISSION);
     return this.reports.summaryCsv(establishmentId, query);
   }
 
@@ -46,9 +74,11 @@ export class ReportsController {
    */
   @Get('beverages-sold.pdf')
   async beveragesSoldPdf(
+    @Req() request: Request,
     @Param('establishmentId') establishmentId: string,
     @Query() query: BeveragesSoldQueryDto,
   ): Promise<StreamableFile> {
+    await this.require(request, establishmentId, REPORTS_BEVERAGES_SOLD_PERMISSION);
     const { buffer, filename } = await this.reports.beveragesSoldPdf(establishmentId, query.dates);
     return new StreamableFile(buffer, {
       type: 'application/pdf',
@@ -59,9 +89,11 @@ export class ReportsController {
   /** Même principe que beveragesSoldPdf ci-dessus, pour les catégories à prix variable (Poulets/Poissons/Plats africains). */
   @Get('plats-sold.pdf')
   async platsSoldPdf(
+    @Req() request: Request,
     @Param('establishmentId') establishmentId: string,
     @Query() query: PlatsSoldQueryDto,
   ): Promise<StreamableFile> {
+    await this.require(request, establishmentId, REPORTS_PLATS_SOLD_PERMISSION);
     const { buffer, filename } = await this.reports.platsSoldPdf(establishmentId, query.dates);
     return new StreamableFile(buffer, {
       type: 'application/pdf',

@@ -938,3 +938,70 @@ describe('ChartsService.activeStockListingPdf', () => {
     expect(text).not.toContain('Gbêlê');
   });
 });
+
+describe('ChartsService.mealsProfitListing', () => {
+  it('sums Marché + Bouteilles de gaz expenses, revenue of hasVariablePricing sale items, and computes profit/rate (revenue − cost, confirmed 2026-09-25)', async () => {
+    const prisma = makePrismaMock();
+    const service = new ChartsService(prisma as unknown as PrismaService);
+    prisma.expense.findMany.mockResolvedValue([
+      { amount: new Decimal(15000) }, // Marché
+      { amount: new Decimal(3000) }, // Bouteilles de gaz
+    ]);
+    prisma.saleItem.findMany.mockResolvedValue([
+      { quantity: new Decimal(2), unitPrice: new Decimal(3000) }, // 6000
+      { quantity: new Decimal(1), unitPrice: new Decimal(2500) }, // 2500
+    ]);
+
+    const result = await service.mealsProfitListing('est-1');
+
+    expect(prisma.expense.findMany).toHaveBeenCalledWith({
+      where: { establishmentId: 'est-1', category: { in: ['Marché', 'Bouteilles de gaz'] } },
+      select: { amount: true },
+    });
+    expect(prisma.saleItem.findMany).toHaveBeenCalledWith({
+      where: {
+        sale: { establishmentId: 'est-1', voidedAt: null },
+        product: { category: { hasVariablePricing: true } },
+      },
+      select: { quantity: true, unitPrice: true },
+    });
+    // Coût 18000, recette 8500, bénéfice = 8500 − 18000 = −9500, taux = −9500×100/18000.
+    expect(result).toEqual({
+      marketCost: 18000,
+      currentRevenue: 8500,
+      profit: -9500,
+      rate: (-9500 * 100) / 18000,
+    });
+  });
+
+  it('returns rate 0 instead of dividing by zero when there is no Marché/Gaz expense yet', async () => {
+    const prisma = makePrismaMock();
+    const service = new ChartsService(prisma as unknown as PrismaService);
+    prisma.expense.findMany.mockResolvedValue([]);
+    prisma.saleItem.findMany.mockResolvedValue([{ quantity: new Decimal(1), unitPrice: new Decimal(1000) }]);
+
+    const result = await service.mealsProfitListing('est-1');
+
+    expect(result).toEqual({ marketCost: 0, currentRevenue: 1000, profit: 1000, rate: 0 });
+  });
+});
+
+describe('ChartsService.mealsProfitListingPdf', () => {
+  it('renders a real, readable PDF with exactly two rows (Repas, TOTAL) — both identical, one aggregate row', async () => {
+    const prisma = makePrismaMock();
+    const service = new ChartsService(prisma as unknown as PrismaService);
+    prisma.expense.findMany.mockResolvedValue([{ amount: new Decimal(10000) }]);
+    prisma.saleItem.findMany.mockResolvedValue([{ quantity: new Decimal(1), unitPrice: new Decimal(15000) }]);
+
+    const { buffer, filename } = await service.mealsProfitListingPdf('est-1');
+    const text = await chartsPdfText(buffer);
+
+    expect(filename).toBe('Repas.pdf');
+    expect(text).toContain('Repas');
+    expect(text).toContain('TOTAL');
+    expect(text).toContain('10 000'); // Prix marché
+    expect(text).toContain('15 000'); // Recette actuelle
+    expect(text).toContain('5 000'); // Bénéfice = 15000 − 10000
+    expect(text).toContain('50.00 %'); // Taux = 5000×100/10000
+  });
+});

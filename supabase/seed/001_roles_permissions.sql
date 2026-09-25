@@ -42,7 +42,12 @@ insert into permissions (code, description) values
   ('charts.expenses_by_category', 'Dépenses journalières totales par catégorie'),
   ('charts.expenses_top', 'Top dépenses'),
   ('charts.expenses_monthly', 'Dépenses mensuelles'),
-  ('stock.view_value', 'Voir le groupe « Valeur du stock » (prix d''achat/prix de vente du stock filtré par catégorie) dans le module Stock')
+  ('stock.view_value', 'Voir le groupe « Valeur du stock » (prix d''achat/prix de vente du stock filtré par catégorie) dans le module Stock'),
+  ('stock.active_listing', 'Bouton Stock actif (listing, export PDF) dans le module Stock'),
+  ('reports.beverages_sold', 'Bouton Boissons vendues dans le module Rapports'),
+  ('reports.plats_sold', 'Bouton Plats vendus dans le module Rapports'),
+  ('reports.export', 'Bouton Exporter (CSV, commande d''achat) dans le module Rapports'),
+  ('charts.profit_meals_listing', 'Listing Repas (bénéfice généré) dans Graphiques > Bénéfices')
 on conflict (code) do nothing;
 
 insert into roles (organization_id, name, is_system) values
@@ -69,7 +74,7 @@ select r.id, p.id
 from roles r
 cross join permissions p
 where r.is_system and r.name in ('Super Administrateur', 'Administrateur', 'Propriétaire')
-  and p.code not in ('notifications.manage', 'roles.manage', 'losses.edit', 'stock.view_value')
+  and p.code not in ('notifications.manage', 'roles.manage', 'losses.edit', 'stock.view_value', 'stock.active_listing')
 on conflict do nothing;
 
 -- notifications.manage : Super Administrateur uniquement (bouton "Effacer
@@ -118,7 +123,7 @@ insert into role_permissions (role_id, permission_id)
 select r.id, p.id
 from roles r
 cross join permissions p
-where r.is_system and r.name = 'Gérant' and p.code not in ('roles.manage', 'users.manage', 'products.manage', 'stock.view_value')
+where r.is_system and r.name = 'Gérant' and p.code not in ('roles.manage', 'users.manage', 'products.manage', 'stock.view_value', 'stock.active_listing')
 on conflict do nothing;
 
 -- stock.view_value : Super Administrateur uniquement par défaut (demande
@@ -129,6 +134,17 @@ insert into role_permissions (role_id, permission_id)
 select r.id, p.id
 from roles r
 join permissions p on p.code = 'stock.view_value'
+where r.is_system and r.name = 'Super Administrateur'
+on conflict do nothing;
+
+-- stock.active_listing : Super Administrateur uniquement par défaut (demande
+-- explicite de l'utilisateur du 2026-09-25 — bouton Stock actif de l'AppBar
+-- du module Stock —, accordable/révocable rôle par rôle depuis "Gestion des
+-- permissions", même principe que stock.view_value ci-dessus).
+insert into role_permissions (role_id, permission_id)
+select r.id, p.id
+from roles r
+join permissions p on p.code = 'stock.active_listing'
 where r.is_system and r.name = 'Super Administrateur'
 on conflict do nothing;
 
@@ -221,4 +237,21 @@ from role_permissions rp
 join permissions v on v.id = rp.permission_id and v.code = 'reports.view'
 cross join permissions c
 where c.code like 'charts.%'
+on conflict do nothing;
+
+-- Rapports (2026-09-25) : une permission par bouton de l'AppBar (Boissons
+-- vendues/Plats vendus/Exporter, voir apps/api/nestjs/src/reports/
+-- report-permissions.ts), qui affine `reports.view` sans le remplacer (le
+-- reste du module — résumé, comparaison, graphique hebdomadaire — reste gaté
+-- par `reports.view` seule). Tout rôle qui porte déjà `reports.view` reçoit
+-- les trois : rien ne change tant qu'un bouton n'est pas explicitement
+-- refusé à un rôle dans « Gestion des permissions ». Même mécanisme que le
+-- bloc Graphiques ci-dessus — à exécuter après toutes les attributions de
+-- reports.view.
+insert into role_permissions (role_id, permission_id)
+select rp.role_id, c.id
+from role_permissions rp
+join permissions v on v.id = rp.permission_id and v.code = 'reports.view'
+cross join permissions c
+where c.code in ('reports.beverages_sold', 'reports.plats_sold', 'reports.export')
 on conflict do nothing;

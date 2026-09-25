@@ -24,13 +24,24 @@ export function expenseChartPermission(kind: ExpenseChartKind): string {
 export const STOCK_LOTS_PERMISSION = 'charts.stock_lots';
 export const STOCK_OUT_PERMISSION = 'charts.stock_out';
 
-/** Tous les codes de permission de graphiques (16) — utile pour les tests et la documentation. */
+/**
+ * Listing "Repas" (module Graphiques > Bénéfices, bouton d'export PDF —
+ * demande utilisateur du 2026-09-25) : granularité "par graphique" comme les
+ * 16 permissions ci-dessus, ajoutée au même endroit pour rester groupée sous
+ * Graphiques > Bénéfices dans "Gestion des permissions"
+ * (`modulePrefixOf`/`permission_grouping.dart` regroupe par préfixe de code,
+ * `charts.profit_*` → Bénéfices, quel que soit le suffixe).
+ */
+export const PROFIT_MEALS_LISTING_PERMISSION = 'charts.profit_meals_listing';
+
+/** Tous les codes de permission de graphiques (17) — utile pour les tests et la documentation. */
 export const ALL_CHART_PERMISSIONS: string[] = [
   ...(['revenue', 'profit'] as const).flatMap((metric) =>
     (['daily', 'by_category', 'by_product', 'top', 'monthly'] as const).map((kind) => `charts.${metric}_${kind}`),
   ),
   STOCK_LOTS_PERMISSION,
   STOCK_OUT_PERMISSION,
+  PROFIT_MEALS_LISTING_PERMISSION,
   ...(['daily', 'by_category', 'top', 'monthly'] as const).map((kind) => `charts.expenses_${kind}`),
 ];
 

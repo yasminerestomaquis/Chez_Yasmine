@@ -87,4 +87,33 @@ void main() {
       expect(() => mergeWeeklyCharts([]), throwsArgumentError);
     });
   });
+
+  group('realizedWeeksSince (graphique "Recettes des semaines", 2026-09-25)', () {
+    test('weeklyRevenueTrendAnchor est bien le lundi 14/09/2026 (S1)', () {
+      expect(weeklyRevenueTrendAnchor, DateTime(2026, 9, 14));
+      expect(mondayOfWeek(weeklyRevenueTrendAnchor), weeklyRevenueTrendAnchor);
+    });
+
+    test('une seule semaine (S1) quand "maintenant" tombe dans la semaine de l\'ancre', () {
+      final weeks = realizedWeeksSince(DateTime(2026, 9, 14), DateTime(2026, 9, 18));
+      expect(weeks, [DateTime(2026, 9, 14)]);
+    });
+
+    test('énumère chaque lundi jusqu\'à la semaine courante incluse, dans l\'ordre', () {
+      // 01/10/2026 (jeudi) tombe dans la semaine du 28/09 au 04/10 -> S3.
+      final weeks = realizedWeeksSince(DateTime(2026, 9, 14), DateTime(2026, 10, 1));
+      expect(weeks, [DateTime(2026, 9, 14), DateTime(2026, 9, 21), DateTime(2026, 9, 28)]);
+    });
+
+    test('ramène "maintenant" à son propre lundi avant de comparer, pas seulement l\'ancre', () {
+      // "now" un dimanche doit quand même inclure la semaine en cours entière.
+      final weeks = realizedWeeksSince(DateTime(2026, 9, 14), DateTime(2026, 9, 20));
+      expect(weeks, [DateTime(2026, 9, 14)]);
+    });
+
+    test('weekTrendLabel produit S1, S2, S3...', () {
+      expect(weekTrendLabel(1), 'S1');
+      expect(weekTrendLabel(12), 'S12');
+    });
+  });
 }

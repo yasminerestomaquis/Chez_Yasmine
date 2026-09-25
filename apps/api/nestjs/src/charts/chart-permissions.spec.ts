@@ -4,16 +4,17 @@ import {
   chartPermissionsOf,
   expenseChartPermission,
   metricChartPermission,
+  PROFIT_MEALS_LISTING_PERMISSION,
   STOCK_LOTS_PERMISSION,
   STOCK_OUT_PERMISSION,
 } from './chart-permissions.js';
 
 describe('chart-permissions', () => {
-  it('liste 16 permissions distinctes : 5 Recettes, 5 Bénéfices, 2 Stock, 4 Dépenses', () => {
-    expect(ALL_CHART_PERMISSIONS).toHaveLength(16);
-    expect(new Set(ALL_CHART_PERMISSIONS).size).toBe(16);
+  it('liste 17 permissions distinctes : 5 Recettes, 5+1 Bénéfices (listing Repas inclus), 2 Stock, 4 Dépenses', () => {
+    expect(ALL_CHART_PERMISSIONS).toHaveLength(17);
+    expect(new Set(ALL_CHART_PERMISSIONS).size).toBe(17);
     expect(ALL_CHART_PERMISSIONS.filter((c) => c.startsWith('charts.revenue_'))).toHaveLength(5);
-    expect(ALL_CHART_PERMISSIONS.filter((c) => c.startsWith('charts.profit_'))).toHaveLength(5);
+    expect(ALL_CHART_PERMISSIONS.filter((c) => c.startsWith('charts.profit_'))).toHaveLength(6);
     expect(ALL_CHART_PERMISSIONS.filter((c) => c.startsWith('charts.stock_'))).toHaveLength(2);
     expect(ALL_CHART_PERMISSIONS.filter((c) => c.startsWith('charts.expenses_'))).toHaveLength(4);
   });
@@ -38,6 +39,7 @@ describe('chart-permissions', () => {
       metricChartPermission('profit', 'monthly'),
       STOCK_LOTS_PERMISSION,
       STOCK_OUT_PERMISSION,
+      PROFIT_MEALS_LISTING_PERMISSION,
       expenseChartPermission('daily'),
       expenseChartPermission('by_category'),
       expenseChartPermission('top'),

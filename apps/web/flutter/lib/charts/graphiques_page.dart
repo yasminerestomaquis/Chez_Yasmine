@@ -1,8 +1,11 @@
 import 'package:flutter/material.dart';
 
 import '../api/api_client.dart';
-import 'charts_repository.dart';
+import '../common/browser_download.dart';
+import '../common/formatting.dart';
+import '../common/gridded_table.dart';
 import 'chart_models_permissions.dart';
+import 'charts_repository.dart';
 import 'expense_charts_tab.dart';
 import 'metric_charts_tab.dart';
 import 'stock_lots_tab.dart';
@@ -23,17 +26,41 @@ class GraphiquesPage extends StatefulWidget {
   State<GraphiquesPage> createState() => _GraphiquesPageState();
 }
 
-class _GraphiquesPageState extends State<GraphiquesPage> {
+class _GraphiquesPageState extends State<GraphiquesPage>
+    with SingleTickerProviderStateMixin {
   late int _year = DateTime.now().year;
+
+  late final ChartsRepository _charts = ChartsRepository(
+    ApiClient(),
+    widget.establishmentId,
+  );
 
   /// Graphiques autorisés au rôle courant (`charts.*`, voir « Gestion des
   /// permissions »). En cas d'échec du chargement (hors ligne, erreur), tous
   /// sont proposés : le serveur refuse de toute façon ceux qui ne sont pas
   /// accordés, chaque graphique affichant alors son propre message d'erreur.
-  late final Future<Set<String>> _permissions = ChartsRepository(
-    ApiClient(),
-    widget.establishmentId,
-  ).getMyPermissions().catchError((_) => allChartPermissions);
+  late final Future<Set<String>> _permissions =
+      _charts.getMyPermissions().catchError((_) => allChartPermissions);
+
+  /// Index de l'onglet Bénéfices dans `_tabController`/`TabBarView` — le
+  /// bouton "Repas" de l'AppBar (demande utilisateur du 2026-09-25) n'est
+  /// affiché que sur cet onglet, contrairement au filtre Année qui reste
+  /// visible sur les quatre.
+  static const _beneficesTabIndex = 1;
+
+  late final TabController _tabController = TabController(length: 4, vsync: this)
+    ..addListener(() {
+      // `indexIsChanging` reste vrai pendant l'animation de balayage — ne
+      // reconstruire qu'une fois l'onglet effectivement établi, pour ne pas
+      // faire clignoter le bouton "Repas" pendant la transition.
+      if (!_tabController.indexIsChanging) setState(() {});
+    });
+
+  @override
+  void dispose() {
+    _tabController.dispose();
+    super.dispose();
+  }
 
   static const _recettesTitles = ChartTitles(
     dailyTotal: 'Recettes journalières totales',
@@ -75,6 +102,81 @@ class _GraphiquesPageState extends State<GraphiquesPage> {
     monthly: Colors.cyan,
   );
 
+  /// Listing "Repas" (bouton de l'AppBar, onglet Bénéfices uniquement —
+  /// demande utilisateur du 2026-09-25) : cumule Plats africains/Poissons/
+  /// Poulets en une seule ligne "Repas" (`ChartsService.mealsProfitListing`,
+  /// tout l'historique, pas de filtre de période). Tableau à quadrillage
+  /// complet et défilable (`griddedTable`), exactement deux lignes de
+  /// données ("Repas" puis "TOTAL", identiques — une seule ligne agrégée),
+  /// même principe que les autres listings de l'application.
+  Future<void> _showMealsProfitListing() async {
+    try {
+      final listing = await _charts.getMealsProfitListing();
+      final rateText = '${listing.rate.toStringAsFixed(2)} %';
+      final row = [
+        'Repas',
+        formatAmount(listing.marketCost),
+        formatAmount(listing.currentRevenue),
+        formatAmount(listing.profit),
+        rateText,
+      ];
+
+      if (!mounted) return;
+      final exportRequested = await showDialog<bool>(
+        context: context,
+        builder: (context) => AlertDialog(
+          scrollable: true,
+          title: const Text('Repas'),
+          content: SizedBox(
+            width: double.maxFinite,
+            child: griddedTable(
+              context,
+              headers: const [
+                'Repas',
+                'Prix marché (FCFA)',
+                'Recette actuelle (FCFA)',
+                'Bénéfice (FCFA)',
+                'Taux',
+              ],
+              numericColumns: const [false, true, true, true, true],
+              rows: [row],
+              totalRow: ['TOTAL', row[1], row[2], row[3], row[4]],
+            ),
+          ),
+          actions: [
+            TextButton(
+              onPressed: () => Navigator.of(context).pop(false),
+              child: const Text('Fermer'),
+            ),
+            FilledButton.icon(
+              onPressed: () => Navigator.of(context).pop(true),
+              icon: const Icon(Icons.picture_as_pdf_outlined),
+              label: const Text('Exporter en PDF'),
+            ),
+          ],
+        ),
+      );
+      if (exportRequested == true) {
+        await _downloadMealsProfitListingPdf();
+      }
+    } catch (error) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(context)
+          .showSnackBar(SnackBar(content: Text('$error')));
+    }
+  }
+
+  Future<void> _downloadMealsProfitListingPdf() async {
+    try {
+      final result = await _charts.exportMealsProfitListingPdf();
+      downloadBytes(result.bytes, result.filename ?? 'Repas.pdf');
+    } catch (error) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(context)
+          .showSnackBar(SnackBar(content: Text('$error')));
+    }
+  }
+
   @override
   Widget build(BuildContext context) {
     final currentYear = DateTime.now().year;
@@ -99,76 +201,83 @@ class _GraphiquesPageState extends State<GraphiquesPage> {
     Set<String> allowed,
     List<int> years,
   ) {
-    return DefaultTabController(
-      length: 4,
-      child: Scaffold(
-        appBar: AppBar(
-          title: const Text('Graphiques'),
-          actions: [
-            Padding(
-              padding: const EdgeInsets.only(right: 12),
-              child: Center(
-                child: DropdownButton<int>(
-                  value: _year,
-                  dropdownColor: Theme.of(context).colorScheme.surface,
-                  underline: const SizedBox.shrink(),
-                  items: [
-                    for (final y in years)
-                      DropdownMenuItem(value: y, child: Text('$y')),
-                  ],
-                  onChanged: (value) {
-                    if (value != null) setState(() => _year = value);
-                  },
-                ),
+    final onBenefices = _tabController.index == _beneficesTabIndex;
+    return Scaffold(
+      appBar: AppBar(
+        title: const Text('Graphiques'),
+        actions: [
+          if (onBenefices && allowed.contains('charts.profit_meals_listing'))
+            IconButton(
+              tooltip: 'Repas (listing, export PDF)',
+              icon: const Icon(Icons.picture_as_pdf_outlined),
+              onPressed: _showMealsProfitListing,
+            ),
+          Padding(
+            padding: const EdgeInsets.only(right: 12),
+            child: Center(
+              child: DropdownButton<int>(
+                value: _year,
+                dropdownColor: Theme.of(context).colorScheme.surface,
+                underline: const SizedBox.shrink(),
+                items: [
+                  for (final y in years)
+                    DropdownMenuItem(value: y, child: Text('$y')),
+                ],
+                onChanged: (value) {
+                  if (value != null) setState(() => _year = value);
+                },
               ),
             ),
-          ],
-          bottom: const TabBar(
-            tabs: [
-              Tab(text: 'Recettes'),
-              Tab(text: 'Bénéfices'),
-              Tab(text: 'Stock'),
-              Tab(text: 'Dépenses'),
-            ],
           ),
-        ),
-        body: TabBarView(
-          children: [
-            MetricChartsTab(
-              key: ValueKey('recettes-$_year'),
-              establishmentId: widget.establishmentId,
-              year: _year,
-              metric: 'revenue',
-              permissionKey: 'revenue',
-              allowed: allowed,
-              titles: _recettesTitles,
-              palette: _recettesPalette,
-            ),
-            MetricChartsTab(
-              key: ValueKey('benefices-$_year'),
-              establishmentId: widget.establishmentId,
-              year: _year,
-              metric: 'profit',
-              permissionKey: 'profit',
-              allowed: allowed,
-              titles: _beneficesTitles,
-              palette: _beneficesPalette,
-              groupNetVsGross: true,
-            ),
-            // Pas de clé liée à `_year` : voir la doc de classe, cet onglet
-            // représente l'état courant du stock, pas une période.
-            StockLotsTab(
-              establishmentId: widget.establishmentId,
-              allowed: allowed,
-            ),
-            ExpenseChartsTab(
-              key: ValueKey('depenses-$_year'),
-              establishmentId: widget.establishmentId,
-              year: _year,
-              allowed: allowed,
-            ),
+        ],
+        bottom: TabBar(
+          controller: _tabController,
+          tabs: const [
+            Tab(text: 'Recettes'),
+            Tab(text: 'Bénéfices'),
+            Tab(text: 'Stock'),
+            Tab(text: 'Dépenses'),
           ],
         ),
+      ),
+      body: TabBarView(
+        controller: _tabController,
+        children: [
+          MetricChartsTab(
+            key: ValueKey('recettes-$_year'),
+            establishmentId: widget.establishmentId,
+            year: _year,
+            metric: 'revenue',
+            permissionKey: 'revenue',
+            allowed: allowed,
+            titles: _recettesTitles,
+            palette: _recettesPalette,
+            showWeeklyRevenueTrend: true,
+          ),
+          MetricChartsTab(
+            key: ValueKey('benefices-$_year'),
+            establishmentId: widget.establishmentId,
+            year: _year,
+            metric: 'profit',
+            permissionKey: 'profit',
+            allowed: allowed,
+            titles: _beneficesTitles,
+            palette: _beneficesPalette,
+            groupNetVsGross: true,
+          ),
+          // Pas de clé liée à `_year` : voir la doc de classe, cet onglet
+          // représente l'état courant du stock, pas une période.
+          StockLotsTab(
+            establishmentId: widget.establishmentId,
+            allowed: allowed,
+          ),
+          ExpenseChartsTab(
+            key: ValueKey('depenses-$_year'),
+            establishmentId: widget.establishmentId,
+            year: _year,
+            allowed: allowed,
+          ),
+        ],
       ),
     );
   }

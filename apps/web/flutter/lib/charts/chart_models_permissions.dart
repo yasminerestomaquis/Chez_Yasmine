@@ -1,4 +1,4 @@
-/// Les 16 permissions de graphiques (`charts.<sous-module>_<graphique>`) —
+/// Les 17 permissions de graphiques (`charts.<sous-module>_<graphique>`) —
 /// miroir de `ALL_CHART_PERMISSIONS`
 /// (apps/api/nestjs/src/charts/chart-permissions.ts). Sert de repli quand la
 /// liste réellement accordée n'a pas pu être chargée.
@@ -15,6 +15,7 @@ const Set<String> allChartPermissions = {
   'charts.profit_monthly',
   'charts.stock_lots',
   'charts.stock_out',
+  'charts.profit_meals_listing',
   'charts.expenses_daily',
   'charts.expenses_by_category',
   'charts.expenses_top',

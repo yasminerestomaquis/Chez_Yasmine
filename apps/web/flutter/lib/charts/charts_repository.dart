@@ -190,4 +190,16 @@ class ChartsRepository {
       }),
     );
   }
+
+  /// Listing "Repas" (onglet Bénéfices, bouton d'export — demande
+  /// utilisateur du 2026-09-25).
+  Future<MealsProfitListing> getMealsProfitListing() async {
+    final json = await _api.get('$_base/meals-profit-listing') as Map<String, dynamic>;
+    return MealsProfitListing.fromJson(json);
+  }
+
+  /// Export PDF du même listing, tableau à quadrillage complet.
+  Future<({List<int> bytes, String? filename})> exportMealsProfitListingPdf() {
+    return _api.getBytes('$_base/meals-profit-listing.pdf');
+  }
 }

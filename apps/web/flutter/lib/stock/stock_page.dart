@@ -94,12 +94,6 @@ class _StockPageState extends State<StockPage> {
   // `stock.manage` — accès en lecture seule (pas de "Mouvement de stock").
   bool get _isServeur => widget.roleName == 'Serveur';
 
-  /// Bouton "Stock actif" (listing/export PDF, AppBar) réservé au Super
-  /// Administrateur — demande utilisateur du 2026-09-25. Même limitation que
-  /// `_isServeur` ci-dessus : comparaison par nom de rôle, `GET /auth/me`
-  /// n'exposant pas de code de permission dédié au client.
-  bool get _isSuperAdmin => widget.roleName == 'Super Administrateur';
-
   late final CatalogRepository _catalog = CatalogRepository(
     ApiClient(),
     widget.establishmentId,
@@ -114,6 +108,14 @@ class _StockPageState extends State<StockPage> {
   );
   late final CatalogCache _cache = CatalogCache(widget.establishmentId);
   late Future<_StockPageData> _future = _load();
+
+  /// Permission `stock.active_listing` — visibilité du bouton "Stock actif"
+  /// de l'AppBar (demande utilisateur du 2026-09-25, accordable/révocable
+  /// rôle par rôle depuis "Gestion des permissions" > Stock — remplace la
+  /// précédente restriction codée en dur au Super Administrateur). Échec
+  /// réseau : bouton masqué par défaut, comme `canViewValue` ci-dessous.
+  late final Future<Set<String>> _stockPermissions =
+      _stock.getMyPermissions().catchError((_) => <String>{});
 
   String _search = '';
   String _filter = _kFilterAll;
@@ -395,12 +397,19 @@ class _StockPageState extends State<StockPage> {
       appBar: AppBar(
         title: const Text('Stock'),
         actions: [
-          if (_isSuperAdmin)
-            IconButton(
-              tooltip: 'Stock actif (listing, export PDF)',
-              icon: const Icon(Icons.picture_as_pdf_outlined),
-              onPressed: _showActiveStockListing,
-            ),
+          FutureBuilder<Set<String>>(
+            future: _stockPermissions,
+            builder: (context, snapshot) {
+              if (!(snapshot.data?.contains('stock.active_listing') ?? false)) {
+                return const SizedBox.shrink();
+              }
+              return IconButton(
+                tooltip: 'Stock actif (listing, export PDF)',
+                icon: const Icon(Icons.picture_as_pdf_outlined),
+                onPressed: _showActiveStockListing,
+              );
+            },
+          ),
         ],
       ),
       body: Column(

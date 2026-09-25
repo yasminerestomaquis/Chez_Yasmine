@@ -149,6 +149,22 @@ Aucune migration Prisma : le regroupement affiché (Catalogue, Stock, Caisse...)
 
 Les 16 permissions `charts.*` (voir `docs/api/charts.md`) se regroupent sous un module **Graphiques** à quatre sous-modules — Recettes, Bénéfices, Stock, Dépenses. Pour ces codes uniquement, la clé de regroupement n'est pas le seul préfixe `charts` mais `charts.<sous-module>` (segment avant le premier `_`, `modulePrefixOf`), et les lignes suivent l'ordre naturel des graphiques (journalier, par catégorie, par produit, top, mensuel ; Stock : détail puis épuisés) plutôt que l'ordre alphabétique des codes (`_sortedChartPermissions`).
 
+### Nouvelles permissions à bascule client (2026-09-25)
+
+Demande explicite de l'utilisateur : accorder/refuser individuellement, depuis ce tableau de bord, cinq boutons jusqu'ici toujours visibles (ou codés en dur au seul Super Administrateur) — regroupement dans la matrice dérivé du préfixe de `permission.code` comme toute autre permission, aucune migration UI dédiée :
+
+| Code | Bouton | Module/sous-module affiché | Défaut |
+|---|---|---|---|
+| `stock.active_listing` | "Stock actif" (listing, export PDF), AppBar du module Stock | Stock | Super Administrateur seul (`STOCK_ACTIVE_LISTING_PERMISSION`, `stock-permissions.ts` — même schéma que `stock.view_value`) |
+| `reports.beverages_sold` | "Boissons vendues", AppBar du module Rapports | Rapports | Tout rôle qui porte déjà `reports.view` |
+| `reports.plats_sold` | "Plats vendus", AppBar du module Rapports | Rapports | Tout rôle qui porte déjà `reports.view` |
+| `reports.export` | "Exporter" (CSV + commande d'achat), AppBar du module Rapports | Rapports | Tout rôle qui porte déjà `reports.view` |
+| `charts.profit_meals_listing` | "Repas" (listing, export PDF), onglet Graphiques > Bénéfices | Graphiques > Bénéfices | Tout rôle qui porte déjà `reports.view` (même mécanisme que les 16 permissions `charts.*` existantes) |
+
+`stock.active_listing` est la seule des cinq à rompre avec le comportement précédent (le bouton n'existait pas avant ce jour, donc aucune régression à préserver) — les quatre autres remplacent une visibilité jusque-là inconditionnelle par une permission que tout rôle avec `reports.view` reçoit automatiquement (`supabase/seed/001_roles_permissions.sql`, blocs dédiés après les attributions `reports.view`/`charts.%`), donc rien ne change tant qu'un de ces boutons n'est pas explicitement refusé à un rôle.
+
+Côté client, `StockPage`/`ReportsPage` interrogent désormais une route `GET .../permissions` dédiée à leur module (`stock/permissions`, `reports/permissions`, même principe que `charts/permissions`) et masquent le bouton concerné si le code correspondant n'est pas accordé — remplace la précédente comparaison par nom de rôle codée en dur pour "Stock actif" (`StockPage._isSuperAdmin`, retirée). `GraphiquesPage` réutilise directement `charts/permissions`, déjà chargée pour les 16 permissions existantes.
+
 ### `grant`/`revoke` idempotents
 
 `grant` utilise `prisma.rolePermission.createMany({ data: [...], skipDuplicates: true })` (équivalent `ON CONFLICT DO NOTHING`) plutôt qu'une vérification d'existence puis création — cocher une case déjà cochée ne renvoie pas d'erreur. `revoke` (`deleteMany`) est par nature idempotent (décocher une case déjà décochée ne fait rien).

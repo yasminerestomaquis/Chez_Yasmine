@@ -95,6 +95,13 @@ class _ReportsPageState extends State<ReportsPage> {
   String _period = 'day';
   late Future<_ReportsData> _future = _load(_period);
 
+  /// Boutons Rapports que l'appelant a le droit d'utiliser (`reports.*` —
+  /// demande utilisateur du 2026-09-25, accordable/révocable rôle par rôle
+  /// depuis "Gestion des permissions" > Rapports). Échec réseau : boutons
+  /// masqués par défaut, même convention que `StockPage._stockPermissions`.
+  late final Future<Set<String>> _reportsPermissions =
+      _repository.getMyPermissions().catchError((_) => <String>{});
+
   Future<_ReportsData> _load(String period) async {
     final current = await _repository.getSummary(period: period);
     // Période de comparaison : même durée que la période choisie, immédiatement
@@ -700,11 +707,11 @@ class _ReportsPageState extends State<ReportsPage> {
     );
   }
 
+  /// Sans icône ("vignette illustrée") depuis le 2026-09-25, demande
+  /// utilisateur — juste le libellé, la valeur et la variation.
   Widget _kpiCard({
-    required IconData icon,
     required String label,
     required String value,
-    required Color color,
     ({String text, bool positive})? change,
   }) {
     return Card(
@@ -714,22 +721,14 @@ class _ReportsPageState extends State<ReportsPage> {
           crossAxisAlignment: CrossAxisAlignment.start,
           mainAxisAlignment: MainAxisAlignment.spaceBetween,
           children: [
-            Row(
-              children: [
-                Icon(icon, size: 15, color: color),
-                const SizedBox(width: 6),
-                Expanded(
-                  child: Text(
-                    label,
-                    style: const TextStyle(
-                      fontSize: 11,
-                      color: AppColors.textSecondary,
-                    ),
-                    maxLines: 1,
-                    overflow: TextOverflow.ellipsis,
-                  ),
-                ),
-              ],
+            Text(
+              label,
+              style: const TextStyle(
+                fontSize: 11,
+                color: AppColors.textSecondary,
+              ),
+              maxLines: 1,
+              overflow: TextOverflow.ellipsis,
             ),
             Text(
               value,
@@ -1027,33 +1026,47 @@ class _ReportsPageState extends State<ReportsPage> {
       appBar: AppBar(
         title: const Text('Rapports'),
         actions: [
-          IconButton(
-            tooltip: 'Boissons vendues',
-            icon: const Icon(Icons.local_bar_outlined),
-            onPressed: _showBeveragesSoldListing,
-          ),
-          IconButton(
-            tooltip: 'Plats vendus',
-            icon: const Icon(Icons.restaurant_outlined),
-            onPressed: _showPlatsSoldListing,
-          ),
-          PopupMenuButton<String>(
-            tooltip: 'Exporter',
-            icon: const Icon(Icons.download_outlined),
-            onSelected: (value) {
-              if (value == 'csv') _exportCsv();
-              if (value == 'purchase') _exportPurchaseOrderDialog();
+          FutureBuilder<Set<String>>(
+            future: _reportsPermissions,
+            builder: (context, snapshot) {
+              final allowed = snapshot.data ?? const <String>{};
+              return Row(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  if (allowed.contains('reports.beverages_sold'))
+                    IconButton(
+                      tooltip: 'Boissons vendues',
+                      icon: const Icon(Icons.local_bar_outlined),
+                      onPressed: _showBeveragesSoldListing,
+                    ),
+                  if (allowed.contains('reports.plats_sold'))
+                    IconButton(
+                      tooltip: 'Plats vendus',
+                      icon: const Icon(Icons.restaurant_outlined),
+                      onPressed: _showPlatsSoldListing,
+                    ),
+                  if (allowed.contains('reports.export'))
+                    PopupMenuButton<String>(
+                      tooltip: 'Exporter',
+                      icon: const Icon(Icons.download_outlined),
+                      onSelected: (value) {
+                        if (value == 'csv') _exportCsv();
+                        if (value == 'purchase') _exportPurchaseOrderDialog();
+                      },
+                      itemBuilder: (context) => const [
+                        PopupMenuItem(
+                          value: 'csv',
+                          child: Text('Exporter le rapport (CSV)'),
+                        ),
+                        PopupMenuItem(
+                          value: 'purchase',
+                          child: Text('Exporter une commande d\'achat'),
+                        ),
+                      ],
+                    ),
+                ],
+              );
             },
-            itemBuilder: (context) => const [
-              PopupMenuItem(
-                value: 'csv',
-                child: Text('Exporter le rapport (CSV)'),
-              ),
-              PopupMenuItem(
-                value: 'purchase',
-                child: Text('Exporter une commande d\'achat'),
-              ),
-            ],
           ),
         ],
       ),
@@ -1113,26 +1126,18 @@ class _ReportsPageState extends State<ReportsPage> {
                           ),
                       children: [
                         _kpiCard(
-                          icon: Icons.payments_outlined,
                           label: "Chiffre d'affaires",
                           value: '${formatAmount(s.revenue)} F',
-                          color: AppColors.green,
                           change: _pctChange(s.revenue, prev?.revenue),
                         ),
                         _kpiCard(
-                          icon: Icons.trending_up,
                           label: 'Bénéfice net',
                           value: '${formatAmount(s.netProfit)} F',
-                          color: s.netProfit >= 0
-                              ? AppColors.green
-                              : AppColors.alert,
                           change: _pctChange(s.netProfit, prev?.netProfit),
                         ),
                         _kpiCard(
-                          icon: Icons.receipt_long_outlined,
                           label: 'Ventes',
                           value: '${s.salesCount}',
-                          color: AppColors.orange,
                           change: _absChange(
                             prev != null
                                 ? s.salesCount - prev.salesCount
@@ -1140,10 +1145,8 @@ class _ReportsPageState extends State<ReportsPage> {
                           ),
                         ),
                         _kpiCard(
-                          icon: Icons.shopping_basket_outlined,
                           label: 'Panier moyen',
                           value: '${formatAmount(avgBasket)} F',
-                          color: AppColors.orange,
                           change: _pctChange(avgBasket, prevAvgBasket),
                         ),
                       ],

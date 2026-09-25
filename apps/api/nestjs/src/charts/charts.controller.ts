@@ -7,9 +7,11 @@ import {
   chartPermissionsOf,
   expenseChartPermission,
   metricChartPermission,
+  PROFIT_MEALS_LISTING_PERMISSION,
   STOCK_LOTS_PERMISSION,
   STOCK_OUT_PERMISSION,
 } from './chart-permissions.js';
+import { STOCK_ACTIVE_LISTING_PERMISSION } from '../stock/stock-permissions.js';
 import { ChartsService } from './charts.service.js';
 import {
   ActiveStockListingQueryDto,
@@ -106,8 +108,11 @@ export class ChartsController {
 
   /**
    * Listing "Stock actif" (module Stock — demande utilisateur du
-   * 2026-09-25), même permission que `stock-lots` : une agrégation par
-   * produit des mêmes lots FIFO actifs.
+   * 2026-09-25) : une agrégation par produit des mêmes lots FIFO actifs que
+   * `stock-lots`. Permission dédiée (`stock.active_listing`, pas
+   * `charts.stock_lots`) pour rester accordable/révocable indépendamment
+   * depuis « Gestion des permissions » — par défaut Super Administrateur
+   * seul (voir supabase/seed/001_roles_permissions.sql).
    */
   @Get('active-stock-listing')
   async activeStockListing(
@@ -115,7 +120,7 @@ export class ChartsController {
     @Param('establishmentId') establishmentId: string,
     @Query() query: ActiveStockListingQueryDto,
   ) {
-    await this.require(request, establishmentId, STOCK_LOTS_PERMISSION);
+    await this.require(request, establishmentId, STOCK_ACTIVE_LISTING_PERMISSION);
     const categoryIds = query.categoryIds?.split(',').filter((id) => id.length > 0);
     return this.charts.activeStockListing(establishmentId, categoryIds);
   }
@@ -126,9 +131,27 @@ export class ChartsController {
     @Param('establishmentId') establishmentId: string,
     @Query() query: ActiveStockListingQueryDto,
   ): Promise<StreamableFile> {
-    await this.require(request, establishmentId, STOCK_LOTS_PERMISSION);
+    await this.require(request, establishmentId, STOCK_ACTIVE_LISTING_PERMISSION);
     const categoryIds = query.categoryIds?.split(',').filter((id) => id.length > 0);
     const { buffer, filename } = await this.charts.activeStockListingPdf(establishmentId, categoryIds);
+    return new StreamableFile(buffer, { type: 'application/pdf', disposition: `attachment; filename="${filename}"` });
+  }
+
+  /**
+   * Listing "Repas" (onglet Bénéfices — demande utilisateur du 2026-09-25) :
+   * cumule Plats africains/Poissons/Poulets en une seule ligne, aucun
+   * paramètre (tout l'historique, pas de filtre de période).
+   */
+  @Get('meals-profit-listing')
+  async mealsProfitListing(@Req() request: Request, @Param('establishmentId') establishmentId: string) {
+    await this.require(request, establishmentId, PROFIT_MEALS_LISTING_PERMISSION);
+    return this.charts.mealsProfitListing(establishmentId);
+  }
+
+  @Get('meals-profit-listing.pdf')
+  async mealsProfitListingPdf(@Req() request: Request, @Param('establishmentId') establishmentId: string): Promise<StreamableFile> {
+    await this.require(request, establishmentId, PROFIT_MEALS_LISTING_PERMISSION);
+    const { buffer, filename } = await this.charts.mealsProfitListingPdf(establishmentId);
     return new StreamableFile(buffer, { type: 'application/pdf', disposition: `attachment; filename="${filename}"` });
   }
 

@@ -147,3 +147,31 @@ DateTime _clampToYear(DateTime date, int year) {
   final now = DateTime.now();
   return now.year == year ? now : DateTime(year, 1, 15);
 }
+
+/// Semaine S1 fixe (décision utilisateur du 2026-09-25) : lundi 14/09/2026
+/// au dimanche 20/09/2026 — point de départ du graphique « Recettes des
+/// semaines » (onglet Recettes), indépendant de l'année civile choisie
+/// ailleurs dans le module Graphiques.
+final DateTime weeklyRevenueTrendAnchor = DateTime(2026, 9, 14);
+
+/// Lundis de [anchor] (ramené à son propre lundi, par sécurité) jusqu'à la
+/// semaine courante incluse (celle de [now]), dans l'ordre chronologique —
+/// « les semaines réalisées ». `now` est un paramètre plutôt que
+/// `DateTime.now()` lu en interne, pour rester testable avec une date fixe.
+List<DateTime> realizedWeeksSince(DateTime anchor, DateTime now) {
+  final anchorMonday = mondayOfWeek(anchor);
+  final currentMonday = mondayOfWeek(now);
+  final weeks = <DateTime>[];
+  var w = anchorMonday;
+  while (!w.isAfter(currentMonday)) {
+    weeks.add(w);
+    w = w.add(const Duration(days: 7));
+  }
+  return weeks;
+}
+
+/// Libellé « S1 », « S2 »... d'une semaine selon sa position (1-based) dans
+/// la liste ordonnée de `realizedWeeksSince` — fixe pour une semaine donnée,
+/// indépendant de la sélection du filtre multi-semaines (retirer S2 de
+/// l'affichage laisse un trou plutôt que renuméroter S3 en S2).
+String weekTrendLabel(int oneBasedIndex) => 'S$oneBasedIndex';

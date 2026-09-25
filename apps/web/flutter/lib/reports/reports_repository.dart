@@ -10,6 +10,14 @@ class ReportsRepository {
 
   String get _base => '/establishments/$establishmentId/reports';
 
+  /// Boutons Rapports que l'appelant a le droit d'utiliser (`reports.*`,
+  /// voir « Gestion des permissions ») — demande utilisateur du 2026-09-25,
+  /// même principe que `ChartsRepository.getMyPermissions`.
+  Future<Set<String>> getMyPermissions() async {
+    final json = await _api.get('$_base/permissions') as Map<String, dynamic>;
+    return (json['permissions'] as List<dynamic>).cast<String>().toSet();
+  }
+
   /// [period] est ignoré si [from]/[to] sont fournis (même priorité que
   /// côté serveur, voir `ReportsService.resolveRange`) — utilisé par
   /// `ReportsPage` pour recalculer la période de comparaison précédente

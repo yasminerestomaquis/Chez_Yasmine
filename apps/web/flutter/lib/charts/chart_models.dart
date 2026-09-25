@@ -257,3 +257,30 @@ class ActiveStockListingRow {
         profit: (json['profit'] as num).toDouble(),
       );
 }
+
+/// Listing "Repas" (Graphiques > Bénéfices) — cumule Plats africains/
+/// Poissons/Poulets en une seule ligne, tout l'historique — voir
+/// `ChartsService.mealsProfitListing`.
+class MealsProfitListing {
+  MealsProfitListing({
+    required this.marketCost,
+    required this.currentRevenue,
+    required this.profit,
+    required this.rate,
+  });
+
+  final double marketCost;
+  final double currentRevenue;
+  final double profit;
+
+  /// Pourcentage (déjà multiplié par 100 côté serveur, ex. 50.0 = 50 %).
+  final double rate;
+
+  factory MealsProfitListing.fromJson(Map<String, dynamic> json) =>
+      MealsProfitListing(
+        marketCost: (json['marketCost'] as num).toDouble(),
+        currentRevenue: (json['currentRevenue'] as num).toDouble(),
+        profit: (json['profit'] as num).toDouble(),
+        rate: (json['rate'] as num).toDouble(),
+      );
+}

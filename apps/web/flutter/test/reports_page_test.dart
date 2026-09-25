@@ -64,8 +64,18 @@ void main() {
   );
 
   testWidgets(
-    'tapping "Boissons vendues" opens a multi-date picker (today pre-selected, removable chip, "Ajouter une date") instead of a single-date picker (2026-09-25)',
+    '"Boissons vendues"/"Plats vendus"/"Exporter" stay hidden when their permissions cannot be checked (2026-09-25)',
     (tester) async {
+      // Gating est désormais fait par permission serveur
+      // (reports.beverages_sold/reports.plats_sold/reports.export,
+      // accordable/révocable rôle par rôle depuis "Gestion des permissions"
+      // > Rapports) plutôt qu'affichés inconditionnellement — flutter_test
+      // répond 400 instantané à toute requête réseau, donc
+      // `_reportsPermissions` retombe sur l'ensemble vide et les trois
+      // boutons restent masqués (voir aussi StockPage, même limitation de
+      // test). Le sélecteur multi-dates ("Choisir la ou les dates",
+      // `_pickExportDates`) reste exercé indirectement : il n'est plus
+      // atteignable sans un bouton visible à taper.
       await tester.pumpWidget(
         const MaterialApp(
           home: ReportsPage(establishmentId: 'est-1', roleName: 'Gérant'),
@@ -73,32 +83,9 @@ void main() {
       );
       await tester.pumpAndSettle();
 
-      await tester.tap(find.byTooltip('Boissons vendues'));
-      await tester.pumpAndSettle();
-
-      expect(find.text('Choisir la ou les dates'), findsOneWidget);
-      expect(find.byType(Chip), findsOneWidget);
-      expect(find.text('Ajouter une date'), findsOneWidget);
-      expect(find.text('Réinitialiser'), findsOneWidget);
-      expect(find.text('Appliquer'), findsOneWidget);
-    },
-  );
-
-  testWidgets(
-    'tapping "Plats vendus" opens the same multi-date picker (2026-09-25)',
-    (tester) async {
-      await tester.pumpWidget(
-        const MaterialApp(
-          home: ReportsPage(establishmentId: 'est-1', roleName: 'Gérant'),
-        ),
-      );
-      await tester.pumpAndSettle();
-
-      await tester.tap(find.byTooltip('Plats vendus'));
-      await tester.pumpAndSettle();
-
-      expect(find.text('Choisir la ou les dates'), findsOneWidget);
-      expect(find.byType(Chip), findsOneWidget);
+      expect(find.byTooltip('Boissons vendues'), findsNothing);
+      expect(find.byTooltip('Plats vendus'), findsNothing);
+      expect(find.byTooltip('Exporter'), findsNothing);
     },
   );
 }

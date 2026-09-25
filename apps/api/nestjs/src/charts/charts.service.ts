@@ -822,6 +822,101 @@ export class ChartsService {
     return { buffer, filename: 'Stock actif.pdf' };
   }
 
+  /**
+   * Listing "Repas" (module Graphiques > Bénéfices, bouton d'export — demande
+   * utilisateur du 2026-09-25) : cumule les trois catégories à prix variable
+   * (Plats africains/Poissons/Poulets, `hasVariablePricing`) en une seule
+   * ligne "Repas" — pas de ventilation par catégorie ni par produit. Portée :
+   * tout l'historique (pas de filtre de période, décision utilisateur — même
+   * convention que le listing Stock actif).
+   *
+   * - `marketCost` : somme de toutes les dépenses de catégorie `'Marché'`
+   *   **et** `'Bouteilles de gaz'` — les deux seules natures de dépense
+   *   directement rattachables à l'approvisionnement des repas (le carburant
+   *   de cuisson, comme le marché lui-même, n'a pas d'autre destination dans
+   *   ce commerce).
+   * - `currentRevenue` : somme des lignes de vente (`SaleItem`, ventes non
+   *   annulées) dont le produit appartient à une catégorie `hasVariablePricing`
+   *   — même filtre que `ReportsService.paymentCategoryBreakdown`
+   *   (groupe "Plats").
+   * - `profit = currentRevenue - marketCost` (confirmé explicitement par
+   *   l'utilisateur le 2026-09-25 — la formule "dépenses − recettes" du
+   *   message d'origine aurait donné un bénéfice négatif pour une activité
+   *   rentable, incohérent avec le `rate` en pourcentage attendu positif).
+   * - `rate = profit × 100 / marketCost` (0 si `marketCost` est nul, pour
+   *   éviter une division par zéro).
+   */
+  async mealsProfitListing(establishmentId: string): Promise<{
+    marketCost: number;
+    currentRevenue: number;
+    profit: number;
+    rate: number;
+  }> {
+    const [expenses, saleItems] = await Promise.all([
+      this.prisma.expense.findMany({
+        where: { establishmentId, category: { in: ['Marché', 'Bouteilles de gaz'] } },
+        select: { amount: true },
+      }),
+      this.prisma.saleItem.findMany({
+        where: {
+          sale: { establishmentId, voidedAt: null },
+          product: { category: { hasVariablePricing: true } },
+        },
+        select: { quantity: true, unitPrice: true },
+      }),
+    ]);
+
+    const marketCost = expenses.reduce((sum, e) => sum + e.amount.toNumber(), 0);
+    const currentRevenue = saleItems.reduce((sum, i) => sum + i.quantity.toNumber() * i.unitPrice.toNumber(), 0);
+    const profit = currentRevenue - marketCost;
+    const rate = marketCost > 0 ? (profit * 100) / marketCost : 0;
+
+    return { marketCost, currentRevenue, profit, rate };
+  }
+
+  /**
+   * Export PDF du listing `mealsProfitListing` ci-dessus — tableau à
+   * quadrillage complet (`drawPdfTable`), exactement deux lignes de données
+   * ("Repas" puis "TOTAL", cette dernière identique à la première puisqu'il
+   * n'y a qu'une seule ligne agrégée — même convention "toujours une ligne
+   * TOTAL" que les autres listings de l'application).
+   */
+  async mealsProfitListingPdf(establishmentId: string): Promise<{ buffer: Buffer; filename: string }> {
+    const { marketCost, currentRevenue, profit, rate } = await this.mealsProfitListing(establishmentId);
+
+    const doc = new PDFDocument({ margin: 30, size: 'A4' });
+    const chunks: Buffer[] = [];
+    doc.on('data', (chunk: Buffer) => chunks.push(chunk));
+    const done = new Promise<void>((resolve) => doc.on('end', () => resolve()));
+
+    doc.fontSize(14).font('Helvetica-Bold').text('Repas', { align: 'left' });
+    doc.fontSize(10).font('Helvetica').text('Plats africains, Poissons, Poulets — cumulés');
+    doc.moveDown(0.5);
+
+    const rate2 = `${rate.toFixed(2)} %`;
+
+    drawPdfTable(
+      doc,
+      [
+        { header: 'Repas', width: 100 },
+        { header: 'Prix marché (FCFA)', width: 130, align: 'right' },
+        { header: 'Recette actuelle (FCFA)', width: 130, align: 'right' },
+        { header: 'Bénéfice (FCFA)', width: 110, align: 'right' },
+        { header: 'Taux', width: 65, align: 'right' },
+      ],
+      [
+        ['Repas', formatFcfa(marketCost), formatFcfa(currentRevenue), formatFcfa(profit), rate2],
+        ['TOTAL', formatFcfa(marketCost), formatFcfa(currentRevenue), formatFcfa(profit), rate2],
+      ],
+      { boldRowIndexes: new Set([1]) },
+    );
+
+    doc.end();
+    await done;
+    const buffer = Buffer.concat(chunks);
+    return { buffer, filename: 'Repas.pdf' };
+  }
+
   /** "Top des produits épuisés" (sous-module Stock) : produits actifs en rupture (stockQuantity ≤ 0), triés par ordre alphabétique croissant — seul critère "croissant" disponible en l'absence d'un autre axe numérique demandé. */
   async outOfStockProducts(establishmentId: string) {
     const products = await this.prisma.product.findMany({

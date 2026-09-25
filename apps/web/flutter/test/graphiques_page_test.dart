@@ -36,13 +36,30 @@ void main() {
     expect(find.text('Bénéfices'), findsOneWidget);
     expect(find.text('${DateTime.now().year}'), findsOneWidget);
 
-    // Onglet Recettes actif par défaut : les 5 graphiques du sous-module.
+    // Onglet Recettes actif par défaut : les 5 graphiques du sous-module,
+    // plus "Recettes des semaines" (2026-09-25, Recettes uniquement).
     expect(find.text('Recettes journalières totales'), findsOneWidget);
     expect(find.text('Recettes journalières totales par catégorie'), findsOneWidget);
     expect(find.text('Recettes journalières totales par produit'), findsOneWidget);
     expect(find.text('Top recettes'), findsOneWidget);
     expect(find.text('Recettes mensuelles'), findsOneWidget);
+    expect(find.text('Recettes des semaines'), findsOneWidget);
   });
+
+  testWidgets(
+    '"Recettes des semaines" only appears on the Recettes tab, with a week multi-select defaulting to all weeks (2026-09-25)',
+    (tester) async {
+      await pumpPage(tester);
+
+      expect(find.text('Recettes des semaines'), findsOneWidget);
+      expect(find.text('Toutes les semaines'), findsOneWidget);
+
+      await tester.tap(find.text('Bénéfices'));
+      await tester.pumpAndSettle();
+
+      expect(find.text('Recettes des semaines'), findsNothing);
+    },
+  );
 
   testWidgets('switching to the Bénéfices tab shows its five chart titles without an unhandled error',
       (tester) async {
@@ -142,6 +159,31 @@ void main() {
       expect(find.widgetWithText(FilterChip, 'Toutes'), findsOneWidget);
       expect(find.widgetWithText(FilterChip, 'Loyer'), findsOneWidget);
       expect(find.widgetWithText(FilterChip, 'Bouteilles de gaz'), findsOneWidget);
+    },
+  );
+
+  testWidgets(
+    'the "Repas" export button only appears on the Bénéfices tab (2026-09-25)',
+    (tester) async {
+      await pumpPage(tester);
+
+      // Onglet Recettes actif par défaut : le bouton ne doit pas apparaître.
+      expect(find.byTooltip('Repas (listing, export PDF)'), findsNothing);
+
+      await tester.tap(find.text('Bénéfices'));
+      await tester.pumpAndSettle();
+
+      // Échec réseau (flutter_test) : `_permissions` retombe sur
+      // `allChartPermissions`, qui inclut `charts.profit_meals_listing` —
+      // contrairement à StockPage/ReportsPage (repli sur l'ensemble vide),
+      // ce module affiche tout par défaut et laisse le serveur refuser ce
+      // qui n'est pas accordé (voir la doc de `_permissions`).
+      expect(find.byTooltip('Repas (listing, export PDF)'), findsOneWidget);
+
+      await tester.tap(find.text('Stock'));
+      await tester.pumpAndSettle();
+
+      expect(find.byTooltip('Repas (listing, export PDF)'), findsNothing);
     },
   );
 }

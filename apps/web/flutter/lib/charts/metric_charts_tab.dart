@@ -11,6 +11,7 @@ import 'monthly_line_chart.dart';
 import 'ranking_bar_chart.dart';
 import 'week_selection.dart';
 import 'weekly_bar_chart.dart';
+import 'weekly_revenue_trend_chart.dart';
 
 /// Une couleur différente par graphique au sein d'un même sous-module,
 /// comme demandé ("Mets une différence de couleur par type de graphique").
@@ -79,6 +80,7 @@ class MetricChartsTab extends StatefulWidget {
     required this.titles,
     required this.palette,
     this.groupNetVsGross = false,
+    this.showWeeklyRevenueTrend = false,
   });
 
   final String establishmentId;
@@ -107,6 +109,12 @@ class MetricChartsTab extends StatefulWidget {
   /// Recettes n'a pas cette dualité (`valueOf('revenue', ...)` ne soustrait
   /// jamais rien) et garde donc l'ordre à plat historique.
   final bool groupNetVsGross;
+
+  /// Vrai uniquement pour Recettes (décision utilisateur du 2026-09-25) :
+  /// ajoute la carte "Recettes des semaines" — une courbe du total de
+  /// recette réalisé chaque semaine depuis S1 (14/09/2026), avec filtre
+  /// multi-semaines. N'a de sens que pour `metric == 'revenue'`.
+  final bool showWeeklyRevenueTrend;
 
   @override
   State<MetricChartsTab> createState() => _MetricChartsTabState();
@@ -161,6 +169,22 @@ class _MetricChartsTabState extends State<MetricChartsTab> {
     metric: widget.metric,
     year: widget.year,
   )..ignore();
+
+  // "Recettes des semaines" (Recettes uniquement, `showWeeklyRevenueTrend`)
+  // — semaines réalisées depuis S1 (14/09/2026), fixes indépendamment de
+  // `widget.year` : `_trendWeeks[i]` est toujours "Si+1", que la semaine
+  // soit cochée ou non dans `_trendSelectedIndices` (défaut : toutes).
+  late final List<DateTime> _trendWeeks =
+      widget.showWeeklyRevenueTrend ? realizedWeeksSince(weeklyRevenueTrendAnchor, DateTime.now()) : const [];
+  late Set<int> _trendSelectedIndices = {for (var i = 0; i < _trendWeeks.length; i++) i};
+  late final Future<List<double>> _trendFuture = _loadTrend()..ignore();
+
+  Future<List<double>> _loadTrend() async {
+    final charts = await Future.wait(
+      _trendWeeks.map((w) => _charts.getWeekly(metric: 'revenue', weekStart: w.toIso8601String().split('T').first)),
+    );
+    return [for (final c in charts) c.total];
+  }
 
   @override
   void initState() {
@@ -278,6 +302,62 @@ class _MetricChartsTabState extends State<MetricChartsTab> {
     _reloadByProduct();
   }
 
+  /// Filtre multi-semaines de "Recettes des semaines" — sélection vide de
+  /// sens (contrairement à `_pickWeeks`, qui fusionne les semaines cochées
+  /// en une seule série) : ici chaque semaine reste son propre point sur la
+  /// courbe, "Réinitialiser" revient donc à *tout* cocher (S1 jusqu'à la
+  /// semaine courante), pas à une seule semaine — demande utilisateur du
+  /// 2026-09-25.
+  Future<void> _pickTrendWeeks() async {
+    var working = Set<int>.from(_trendSelectedIndices);
+    final allIndices = {for (var i = 0; i < _trendWeeks.length; i++) i};
+    final result = await showDialog<Set<int>>(
+      context: context,
+      builder: (dialogContext) => StatefulBuilder(
+        builder: (dialogContext, setDialogState) => AlertDialog(
+          title: const Text('Choisir la ou les semaines'),
+          content: SizedBox(
+            width: 360,
+            child: ListView(
+              shrinkWrap: true,
+              children: [
+                for (var i = 0; i < _trendWeeks.length; i++)
+                  CheckboxListTile(
+                    contentPadding: EdgeInsets.zero,
+                    value: working.contains(i),
+                    title: Text('S${i + 1} — ${_dayFormat.format(_trendWeeks[i])}'),
+                    onChanged: (checked) => setDialogState(() {
+                      if (checked ?? false) {
+                        working.add(i);
+                      } else {
+                        working.remove(i);
+                      }
+                    }),
+                  ),
+              ],
+            ),
+          ),
+          actions: [
+            TextButton(
+              onPressed: () => setDialogState(() => working = Set.of(allIndices)),
+              child: const Text('Réinitialiser'),
+            ),
+            TextButton(
+              onPressed: () => Navigator.of(dialogContext).pop(),
+              child: const Text('Annuler'),
+            ),
+            FilledButton(
+              onPressed: () => Navigator.of(dialogContext).pop(working.isEmpty ? allIndices : working),
+              child: const Text('Appliquer'),
+            ),
+          ],
+        ),
+      ),
+    );
+    if (result == null) return;
+    setState(() => _trendSelectedIndices = result);
+  }
+
   Widget _card({
     required String title,
     required Widget child,
@@ -379,6 +459,7 @@ class _MetricChartsTabState extends State<MetricChartsTab> {
     final byCategoryCard = _can('by_category') ? _byCategoryCard() : null;
     final byProductCard = _can('by_product') ? _byProductCard() : null;
     final topCard = _can('top') ? _topCard() : null;
+    final weeklyTrendCard = widget.showWeeklyRevenueTrend ? _weeklyRevenueTrendCard() : null;
 
     if (!widget.groupNetVsGross) {
       return ListView(
@@ -389,6 +470,7 @@ class _MetricChartsTabState extends State<MetricChartsTab> {
           ?byProductCard,
           ?topCard,
           ?monthlyCard,
+          ?weeklyTrendCard,
         ],
       );
     }
@@ -590,6 +672,36 @@ class _MetricChartsTabState extends State<MetricChartsTab> {
         (chart) => MonthlyLineChartWidget(
           months: chart.months,
           color: widget.palette.monthly,
+        ),
+      ),
+    );
+  }
+
+  /// "Recettes des semaines" (Recettes uniquement — demande utilisateur du
+  /// 2026-09-25) : une courbe du total de recette réalisé chaque semaine
+  /// depuis S1 (14/09/2026, `weeklyRevenueTrendAnchor`) jusqu'à la semaine
+  /// courante, axe des x en S1/S2/S3... Filtre multi-semaines, sélection
+  /// par défaut = toutes.
+  Widget _weeklyRevenueTrendCard() {
+    return _card(
+      title: 'Recettes des semaines',
+      controls: [
+        OutlinedButton.icon(
+          onPressed: _pickTrendWeeks,
+          icon: const Icon(Icons.date_range_outlined, size: 18),
+          label: Text(
+            _trendSelectedIndices.length == _trendWeeks.length
+                ? 'Toutes les semaines'
+                : '${_trendSelectedIndices.length} semaine${_trendSelectedIndices.length > 1 ? 's' : ''} sélectionnée${_trendSelectedIndices.length > 1 ? 's' : ''}',
+          ),
+        ),
+      ],
+      child: _futureChart(
+        _trendFuture,
+        (weekTotals) => WeeklyRevenueTrendChartWidget(
+          weekTotals: weekTotals,
+          selected: _trendSelectedIndices,
+          color: widget.palette.dailyTotal,
         ),
       ),
     );
