@@ -70,6 +70,15 @@ Constat à l'origine de ce correctif : seule la nature « Marché » avait un r�
 
 **Toujours pas répercuté sur les vues par catégorie/produit** (`weeklyByCategory`, `weeklyByProduct`, `top`) : le raisonnement de la section précédente reste valable pour ces 8 natures et les pertes — aucune ne peut être rattachée à un produit ou une catégorie de vente précis, contrairement à « Marché » qui a un lien logique direct avec les catégories à prix variable.
 
+### Onglet Bénéfices réorganisé : « Bénéfice net » vs « Marge brute » (décision actée 2026-09-25)
+
+Symptôme signalé : sur l'onglet Bénéfices, les 5 graphiques portaient tous le mot « Bénéfices » sans distinction, alors que `dailyTotal`/`monthly` calculent un **bénéfice net** (ci-dessus — marge moins toutes les dépenses et pertes) et que `dailyByCategory`/`dailyByProduct`/`top` calculent une **marge brute** (recette moins coût d'achat uniquement, jamais réduite par une dépense générale, pour les raisons données ci-dessus). Conséquence concrète observée : une même semaine pouvait afficher un Total négatif (ex. -50 763 FCFA, un jour de paie faisant un creux brutal puisque compté en entier à sa date réelle) à côté d'une ventilation par catégorie positive (+5 441 FCFA) sur la même période, sans rien pour expliquer l'écart — perçu à raison comme « pas logique ».
+
+Aucun changement de calcul (les deux définitions restent justifiées, voir ci-dessus) — uniquement la présentation, côté Flutter (`lib/charts/metric_charts_tab.dart`, `graphiques_page.dart`) :
+
+- Nouveaux intitulés explicites : « Bénéfice net — journalier »/« Bénéfice net — mensuel » (au lieu de « Bénéfices journaliers totaux »/« Bénéfices mensuels ») vs « Marge brute — journalière par catégorie »/« … par produit »/« Top marge brute (par produit) » (au lieu de « Bénéfices … »/« Top bénéfices »).
+- `MetricChartsTab` gagne un paramètre `groupNetVsGross` (`true` uniquement pour Bénéfices, `false` — comportement inchangé — pour Recettes, qui n'a pas cette dualité) : quand actif, les 5 cartes sont regroupées sous deux en-têtes de section, « BÉNÉFICE NET » (Total, Mensuel) puis « MARGE BRUTE » (Par catégorie, Par produit, Top), chacun avec une phrase expliquant pourquoi les montants des deux sections ne se comparent pas directement.
+
 ## Semaine (graphiques 1, 2, 3, 6, 7, 8)
 
 `weekStart` accepte n'importe quelle date : `ChartsService` la ramène systématiquement au **lundi** de cette semaine-là (`(date.getDay() + 6) % 7` pour un index 0=lundi..6=dimanche, contrairement à `Date.getDay()` natif où dimanche=0). La réponse renvoie `weekStart`/`weekEnd` résolus, pour que l'UI affiche la plage réellement utilisée même si la date fournie n'était pas elle-même un lundi.

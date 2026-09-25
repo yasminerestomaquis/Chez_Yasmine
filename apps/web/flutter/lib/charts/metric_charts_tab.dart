@@ -4,6 +4,7 @@ import 'package:intl/intl.dart';
 import '../api/api_client.dart';
 import '../catalog/catalog_repository.dart';
 import '../catalog/models.dart';
+import '../theme/app_theme.dart';
 import 'chart_models.dart';
 import 'charts_repository.dart';
 import 'monthly_line_chart.dart';
@@ -77,6 +78,7 @@ class MetricChartsTab extends StatefulWidget {
     required this.allowed,
     required this.titles,
     required this.palette,
+    this.groupNetVsGross = false,
   });
 
   final String establishmentId;
@@ -91,6 +93,20 @@ class MetricChartsTab extends StatefulWidget {
   final Set<String> allowed;
   final ChartTitles titles;
   final ChartPalette palette;
+
+  /// Vrai uniquement pour Bénéfices (décision utilisateur du 2026-09-25) :
+  /// sépare visuellement les graphiques qui déduisent TOUTES les dépenses et
+  /// pertes (Total, Mensuel — un vrai « bénéfice net ») de ceux qui n'en
+  /// déduisent aucune (Par catégorie, Par produit, Top — une simple « marge
+  /// brute », voir le commentaire sur `soldLines` dans `ChartsService` pour
+  /// pourquoi une dépense générale ne peut pas être répartie par
+  /// catégorie/produit). Sans cette séparation, les deux notions se
+  /// mélangeaient sous le même mot « Bénéfices » sur un seul onglet — au
+  /// point qu'une même semaine pouvait afficher un Total négatif à côté d'une
+  /// ventilation par catégorie positive, sans rien pour expliquer l'écart.
+  /// Recettes n'a pas cette dualité (`valueOf('revenue', ...)` ne soustrait
+  /// jamais rien) et garde donc l'ordre à plat historique.
+  final bool groupNetVsGross;
 
   @override
   State<MetricChartsTab> createState() => _MetricChartsTabState();
@@ -322,183 +338,260 @@ class _MetricChartsTabState extends State<MetricChartsTab> {
     );
   }
 
+  /// En-tête de section (« BÉNÉFICE NET » / « MARGE BRUTE »), même style que
+  /// les titres de section d'Accueil (`home_dashboard.dart`), avec une phrase
+  /// d'explication en plus — nécessaire ici puisque le lecteur doit
+  /// comprendre POURQUOI deux graphiques voisins nommés « Bénéfices »
+  /// donnent des montants très différents sur la même période.
+  Widget _sectionHeader(String title, String explanation) {
+    return Padding(
+      padding: const EdgeInsets.only(bottom: 8),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Text(
+            title,
+            style: const TextStyle(
+              fontWeight: FontWeight.bold,
+              fontSize: 13,
+              color: AppColors.textSecondary,
+              letterSpacing: 0.5,
+            ),
+          ),
+          const SizedBox(height: 4),
+          Text(
+            explanation,
+            style: const TextStyle(fontSize: 12, color: AppColors.textSecondary),
+          ),
+        ],
+      ),
+    );
+  }
+
   @override
   Widget build(BuildContext context) {
     if (!['daily', 'by_category', 'by_product', 'top', 'monthly'].any(_can)) {
       return const Center(child: Text('Aucun graphique autorisé pour votre rôle dans cette section.'));
     }
+
+    final dailyTotalCard = _can('daily') ? _dailyTotalCard() : null;
+    final monthlyCard = _can('monthly') ? _monthlyCard() : null;
+    final byCategoryCard = _can('by_category') ? _byCategoryCard() : null;
+    final byProductCard = _can('by_product') ? _byProductCard() : null;
+    final topCard = _can('top') ? _topCard() : null;
+
+    if (!widget.groupNetVsGross) {
+      return ListView(
+        padding: const EdgeInsets.all(16),
+        children: [
+          ?dailyTotalCard,
+          ?byCategoryCard,
+          ?byProductCard,
+          ?topCard,
+          ?monthlyCard,
+        ],
+      );
+    }
+
+    final netCards = [dailyTotalCard, monthlyCard].whereType<Widget>().toList();
+    final grossCards = [byCategoryCard, byProductCard, topCard].whereType<Widget>().toList();
     return ListView(
       padding: const EdgeInsets.all(16),
       children: [
-        if (_can('daily'))
-        _card(
-          title: widget.titles.dailyTotal,
-          controls: [_pickWeekButton()],
-          child: _futureChart(_totalFuture, (chart) {
-            return Column(
-              crossAxisAlignment: CrossAxisAlignment.stretch,
-              children: [
-                Padding(
-                  padding: const EdgeInsets.only(bottom: 4),
-                  child: Row(
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    children: [
-                      if (chart.weekStart.isNotEmpty)
-                        Expanded(
-                          child: Text(
-                            _weekAnchors.length > 1
-                                ? weekFilterLabel(_weekAnchors)
-                                : 'Semaine du ${_dayFormat.format(DateTime.parse(chart.weekStart))} au ${_dayFormat.format(DateTime.parse(chart.weekEnd))}',
-                            style: Theme.of(context).textTheme.bodySmall,
-                          ),
-                        ),
-                      WeekTotalBadge(total: chart.total, color: widget.palette.dailyTotal),
-                    ],
-                  ),
-                ),
-                WeeklyBarChartWidget(
-                  series: chart.series,
-                  baseColor: widget.palette.dailyTotal,
-                ),
-              ],
-            );
-          }),
-        ),
-        if (_can('by_category'))
-        _card(
-          title: widget.titles.dailyByCategory,
-          controls: [
-            if (!_can('daily')) _pickWeekButton(),
-            if (_categories.isEmpty)
-              const Text('Aucune catégorie au catalogue')
-            else
-              Wrap(
-                spacing: 8,
-                runSpacing: 4,
+        if (netCards.isNotEmpty) ...[
+          _sectionHeader(
+            'BÉNÉFICE NET',
+            'Marge brute moins toutes les dépenses et les pertes enregistrées.',
+          ),
+          ...netCards,
+          const SizedBox(height: 8),
+        ],
+        if (grossCards.isNotEmpty) ...[
+          _sectionHeader(
+            'MARGE BRUTE',
+            'Recette moins coût d\'achat uniquement — les dépenses générales ne peuvent pas être réparties par catégorie ou produit, donc ces montants ne se comparent pas directement au bénéfice net ci-dessus.',
+          ),
+          ...grossCards,
+        ],
+      ],
+    );
+  }
+
+  Widget _dailyTotalCard() {
+    return _card(
+      title: widget.titles.dailyTotal,
+      controls: [_pickWeekButton()],
+      child: _futureChart(_totalFuture, (chart) {
+        return Column(
+          crossAxisAlignment: CrossAxisAlignment.stretch,
+          children: [
+            Padding(
+              padding: const EdgeInsets.only(bottom: 4),
+              child: Row(
+                crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
-                  FilterChip(
-                    label: const Text('Toutes'),
-                    selected: _selectedCategoryIds.isEmpty,
-                    onSelected: (_) {
-                      setState(() => _selectedCategoryIds.clear());
-                      _reloadByCategory();
-                    },
-                  ),
-                  for (final category in _categories)
-                    FilterChip(
-                      label: Text(category.name),
-                      selected: _selectedCategoryIds.contains(category.id),
-                      onSelected: (_) => _toggleCategory(category.id),
+                  if (chart.weekStart.isNotEmpty)
+                    Expanded(
+                      child: Text(
+                        _weekAnchors.length > 1
+                            ? weekFilterLabel(_weekAnchors)
+                            : 'Semaine du ${_dayFormat.format(DateTime.parse(chart.weekStart))} au ${_dayFormat.format(DateTime.parse(chart.weekEnd))}',
+                        style: Theme.of(context).textTheme.bodySmall,
+                      ),
                     ),
+                  WeekTotalBadge(total: chart.total, color: widget.palette.dailyTotal),
                 ],
               ),
-          ],
-          child: _futureChart(_byCategoryFuture, (chart) {
-            return Column(
-              crossAxisAlignment: CrossAxisAlignment.stretch,
-              children: [
-                Padding(
-                  padding: const EdgeInsets.only(bottom: 4),
-                  child: WeekTotalBadge(total: chart.total, color: widget.palette.dailyByCategory),
-                ),
-                WeeklyBarChartWidget(
-                  series: chart.series,
-                  baseColor: widget.palette.dailyByCategory,
-                ),
-              ],
-            );
-          }),
-        ),
-        if (_can('by_product'))
-        _card(
-          title: widget.titles.dailyByProduct,
-          controls: [
-            if (!_can('daily') && !_can('by_category')) _pickWeekButton(),
-            if (_products.isNotEmpty)
-              _ProductFilterField(
-                products: _products,
-                selectedIds: _selectedProductIds,
-                onChanged: _toggleProductSelection,
-              )
-            else
-              const Text('Aucun produit au catalogue'),
-          ],
-          // Montant total des recettes des produits vendus selon la sélection
-          // du filtre Produit, en haut à droite — demande utilisateur du
-          // 2026-09-24, même `WeekTotalBadge` que le graphique par catégorie.
-          child: _futureChart(_byProductFuture, (chart) {
-            return Column(
-              crossAxisAlignment: CrossAxisAlignment.stretch,
-              children: [
-                Padding(
-                  padding: const EdgeInsets.only(bottom: 4),
-                  child: WeekTotalBadge(total: chart.total, color: widget.palette.dailyByProduct),
-                ),
-                WeeklyBarChartWidget(
-                  series: chart.series,
-                  baseColor: widget.palette.dailyByProduct,
-                ),
-              ],
-            );
-          }),
-        ),
-        if (_can('top'))
-        _card(
-          title: widget.titles.top,
-          controls: [
-            DropdownButton<int?>(
-              value: _topMonth,
-              items: [
-                const DropdownMenuItem<int?>(
-                  value: null,
-                  child: Text("Toute l'année"),
-                ),
-                for (var i = 0; i < _monthNames.length; i++)
-                  DropdownMenuItem(value: i, child: Text(_monthNames[i])),
-              ],
-              onChanged: (value) {
-                setState(() => _topMonth = value);
-                _reloadTop();
-              },
+            ),
+            WeeklyBarChartWidget(
+              series: chart.series,
+              baseColor: widget.palette.dailyTotal,
             ),
           ],
-          // Montant total de toutes les recettes/bénéfices de l'année
-          // sélectionnée (filtre Année de `GraphiquesPage`), en haut à
-          // droite — demande utilisateur du 2026-09-25. Réutilise
-          // `_monthlyFuture` (déjà chargé pour la carte "mensuelle"
-          // ci-dessous, même année) plutôt qu'un nouvel appel réseau.
-          child: Column(
-            crossAxisAlignment: CrossAxisAlignment.stretch,
+        );
+      }),
+    );
+  }
+
+  Widget _byCategoryCard() {
+    return _card(
+      title: widget.titles.dailyByCategory,
+      controls: [
+        if (!_can('daily')) _pickWeekButton(),
+        if (_categories.isEmpty)
+          const Text('Aucune catégorie au catalogue')
+        else
+          Wrap(
+            spacing: 8,
+            runSpacing: 4,
             children: [
-              _futureChart(
-                _monthlyFuture,
-                (monthly) => Padding(
-                  padding: const EdgeInsets.only(bottom: 4),
-                  child: WeekTotalBadge(total: monthly.total, color: widget.palette.top),
-                ),
+              FilterChip(
+                label: const Text('Toutes'),
+                selected: _selectedCategoryIds.isEmpty,
+                onSelected: (_) {
+                  setState(() => _selectedCategoryIds.clear());
+                  _reloadByCategory();
+                },
               ),
-              _futureChart(
-                _topFuture,
-                (chart) => RankingBarChartWidget(
-                  items: chart.items,
-                  color: widget.palette.top,
+              for (final category in _categories)
+                FilterChip(
+                  label: Text(category.name),
+                  selected: _selectedCategoryIds.contains(category.id),
+                  onSelected: (_) => _toggleCategory(category.id),
                 ),
-              ),
             ],
           ),
-        ),
-        if (_can('monthly'))
-        _card(
-          title: widget.titles.monthly,
-          child: _futureChart(
-            _monthlyFuture,
-            (chart) => MonthlyLineChartWidget(
-              months: chart.months,
-              color: widget.palette.monthly,
+      ],
+      child: _futureChart(_byCategoryFuture, (chart) {
+        return Column(
+          crossAxisAlignment: CrossAxisAlignment.stretch,
+          children: [
+            Padding(
+              padding: const EdgeInsets.only(bottom: 4),
+              child: WeekTotalBadge(total: chart.total, color: widget.palette.dailyByCategory),
             ),
-          ),
+            WeeklyBarChartWidget(
+              series: chart.series,
+              baseColor: widget.palette.dailyByCategory,
+            ),
+          ],
+        );
+      }),
+    );
+  }
+
+  Widget _byProductCard() {
+    return _card(
+      title: widget.titles.dailyByProduct,
+      controls: [
+        if (!_can('daily') && !_can('by_category')) _pickWeekButton(),
+        if (_products.isNotEmpty)
+          _ProductFilterField(
+            products: _products,
+            selectedIds: _selectedProductIds,
+            onChanged: _toggleProductSelection,
+          )
+        else
+          const Text('Aucun produit au catalogue'),
+      ],
+      // Montant total des recettes des produits vendus selon la sélection
+      // du filtre Produit, en haut à droite — demande utilisateur du
+      // 2026-09-24, même `WeekTotalBadge` que le graphique par catégorie.
+      child: _futureChart(_byProductFuture, (chart) {
+        return Column(
+          crossAxisAlignment: CrossAxisAlignment.stretch,
+          children: [
+            Padding(
+              padding: const EdgeInsets.only(bottom: 4),
+              child: WeekTotalBadge(total: chart.total, color: widget.palette.dailyByProduct),
+            ),
+            WeeklyBarChartWidget(
+              series: chart.series,
+              baseColor: widget.palette.dailyByProduct,
+            ),
+          ],
+        );
+      }),
+    );
+  }
+
+  Widget _topCard() {
+    return _card(
+      title: widget.titles.top,
+      controls: [
+        DropdownButton<int?>(
+          value: _topMonth,
+          items: [
+            const DropdownMenuItem<int?>(
+              value: null,
+              child: Text("Toute l'année"),
+            ),
+            for (var i = 0; i < _monthNames.length; i++)
+              DropdownMenuItem(value: i, child: Text(_monthNames[i])),
+          ],
+          onChanged: (value) {
+            setState(() => _topMonth = value);
+            _reloadTop();
+          },
         ),
       ],
+      // Montant total de toutes les recettes/bénéfices de l'année
+      // sélectionnée (filtre Année de `GraphiquesPage`), en haut à
+      // droite — demande utilisateur du 2026-09-25. Réutilise
+      // `_monthlyFuture` (déjà chargé pour la carte "mensuelle"
+      // ci-dessous, même année) plutôt qu'un nouvel appel réseau.
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        children: [
+          _futureChart(
+            _monthlyFuture,
+            (monthly) => Padding(
+              padding: const EdgeInsets.only(bottom: 4),
+              child: WeekTotalBadge(total: monthly.total, color: widget.palette.top),
+            ),
+          ),
+          _futureChart(
+            _topFuture,
+            (chart) => RankingBarChartWidget(
+              items: chart.items,
+              color: widget.palette.top,
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _monthlyCard() {
+    return _card(
+      title: widget.titles.monthly,
+      child: _futureChart(
+        _monthlyFuture,
+        (chart) => MonthlyLineChartWidget(
+          months: chart.months,
+          color: widget.palette.monthly,
+        ),
+      ),
     );
   }
 }

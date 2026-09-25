@@ -2,6 +2,11 @@
 
 ## [Unreleased]
 
+### Modifié (2026-09-25) — Graphiques > Bénéfices : sépare Bénéfice net et Marge brute
+- Les 5 graphiques de l'onglet Bénéfices portaient tous le même mot « Bénéfices » alors que Total/Mensuel calculent un bénéfice **net** (déduit toutes les dépenses et pertes) et que Par catégorie/Par produit/Top calculent une marge **brute** (recette − coût d'achat uniquement, aucune dépense générale ne pouvant être rattachée à un produit) — une même semaine pouvait ainsi afficher un Total négatif à côté d'une ventilation par catégorie positive, sans explication.
+- Aucun changement de calcul (les deux définitions restaient déjà justifiées et documentées) — nouveaux intitulés explicites (« Bénéfice net — … » vs « Marge brute — … ») et réorganisation en deux sections étiquetées et expliquées (« BÉNÉFICE NET » puis « MARGE BRUTE »). Recettes, qui n'a pas cette dualité, reste inchangé.
+- Tests : 1 nouveau + 1 révisé (`graphiques_page_test.dart`).
+
 ### Corrigé (2026-09-25) — Consommé négatif sur les lots FIFO (Graphiques > Stock)
 - **Cause racine** : `ChartsService.stockLots` rattachait le stock d'un mouvement d'entrée sans N° de commande identifiable (comptage manuel, correction de vente...) au dernier lot visible du produit, mais n'ajustait que `remainingQuantity`, jamais `receivedQuantity` — dès que ce lot n'avait pas encore été consommé d'autant, `remainingQuantity` dépassait `receivedQuantity` et `consumedQuantity` devenait négatif (constaté en production sur Chill, Rhino). Corrigé : les deux quantités sont désormais ajustées ensemble. Cas limite corrigé au passage : un lot synthétique est créé quand aucun lot visible n'existe pour accueillir ce stock orphelin, au lieu de l'exclure silencieusement de `totalActiveUnits`.
 - **Bug latent corrigé en même temps** (audit du pipeline Achats → Stock → Graphiques demandé par l'utilisateur) : `PurchasesService.reverseStock` (édition/suppression d'une commande déjà reçue) enregistrait un mouvement `'out'` avec la quantité d'origine de la commande même quand le stock réellement disponible était moindre (clampé à 0) — désynchronisant l'historique des mouvements du stock réel. Le mouvement enregistré porte désormais la quantité réellement retirée.

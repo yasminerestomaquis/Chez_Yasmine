@@ -51,12 +51,42 @@ void main() {
     await tester.tap(find.text('Bénéfices'));
     await tester.pumpAndSettle();
 
-    expect(find.text('Bénéfices journaliers totaux'), findsOneWidget);
-    expect(find.text('Bénéfices journaliers totaux par catégorie'), findsOneWidget);
-    expect(find.text('Bénéfices journaliers totaux par produit'), findsOneWidget);
-    expect(find.text('Top bénéfices'), findsOneWidget);
-    expect(find.text('Bénéfices mensuels'), findsOneWidget);
+    expect(find.text('Bénéfice net — journalier'), findsOneWidget);
+    expect(find.text('Marge brute — journalière par catégorie'), findsOneWidget);
+    expect(find.text('Marge brute — journalière par produit'), findsOneWidget);
+    expect(find.text('Top marge brute (par produit)'), findsOneWidget);
+    expect(find.text('Bénéfice net — mensuel'), findsOneWidget);
   });
+
+  testWidgets(
+    'the Bénéfices tab groups its charts into a "BÉNÉFICE NET" section (Total, Mensuel) and a "MARGE BRUTE" section (Par catégorie, Par produit, Top), in that order, unlike Recettes which stays flat',
+    (tester) async {
+      await pumpPage(tester);
+
+      await tester.tap(find.text('Bénéfices'));
+      await tester.pumpAndSettle();
+
+      expect(find.text('BÉNÉFICE NET'), findsOneWidget);
+      expect(find.text('MARGE BRUTE'), findsOneWidget);
+
+      // BÉNÉFICE NET doit apparaître avant "Bénéfice net — journalier",
+      // qui doit apparaître avant MARGE BRUTE, qui doit apparaître avant
+      // "Marge brute — journalière par catégorie".
+      final netHeaderY = tester.getTopLeft(find.text('BÉNÉFICE NET')).dy;
+      final dailyTotalY = tester.getTopLeft(find.text('Bénéfice net — journalier')).dy;
+      final grossHeaderY = tester.getTopLeft(find.text('MARGE BRUTE')).dy;
+      final byCategoryY = tester.getTopLeft(find.text('Marge brute — journalière par catégorie')).dy;
+      expect(netHeaderY, lessThan(dailyTotalY));
+      expect(dailyTotalY, lessThan(grossHeaderY));
+      expect(grossHeaderY, lessThan(byCategoryY));
+
+      // Recettes n'a pas cette dualité net/brut : pas d'en-tête de section.
+      await tester.tap(find.text('Recettes'));
+      await tester.pumpAndSettle();
+      expect(find.text('BÉNÉFICE NET'), findsNothing);
+      expect(find.text('MARGE BRUTE'), findsNothing);
+    },
+  );
 
   testWidgets('changing the year filter rebuilds both tabs without an unhandled error', (tester) async {
     await pumpPage(tester);

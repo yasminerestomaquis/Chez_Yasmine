@@ -51,12 +51,20 @@ class _GraphiquesPageState extends State<GraphiquesPage> {
     monthly: Colors.deepOrange,
   );
 
+  // Libellés distinguant explicitement "bénéfice net" (Total/Mensuel :
+  // déduit toutes les dépenses et pertes) de "marge brute" (Par
+  // catégorie/Par produit/Top : recette moins coût d'achat uniquement) —
+  // avant, les 5 portaient le même mot "Bénéfices", ce qui rendait
+  // incompréhensible qu'un Total puisse être négatif alors que sa
+  // ventilation par catégorie est positive sur la même semaine (décision
+  // utilisateur du 2026-09-25, voir aussi `groupNetVsGross` sur
+  // `MetricChartsTab`).
   static const _beneficesTitles = ChartTitles(
-    dailyTotal: 'Bénéfices journaliers totaux',
-    dailyByCategory: 'Bénéfices journaliers totaux par catégorie',
-    dailyByProduct: 'Bénéfices journaliers totaux par produit',
-    top: 'Top bénéfices',
-    monthly: 'Bénéfices mensuels',
+    dailyTotal: 'Bénéfice net — journalier',
+    dailyByCategory: 'Marge brute — journalière par catégorie',
+    dailyByProduct: 'Marge brute — journalière par produit',
+    top: 'Top marge brute (par produit)',
+    monthly: 'Bénéfice net — mensuel',
   );
 
   static const _beneficesPalette = ChartPalette(
@@ -145,6 +153,7 @@ class _GraphiquesPageState extends State<GraphiquesPage> {
               allowed: allowed,
               titles: _beneficesTitles,
               palette: _beneficesPalette,
+              groupNetVsGross: true,
             ),
             // Pas de clé liée à `_year` : voir la doc de classe, cet onglet
             // représente l'état courant du stock, pas une période.
