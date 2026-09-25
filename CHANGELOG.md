@@ -2,6 +2,11 @@
 
 ## [Unreleased]
 
+### Corrigé (2026-09-25) — Listing « Boissons vendues »/« Plats vendus » : débordement sans défilement, pas de quadrillage
+- Le tableau affiché avant export (un `DataTable` Material) débordait sans pouvoir défiler (ni horizontalement pour les colonnes coupées, ni verticalement au-delà de quelques lignes) et ne traçait aucune bordure verticale entre colonnes.
+- Remplacé par un `Table`/`TableBorder.all` (quadrillage complet, horizontal et vertical) scrollable horizontalement ; le défilement vertical passe par `AlertDialog(scrollable: true)`. Un seul widget partagé (`ReportsPage._griddedSalesTable`) entre les deux listings.
+- `flutter analyze`/`flutter test` ✅ (179/179).
+
 ### Corrigé (2026-09-25) — PDF téléchargé illisible (`{"type":"Buffer",...}` au lieu du binaire)
 - Après déploiement, les exports PDF « Boissons vendues »/« Plats vendus » (voir entrée juste en dessous) téléchargeaient un fichier illisible par tout lecteur PDF. NestJS n'a pas de cas particulier pour un `Buffer` brut retourné avec `@Res({ passthrough: true })` : `ExpressAdapter.reply()` teste seulement `isObject(body)` (vrai pour un Buffer) et appelle `response.json(body)`, sérialisant le buffer en `{"type":"Buffer","data":[...]}` au lieu de l'envoyer en binaire.
 - Les deux routes retournent désormais un `StreamableFile` (le seul type explicitement court-circuité avant cette sérialisation JSON) au lieu d'un `Buffer` brut. `DecimalTransformInterceptor` reçoit un garde-fou supplémentaire pour laisser passer un `StreamableFile` sans le décomposer.

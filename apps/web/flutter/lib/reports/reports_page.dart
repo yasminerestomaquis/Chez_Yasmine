@@ -328,6 +328,63 @@ class _ReportsPageState extends State<ReportsPage> {
   /// Le dialogue propose aussi « Exporter en PDF » (plus Excel, même
   /// décision), qui réutilise `GET .../reports/beverages-sold.pdf`
   /// (`ReportsRepository.exportBeveragesSoldPdf`).
+  /// Tableau à quadrillage complet (bordures horizontales **et** verticales
+  /// sur chaque cellule, y compris l'en-tête) pour les listings « Boissons
+  /// vendues »/« Plats vendus » — `Table`/`TableBorder.all` plutôt que
+  /// `DataTable`, qui ne trace pas de séparateurs verticaux entre colonnes.
+  /// Défilement horizontal explicite (colonnes) ; le défilement vertical est
+  /// délégué à l'`AlertDialog` (`scrollable: true`) plutôt qu'imbriqué ici,
+  /// pour éviter le conflit de contraintes classique de deux
+  /// `SingleChildScrollView` d'axes opposés l'un dans l'autre. Demande
+  /// utilisateur du 2026-09-25 (le tableau précédent, un `DataTable` simple,
+  /// débordait sans pouvoir défiler et n'avait pas de quadrillage).
+  Widget _griddedSalesTable({
+    required List<String> headers,
+    required List<bool> numericColumns,
+    required List<List<String>> rows,
+    required List<String> totalRow,
+  }) {
+    Widget cell(String text, {required bool numeric, bool bold = false}) {
+      return Padding(
+        padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
+        child: Text(
+          text,
+          textAlign: numeric ? TextAlign.right : TextAlign.left,
+          style: bold ? const TextStyle(fontWeight: FontWeight.bold) : null,
+        ),
+      );
+    }
+
+    return SingleChildScrollView(
+      scrollDirection: Axis.horizontal,
+      child: Table(
+        border: TableBorder.all(color: Theme.of(context).dividerColor),
+        defaultColumnWidth: const IntrinsicColumnWidth(),
+        children: [
+          TableRow(
+            decoration: BoxDecoration(
+              color: Theme.of(context).colorScheme.surfaceContainerHighest,
+            ),
+            children: [
+              for (var i = 0; i < headers.length; i++) cell(headers[i], numeric: numericColumns[i], bold: true),
+            ],
+          ),
+          for (final row in rows)
+            TableRow(
+              children: [
+                for (var i = 0; i < row.length; i++) cell(row[i], numeric: numericColumns[i]),
+              ],
+            ),
+          TableRow(
+            children: [
+              for (var i = 0; i < totalRow.length; i++) cell(totalRow[i], numeric: numericColumns[i], bold: true),
+            ],
+          ),
+        ],
+      ),
+    );
+  }
+
   Future<void> _showBeveragesSoldListing() async {
     final today = DateTime.now();
     final chosen = await _pickExportDates(
@@ -376,70 +433,50 @@ class _ReportsPageState extends State<ReportsPage> {
       final exportRequested = await showDialog<bool>(
         context: context,
         builder: (context) => AlertDialog(
+          scrollable: true,
           title: Text(title),
           content: SizedBox(
             width: double.maxFinite,
-            child: SingleChildScrollView(
-              child: rows.isEmpty
-                  ? const Padding(
-                      padding: EdgeInsets.symmetric(vertical: 16),
-                      child: Text(
-                        'Aucune vente Bières/Vins/Sucreries sur cette période.',
-                      ),
-                    )
-                  : DataTable(
-                      columns: [
-                        if (multiDay) const DataColumn(label: Text('Date')),
-                        const DataColumn(label: Text('Produit')),
-                        const DataColumn(label: Text('N° commande')),
-                        const DataColumn(label: Text('Qté'), numeric: true),
-                        const DataColumn(
-                          label: Text('Montant (FCFA)'),
-                          numeric: true,
-                        ),
-                      ],
-                      rows: [
-                        for (final r in rows)
-                          DataRow(
-                            cells: [
-                              if (multiDay) DataCell(Text(_orderDateFormat.format(r.date))),
-                              DataCell(Text(r.name)),
-                              DataCell(Text(r.orderNumber?.toString() ?? '—')),
-                              DataCell(Text(r.quantity.toStringAsFixed(0))),
-                              DataCell(Text(formatAmount(r.total))),
-                            ],
-                          ),
-                        DataRow(
-                          cells: [
-                            if (multiDay) const DataCell(Text('')),
-                            const DataCell(
-                              Text(
-                                'TOTAL',
-                                style: TextStyle(fontWeight: FontWeight.bold),
-                              ),
-                            ),
-                            const DataCell(Text('')),
-                            DataCell(
-                              Text(
-                                totalQuantity.toStringAsFixed(0),
-                                style: const TextStyle(
-                                  fontWeight: FontWeight.bold,
-                                ),
-                              ),
-                            ),
-                            DataCell(
-                              Text(
-                                formatAmount(totalAmount),
-                                style: const TextStyle(
-                                  fontWeight: FontWeight.bold,
-                                ),
-                              ),
-                            ),
-                          ],
-                        ),
-                      ],
+            child: rows.isEmpty
+                ? const Padding(
+                    padding: EdgeInsets.symmetric(vertical: 16),
+                    child: Text(
+                      'Aucune vente Bières/Vins/Sucreries sur cette période.',
                     ),
-            ),
+                  )
+                : _griddedSalesTable(
+                    headers: [
+                      if (multiDay) 'Date',
+                      'Produit',
+                      'N° commande',
+                      'Qté',
+                      'Montant (FCFA)',
+                    ],
+                    numericColumns: [
+                      if (multiDay) false,
+                      false,
+                      false,
+                      true,
+                      true,
+                    ],
+                    rows: [
+                      for (final r in rows)
+                        [
+                          if (multiDay) _orderDateFormat.format(r.date),
+                          r.name,
+                          r.orderNumber?.toString() ?? '—',
+                          r.quantity.toStringAsFixed(0),
+                          formatAmount(r.total),
+                        ],
+                    ],
+                    totalRow: [
+                      if (multiDay) '',
+                      'TOTAL',
+                      '',
+                      totalQuantity.toStringAsFixed(0),
+                      formatAmount(totalAmount),
+                    ],
+                  ),
           ),
           actions: [
             TextButton(
@@ -530,72 +567,50 @@ class _ReportsPageState extends State<ReportsPage> {
       final exportRequested = await showDialog<bool>(
         context: context,
         builder: (context) => AlertDialog(
+          scrollable: true,
           title: Text(title),
           content: SizedBox(
             width: double.maxFinite,
-            child: SingleChildScrollView(
-              child: rows.isEmpty
-                  ? const Padding(
-                      padding: EdgeInsets.symmetric(vertical: 16),
-                      child: Text(
-                        'Aucune vente Plats africains/Poissons/Poulets sur cette période.',
-                      ),
-                    )
-                  : DataTable(
-                      columns: [
-                        if (multiDay) const DataColumn(label: Text('Date')),
-                        const DataColumn(label: Text('Produit')),
-                        const DataColumn(label: Text('N° marché')),
-                        const DataColumn(label: Text('Qté'), numeric: true),
-                        const DataColumn(
-                          label: Text('Montant (FCFA)'),
-                          numeric: true,
-                        ),
-                      ],
-                      rows: [
-                        for (final r in rows)
-                          DataRow(
-                            cells: [
-                              if (multiDay) DataCell(Text(_orderDateFormat.format(r.date))),
-                              DataCell(Text(r.name)),
-                              DataCell(
-                                Text(r.marketNumber?.toString() ?? '—'),
-                              ),
-                              DataCell(Text(r.quantity.toStringAsFixed(0))),
-                              DataCell(Text(formatAmount(r.total))),
-                            ],
-                          ),
-                        DataRow(
-                          cells: [
-                            if (multiDay) const DataCell(Text('')),
-                            const DataCell(
-                              Text(
-                                'TOTAL',
-                                style: TextStyle(fontWeight: FontWeight.bold),
-                              ),
-                            ),
-                            const DataCell(Text('')),
-                            DataCell(
-                              Text(
-                                totalQuantity.toStringAsFixed(0),
-                                style: const TextStyle(
-                                  fontWeight: FontWeight.bold,
-                                ),
-                              ),
-                            ),
-                            DataCell(
-                              Text(
-                                formatAmount(totalAmount),
-                                style: const TextStyle(
-                                  fontWeight: FontWeight.bold,
-                                ),
-                              ),
-                            ),
-                          ],
-                        ),
-                      ],
+            child: rows.isEmpty
+                ? const Padding(
+                    padding: EdgeInsets.symmetric(vertical: 16),
+                    child: Text(
+                      'Aucune vente Plats africains/Poissons/Poulets sur cette période.',
                     ),
-            ),
+                  )
+                : _griddedSalesTable(
+                    headers: [
+                      if (multiDay) 'Date',
+                      'Produit',
+                      'N° marché',
+                      'Qté',
+                      'Montant (FCFA)',
+                    ],
+                    numericColumns: [
+                      if (multiDay) false,
+                      false,
+                      false,
+                      true,
+                      true,
+                    ],
+                    rows: [
+                      for (final r in rows)
+                        [
+                          if (multiDay) _orderDateFormat.format(r.date),
+                          r.name,
+                          r.marketNumber?.toString() ?? '—',
+                          r.quantity.toStringAsFixed(0),
+                          formatAmount(r.total),
+                        ],
+                    ],
+                    totalRow: [
+                      if (multiDay) '',
+                      'TOTAL',
+                      '',
+                      totalQuantity.toStringAsFixed(0),
+                      formatAmount(totalAmount),
+                    ],
+                  ),
           ),
           actions: [
             TextButton(
