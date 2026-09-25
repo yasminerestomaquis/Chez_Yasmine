@@ -58,3 +58,16 @@ export class StockLotsQueryDto {
   @IsString()
   productIds!: string;
 }
+
+export class ActiveStockListingQueryDto {
+  /**
+   * CSV d'identifiants de catégorie — filtre optionnel du listing "Stock
+   * actif" (module Stock, décision utilisateur du 2026-09-25). Absent/vide :
+   * toutes les catégories éligibles (les catégories à prix variable — Plats
+   * africains/Poissons/Poulets — sont de toute façon toujours exclues côté
+   * service, ce filtre ne peut que restreindre davantage, jamais les inclure).
+   */
+  @IsOptional()
+  @IsString()
+  categoryIds?: string;
+}

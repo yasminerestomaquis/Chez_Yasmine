@@ -139,10 +139,39 @@ void main() {
   });
 
   testWidgets(
+    'the "Stock actif" export button is only visible to Super Administrateur (2026-09-25)',
+    (tester) async {
+      for (final role in ['Gérant', 'Caissier', 'Serveur', 'Propriétaire']) {
+        await tester.pumpWidget(
+          MaterialApp(home: StockPage(establishmentId: 'est-1', roleName: role)),
+        );
+        await tester.pumpAndSettle();
+
+        expect(
+          find.byTooltip('Stock actif (listing, export PDF)'),
+          findsNothing,
+          reason: '$role ne doit pas voir le bouton',
+        );
+      }
+
+      await tester.pumpWidget(
+        const MaterialApp(
+          home: StockPage(establishmentId: 'est-1', roleName: 'Super Administrateur'),
+        ),
+      );
+      await tester.pumpAndSettle();
+
+      expect(find.byTooltip('Stock actif (listing, export PDF)'), findsOneWidget);
+    },
+  );
+
+  testWidgets(
     'tapping the "Stock actif" export button surfaces a snackbar instead of crashing when no backend is reachable (2026-09-25)',
     (tester) async {
       await tester.pumpWidget(
-        const MaterialApp(home: StockPage(establishmentId: 'est-1', roleName: 'Gérant')),
+        const MaterialApp(
+          home: StockPage(establishmentId: 'est-1', roleName: 'Super Administrateur'),
+        ),
       );
       await tester.pumpAndSettle();
 
@@ -152,9 +181,12 @@ void main() {
       // Même raison que le test de changement de période dans
       // reports_page_test.dart : pumpAndSettle (pas un seul pump) exerce la
       // course entre le rejet réseau instantané de flutter_test et la
-      // souscription du FutureBuilder/du gestionnaire d'erreur.
+      // souscription du FutureBuilder/du gestionnaire d'erreur. Le premier
+      // appel réseau du nouveau flux (choix des catégories) est
+      // `listCategories()`, qui échoue avant même d'ouvrir le sélecteur.
       await tester.pumpAndSettle();
 
+      expect(find.text('Stock actif — choisir les catégories'), findsNothing);
       expect(find.text('Stock actif'), findsNothing); // le dialogue ne s'ouvre pas sur erreur réseau
       expect(find.byType(SnackBar), findsOneWidget);
     },

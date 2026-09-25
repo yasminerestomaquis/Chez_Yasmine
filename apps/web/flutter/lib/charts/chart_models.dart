@@ -217,34 +217,43 @@ class ActiveStockListingRow {
     required this.productId,
     required this.productName,
     required this.receivedQuantity,
+    required this.purchaseValue,
+    required this.receivedRevenue,
     required this.consumedQuantity,
     required this.consumedRevenue,
     required this.lossQuantity,
     required this.lossRevenue,
     required this.remainingQuantity,
     required this.remainingRevenue,
+    required this.profit,
   });
 
   final String productId;
   final String productName;
   final double receivedQuantity;
+  final double purchaseValue;
+  final double receivedRevenue;
   final double consumedQuantity;
   final double consumedRevenue;
   final double lossQuantity;
   final double lossRevenue;
   final double remainingQuantity;
   final double remainingRevenue;
+  final double profit;
 
   factory ActiveStockListingRow.fromJson(Map<String, dynamic> json) =>
       ActiveStockListingRow(
         productId: json['productId'] as String,
         productName: json['productName'] as String,
         receivedQuantity: (json['receivedQuantity'] as num).toDouble(),
+        purchaseValue: (json['purchaseValue'] as num).toDouble(),
+        receivedRevenue: (json['receivedRevenue'] as num).toDouble(),
         consumedQuantity: (json['consumedQuantity'] as num).toDouble(),
         consumedRevenue: (json['consumedRevenue'] as num).toDouble(),
         lossQuantity: (json['lossQuantity'] as num).toDouble(),
         lossRevenue: (json['lossRevenue'] as num).toDouble(),
         remainingQuantity: (json['remainingQuantity'] as num).toDouble(),
         remainingRevenue: (json['remainingRevenue'] as num).toDouble(),
+        profit: (json['profit'] as num).toDouble(),
       );
 }

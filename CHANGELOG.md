@@ -2,12 +2,13 @@
 
 ## [Unreleased]
 
-### Ajouté (2026-09-25) — Stock : listing « Stock actif » (bouton d'export, haut droite de l'AppBar)
-- Nouveau bouton dans le module Stock (icône PDF, haut à droite) : ouvre un listing — une ligne par produit, agrégée sur ses seuls lots FIFO **actifs** (même critère que Graphiques > Stock > Détail d'un produit > « Lots actifs ») — avec colonnes Produit, Qté reçue, Consommé, Recette consommé, Perdu, Recette perdue, Restant, Recette stock, plus une ligne TOTAL. Tableau à quadrillage complet et défilable à l'écran (`griddedTable`, extrait du module Rapports pour être réutilisé), export PDF au même quadrillage (format paysage).
-- « Consommé » est net des pertes (`consumedQuantity - lossQuantity`) pour que Reçue = Consommé + Perdu + Restant ; chaque quantité valorisée au prix de vente unitaire (même règle que les pertes).
-- Nouvelles routes `GET .../charts/active-stock-listing` (JSON) et `.../active-stock-listing.pdf` (`StreamableFile`), même permission que `stock-lots` (`charts.stock_lots`).
+### Ajouté (2026-09-25) — Stock : listing « Stock actif » (bouton d'export, haut droite de l'AppBar, Super Administrateur)
+- Nouveau bouton dans le module Stock (icône PDF, haut à droite), **visible uniquement au rôle Super Administrateur** : ouvre un listing — une ligne par produit, agrégée sur ses seuls lots FIFO **actifs** (même critère que Graphiques > Stock > Détail d'un produit > « Lots actifs ») — avec colonnes Produit, Qté reçue, Prix d'achat qté reçue, Recette qté reçue, Consommé, Recette consommé, Perdu, Recette perdue, Restant, Recette stock, Bénéfice (`Recette qté reçue - Prix d'achat qté reçue`), plus une ligne TOTAL. Tableau à quadrillage complet et défilable à l'écran (`griddedTable`, extrait du module Rapports pour être réutilisé), export PDF au même quadrillage (format paysage).
+- Avant l'affichage, un filtre déroulant à sélection multiple propose les catégories (sélection vide = toutes) — catégories à prix variable (Plats africains/Poissons/Poulets) **toujours exclues**, ces produits n'ayant ni prix d'achat ni prix de vente fixes en catalogue.
+- « Consommé » est net des pertes (`consumedQuantity - lossQuantity`) pour que Reçue = Consommé + Perdu + Restant ; chaque quantité vendable valorisée au prix de vente unitaire (même règle que les pertes) ; Prix d'achat/Bénéfice au coût unitaire des graphiques Bénéfices (`effectiveUnitCost`).
+- Nouvelles routes `GET .../charts/active-stock-listing[?categoryIds=]` (JSON) et `.../active-stock-listing.pdf` (`StreamableFile`), même permission que `stock-lots` (`charts.stock_lots`).
 - `drawPdfTable`/`formatFcfa` déplacés de `reports/` vers `common/pdf-table.util.ts` (partagés entre Rapports et ce nouveau listing).
-- Tests : 4 backend (`charts.service.spec.ts`, dont relecture du PDF via `pdf-parse`), 1 widget Flutter nouveau. 465/465 backend, 180/180 Flutter.
+- Tests : 8 backend (`charts.service.spec.ts`, dont relecture du PDF via `pdf-parse` et filtrage par catégorie), 2 widgets Flutter (visibilité par rôle, gestion d'erreur réseau). 469/469 backend, 181/181 Flutter.
 
 ### Corrigé (2026-09-25) — Listing « Boissons vendues »/« Plats vendus » : débordement sans défilement, pas de quadrillage
 - Le tableau affiché avant export (un `DataTable` Material) débordait sans pouvoir défiler (ni horizontalement pour les colonnes coupées, ni verticalement au-delà de quelques lignes) et ne traçait aucune bordure verticale entre colonnes.

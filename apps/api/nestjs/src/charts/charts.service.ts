@@ -601,14 +601,22 @@ export class ChartsService {
   }
 
   /**
-   * Listing "Stock actif" (module Stock, bouton d'export — demande
-   * utilisateur du 2026-09-25) : un produit = une ligne, agrégée sur ses seuls
-   * lots FIFO de statut `'actif'` (`computeFifoLots`, même critère que l'onglet
-   * "Lots actifs" de Graphiques > Stock > Détail d'un produit — un lot devient
-   * `'epuise'` dès que sa quantité restante atteint 0, voir `stock-lots.ts`).
-   * Produits sans aucun lot actif (jamais approvisionnés, ou entièrement
-   * épuisés) absents du résultat — ce listing ne porte que sur le stock
-   * réellement présent.
+   * Listing "Stock actif" (module Stock, bouton d'export réservé au Super
+   * Administrateur — demande utilisateur du 2026-09-25) : un produit = une
+   * ligne, agrégée sur ses seuls lots FIFO de statut `'actif'`
+   * (`computeFifoLots`, même critère que l'onglet "Lots actifs" de Graphiques
+   * > Stock > Détail d'un produit — un lot devient `'epuise'` dès que sa
+   * quantité restante atteint 0, voir `stock-lots.ts`). Produits sans aucun
+   * lot actif (jamais approvisionnés, ou entièrement épuisés) absents du
+   * résultat — ce listing ne porte que sur le stock réellement présent.
+   *
+   * Catégories à prix variable (Plats africains/Poissons/Poulets,
+   * `hasVariablePricing`) **toujours exclues** — ni prix d'achat ni prix de
+   * vente fixes en catalogue pour ces produits, les colonnes Prix
+   * d'achat/Recette/Bénéfice n'auraient aucun sens. `categoryIds`, s'il est
+   * fourni, restreint davantage la sélection aux catégories listées
+   * (sélection multiple côté Flutter) ; absent/vide = toutes les catégories
+   * éligibles.
    *
    * `lossQuantity` d'un lot est une **part** de `consumedQuantity` (voir
    * `StockLot`), pas un total distinct : `consommé` ci-dessous est donc net
@@ -616,28 +624,48 @@ export class ChartsService {
    * s'additionnent proprement (`reçue = consommé + perdu + restant`), plutôt
    * que de compter deux fois la part perdue.
    *
-   * Chaque quantité est valorisée au même prix de vente unitaire que les
-   * pertes (`salePrice` sinon `referenceSalePrice` sinon 0 — voir
+   * Chaque quantité vendable est valorisée au même prix de vente unitaire que
+   * les pertes (`salePrice` sinon `referenceSalePrice` sinon 0 — voir
    * `lossUnitSalePrice`, `reports/loss-revenue.ts`), cohérent avec le "prix de
    * vente attendu du stock actuel" déjà affiché ailleurs dans le module Stock.
+   * `purchaseValue`/`profit` utilisent le même coût unitaire que les
+   * graphiques Bénéfices (`effectiveUnitCost`, `catalog/product-cost.util.ts`).
    */
-  async activeStockListing(establishmentId: string): Promise<
+  async activeStockListing(establishmentId: string, categoryIds?: string[]): Promise<
     {
       productId: string;
       productName: string;
       receivedQuantity: number;
+      purchaseValue: number;
+      receivedRevenue: number;
       consumedQuantity: number;
       consumedRevenue: number;
       lossQuantity: number;
       lossRevenue: number;
       remainingQuantity: number;
       remainingRevenue: number;
+      profit: number;
     }[]
   > {
-    const products = await this.prisma.product.findMany({
+    const allProducts = await this.prisma.product.findMany({
       where: { establishmentId, status: 'active' },
-      select: { id: true, name: true, salePrice: true, referenceSalePrice: true },
+      select: {
+        id: true,
+        name: true,
+        categoryId: true,
+        salePrice: true,
+        referenceSalePrice: true,
+        purchasePrice: true,
+        bottlesPerCase: true,
+        purchasePricePerCase: true,
+        category: { select: { hasCasePricing: true, hasVariablePricing: true } },
+      },
       orderBy: { name: 'asc' },
+    });
+    const products = allProducts.filter((p) => {
+      if (p.category?.hasVariablePricing) return false;
+      if (categoryIds && categoryIds.length > 0) return p.categoryId != null && categoryIds.includes(p.categoryId);
+      return true;
     });
 
     const movements = await this.prisma.stockMovement.findMany({
@@ -650,12 +678,15 @@ export class ChartsService {
       productId: string;
       productName: string;
       receivedQuantity: number;
+      purchaseValue: number;
+      receivedRevenue: number;
       consumedQuantity: number;
       consumedRevenue: number;
       lossQuantity: number;
       lossRevenue: number;
       remainingQuantity: number;
       remainingRevenue: number;
+      profit: number;
     }[] = [];
     for (const product of products) {
       const productMovements = movements
@@ -670,17 +701,23 @@ export class ChartsService {
       const consumedQuantity = totalConsumed - lossQuantity;
       const remainingQuantity = activeLots.reduce((sum, lot) => sum + lot.remainingQuantity, 0);
       const unitPrice = product.salePrice?.toNumber() ?? product.referenceSalePrice?.toNumber() ?? 0;
+      const unitCost = effectiveUnitCost(product);
+      const purchaseValue = receivedQuantity * unitCost;
+      const receivedRevenue = receivedQuantity * unitPrice;
 
       rows.push({
         productId: product.id,
         productName: product.name,
         receivedQuantity,
+        purchaseValue,
+        receivedRevenue,
         consumedQuantity,
         consumedRevenue: consumedQuantity * unitPrice,
         lossQuantity,
         lossRevenue: lossQuantity * unitPrice,
         remainingQuantity,
         remainingRevenue: remainingQuantity * unitPrice,
+        profit: receivedRevenue - purchaseValue,
       });
     }
     return rows;
@@ -690,22 +727,36 @@ export class ChartsService {
    * Export PDF du listing `activeStockListing` ci-dessus — tableau à
    * quadrillage complet (`drawPdfTable`, même principe que les exports du
    * module Rapports), format paysage plutôt que portrait vu le nombre de
-   * colonnes (8). Une ligne TOTAL somme chaque colonne.
+   * colonnes (11). Une ligne TOTAL somme chaque colonne.
    */
-  async activeStockListingPdf(establishmentId: string): Promise<{ buffer: Buffer; filename: string }> {
-    const rows = await this.activeStockListing(establishmentId);
+  async activeStockListingPdf(establishmentId: string, categoryIds?: string[]): Promise<{ buffer: Buffer; filename: string }> {
+    const rows = await this.activeStockListing(establishmentId, categoryIds);
 
     const totals = rows.reduce(
       (acc, r) => ({
         receivedQuantity: acc.receivedQuantity + r.receivedQuantity,
+        purchaseValue: acc.purchaseValue + r.purchaseValue,
+        receivedRevenue: acc.receivedRevenue + r.receivedRevenue,
         consumedQuantity: acc.consumedQuantity + r.consumedQuantity,
         consumedRevenue: acc.consumedRevenue + r.consumedRevenue,
         lossQuantity: acc.lossQuantity + r.lossQuantity,
         lossRevenue: acc.lossRevenue + r.lossRevenue,
         remainingQuantity: acc.remainingQuantity + r.remainingQuantity,
         remainingRevenue: acc.remainingRevenue + r.remainingRevenue,
+        profit: acc.profit + r.profit,
       }),
-      { receivedQuantity: 0, consumedQuantity: 0, consumedRevenue: 0, lossQuantity: 0, lossRevenue: 0, remainingQuantity: 0, remainingRevenue: 0 },
+      {
+        receivedQuantity: 0,
+        purchaseValue: 0,
+        receivedRevenue: 0,
+        consumedQuantity: 0,
+        consumedRevenue: 0,
+        lossQuantity: 0,
+        lossRevenue: 0,
+        remainingQuantity: 0,
+        remainingRevenue: 0,
+        profit: 0,
+      },
     );
 
     const doc = new PDFDocument({ margin: 30, size: 'A4', layout: 'landscape' });
@@ -722,35 +773,44 @@ export class ChartsService {
     drawPdfTable(
       doc,
       [
-        { header: 'Produit', width: 150 },
-        { header: 'Qté reçue', width: 70, align: 'right' },
-        { header: 'Consommé', width: 70, align: 'right' },
-        { header: 'Recette consommé (FCFA)', width: 100, align: 'right' },
-        { header: 'Perdu', width: 60, align: 'right' },
-        { header: 'Recette perdue (FCFA)', width: 95, align: 'right' },
-        { header: 'Restant', width: 65, align: 'right' },
-        { header: 'Recette stock (FCFA)', width: 95, align: 'right' },
+        { header: 'Produit', width: 105 },
+        { header: 'Qté reçue', width: 55, align: 'right' },
+        { header: "Prix d'achat qté reçue (FCFA)", width: 85, align: 'right' },
+        { header: 'Recette qté reçue (FCFA)', width: 80, align: 'right' },
+        { header: 'Consommé', width: 55, align: 'right' },
+        { header: 'Recette consommé (FCFA)', width: 80, align: 'right' },
+        { header: 'Perdu', width: 45, align: 'right' },
+        { header: 'Recette perdue (FCFA)', width: 75, align: 'right' },
+        { header: 'Restant', width: 50, align: 'right' },
+        { header: 'Recette stock (FCFA)', width: 75, align: 'right' },
+        { header: 'Bénéfice (FCFA)', width: 75, align: 'right' },
       ],
       [
         ...rows.map((r) => [
           r.productName,
           qty(r.receivedQuantity),
+          formatFcfa(r.purchaseValue),
+          formatFcfa(r.receivedRevenue),
           qty(r.consumedQuantity),
           formatFcfa(r.consumedRevenue),
           qty(r.lossQuantity),
           formatFcfa(r.lossRevenue),
           qty(r.remainingQuantity),
           formatFcfa(r.remainingRevenue),
+          formatFcfa(r.profit),
         ]),
         [
           'TOTAL',
           qty(totals.receivedQuantity),
+          formatFcfa(totals.purchaseValue),
+          formatFcfa(totals.receivedRevenue),
           qty(totals.consumedQuantity),
           formatFcfa(totals.consumedRevenue),
           qty(totals.lossQuantity),
           formatFcfa(totals.lossRevenue),
           qty(totals.remainingQuantity),
           formatFcfa(totals.remainingRevenue),
+          formatFcfa(totals.profit),
         ],
       ],
       { boldRowIndexes: new Set([rows.length]) },

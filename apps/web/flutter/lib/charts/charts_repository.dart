@@ -159,18 +159,35 @@ class ChartsRepository {
     return RankingChart.fromJson(json);
   }
 
-  /// Listing "Stock actif" (module Stock, bouton d'export — demande
-  /// utilisateur du 2026-09-25) : un produit = une ligne, agrégée sur ses
-  /// seuls lots actifs.
-  Future<List<ActiveStockListingRow>> getActiveStockListing() async {
-    final json = await _api.get('$_base/active-stock-listing') as List<dynamic>;
+  /// Listing "Stock actif" (module Stock, bouton d'export réservé au Super
+  /// Administrateur — demande utilisateur du 2026-09-25) : un produit = une
+  /// ligne, agrégée sur ses seuls lots actifs. [categoryIds] : filtre optionnel
+  /// (sélection multiple) parmi les catégories éligibles — les catégories à
+  /// prix variable (Plats africains/Poissons/Poulets) sont de toute façon
+  /// toujours exclues côté serveur.
+  Future<List<ActiveStockListingRow>> getActiveStockListing({
+    Set<String>? categoryIds,
+  }) async {
+    final json = await _api.get(
+      '$_base/active-stock-listing',
+      query: _query({
+        'categoryIds': (categoryIds == null || categoryIds.isEmpty) ? null : categoryIds.join(','),
+      }),
+    ) as List<dynamic>;
     return json
         .map((e) => ActiveStockListingRow.fromJson(e as Map<String, dynamic>))
         .toList();
   }
 
   /// Export PDF du même listing, tableau à quadrillage complet.
-  Future<({List<int> bytes, String? filename})> exportActiveStockListingPdf() {
-    return _api.getBytes('$_base/active-stock-listing.pdf');
+  Future<({List<int> bytes, String? filename})> exportActiveStockListingPdf({
+    Set<String>? categoryIds,
+  }) {
+    return _api.getBytes(
+      '$_base/active-stock-listing.pdf',
+      query: _query({
+        'categoryIds': (categoryIds == null || categoryIds.isEmpty) ? null : categoryIds.join(','),
+      }),
+    );
   }
 }

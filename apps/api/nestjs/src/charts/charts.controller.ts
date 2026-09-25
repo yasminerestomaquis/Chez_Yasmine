@@ -12,6 +12,7 @@ import {
 } from './chart-permissions.js';
 import { ChartsService } from './charts.service.js';
 import {
+  ActiveStockListingQueryDto,
   MonthlyChartQueryDto,
   StockLotsQueryDto,
   TopChartQueryDto,
@@ -109,15 +110,25 @@ export class ChartsController {
    * produit des mêmes lots FIFO actifs.
    */
   @Get('active-stock-listing')
-  async activeStockListing(@Req() request: Request, @Param('establishmentId') establishmentId: string) {
+  async activeStockListing(
+    @Req() request: Request,
+    @Param('establishmentId') establishmentId: string,
+    @Query() query: ActiveStockListingQueryDto,
+  ) {
     await this.require(request, establishmentId, STOCK_LOTS_PERMISSION);
-    return this.charts.activeStockListing(establishmentId);
+    const categoryIds = query.categoryIds?.split(',').filter((id) => id.length > 0);
+    return this.charts.activeStockListing(establishmentId, categoryIds);
   }
 
   @Get('active-stock-listing.pdf')
-  async activeStockListingPdf(@Req() request: Request, @Param('establishmentId') establishmentId: string): Promise<StreamableFile> {
+  async activeStockListingPdf(
+    @Req() request: Request,
+    @Param('establishmentId') establishmentId: string,
+    @Query() query: ActiveStockListingQueryDto,
+  ): Promise<StreamableFile> {
     await this.require(request, establishmentId, STOCK_LOTS_PERMISSION);
-    const { buffer, filename } = await this.charts.activeStockListingPdf(establishmentId);
+    const categoryIds = query.categoryIds?.split(',').filter((id) => id.length > 0);
+    const { buffer, filename } = await this.charts.activeStockListingPdf(establishmentId, categoryIds);
     return new StreamableFile(buffer, { type: 'application/pdf', disposition: `attachment; filename="${filename}"` });
   }
 

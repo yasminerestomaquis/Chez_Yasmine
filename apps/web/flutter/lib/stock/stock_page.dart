@@ -94,6 +94,12 @@ class _StockPageState extends State<StockPage> {
   // `stock.manage` — accès en lecture seule (pas de "Mouvement de stock").
   bool get _isServeur => widget.roleName == 'Serveur';
 
+  /// Bouton "Stock actif" (listing/export PDF, AppBar) réservé au Super
+  /// Administrateur — demande utilisateur du 2026-09-25. Même limitation que
+  /// `_isServeur` ci-dessus : comparaison par nom de rôle, `GET /auth/me`
+  /// n'exposant pas de code de permission dédié au client.
+  bool get _isSuperAdmin => widget.roleName == 'Super Administrateur';
+
   late final CatalogRepository _catalog = CatalogRepository(
     ApiClient(),
     widget.establishmentId,
@@ -158,33 +164,121 @@ class _StockPageState extends State<StockPage> {
   static String _qty(double value) =>
       value == value.roundToDouble() ? value.toStringAsFixed(0) : value.toStringAsFixed(2);
 
-  /// Listing "Stock actif" (bouton de l'AppBar — demande utilisateur du
-  /// 2026-09-25) : un produit = une ligne, agrégée sur ses seuls lots FIFO
-  /// actifs (`ChartsService.activeStockListing`, même critère que « Lots
-  /// actifs » dans Graphiques > Stock > Détail d'un produit). Tableau à
-  /// quadrillage complet et défilable (`griddedTable`), même principe que les
-  /// listings « Boissons vendues »/« Plats vendus » du module Rapports.
+  /// Choix des catégories avant le listing "Stock actif" — liste déroulante à
+  /// sélection multiple (`CheckboxListTile`, même principe que
+  /// `_CategoryFilterField` ci-dessous), catégories à prix variable (Plats
+  /// africains/Poissons/Poulets) exclues d'office : ces produits n'ont ni prix
+  /// d'achat ni prix de vente fixes en catalogue, les colonnes du listing
+  /// n'auraient aucun sens pour eux. Sélection vide = toutes les catégories
+  /// éligibles (même convention que `_CategoryFilterField`). `null` = annulé.
+  Future<Set<String>?> _pickStockListingCategories(
+    List<Category> eligibleCategories,
+  ) {
+    var working = <String>{};
+    return showDialog<Set<String>>(
+      context: context,
+      builder: (dialogContext) => StatefulBuilder(
+        builder: (dialogContext, setDialogState) => AlertDialog(
+          title: const Text('Stock actif — choisir les catégories'),
+          content: SizedBox(
+            width: 360,
+            child: eligibleCategories.isEmpty
+                ? const Text('Aucune catégorie éligible.')
+                : ListView(
+                    shrinkWrap: true,
+                    children: [
+                      const Padding(
+                        padding: EdgeInsets.only(bottom: 8),
+                        child: Text(
+                          'Aucune sélection = toutes les catégories ci-dessous.',
+                          style: TextStyle(fontSize: 12),
+                        ),
+                      ),
+                      for (final category in eligibleCategories)
+                        CheckboxListTile(
+                          contentPadding: EdgeInsets.zero,
+                          value: working.contains(category.id),
+                          title: Text(category.name),
+                          onChanged: (checked) => setDialogState(() {
+                            if (checked ?? false) {
+                              working.add(category.id);
+                            } else {
+                              working.remove(category.id);
+                            }
+                          }),
+                        ),
+                    ],
+                  ),
+          ),
+          actions: [
+            TextButton(
+              onPressed: () => Navigator.of(dialogContext).pop(),
+              child: const Text('Annuler'),
+            ),
+            FilledButton(
+              onPressed: () => Navigator.of(dialogContext).pop(working),
+              child: const Text('Valider'),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
+  /// Listing "Stock actif" (bouton de l'AppBar, réservé au Super
+  /// Administrateur — demande utilisateur du 2026-09-25) : un produit = une
+  /// ligne, agrégée sur ses seuls lots FIFO actifs (`ChartsService.
+  /// activeStockListing`, même critère que « Lots actifs » dans Graphiques >
+  /// Stock > Détail d'un produit). Tableau à quadrillage complet et défilable
+  /// (`griddedTable`), même principe que les listings « Boissons vendues »/
+  /// « Plats vendus » du module Rapports.
   Future<void> _showActiveStockListing() async {
     try {
-      final rows = await _charts.getActiveStockListing();
-      final totals = rows.fold<({double received, double consumed, double consumedRevenue, double loss, double lossRevenue, double remaining, double remainingRevenue})>(
+      final categories = await _catalog.listCategories();
+      final eligibleCategories =
+          categories.where((c) => !c.hasVariablePricing).toList();
+
+      if (!mounted) return;
+      final categoryIds = await _pickStockListingCategories(eligibleCategories);
+      if (categoryIds == null) return; // annulé
+
+      final rows = await _charts.getActiveStockListing(categoryIds: categoryIds);
+      final totals = rows.fold<
+          ({
+            double received,
+            double purchaseValue,
+            double receivedRevenue,
+            double consumed,
+            double consumedRevenue,
+            double loss,
+            double lossRevenue,
+            double remaining,
+            double remainingRevenue,
+            double profit,
+          })>(
         (
           received: 0,
+          purchaseValue: 0,
+          receivedRevenue: 0,
           consumed: 0,
           consumedRevenue: 0,
           loss: 0,
           lossRevenue: 0,
           remaining: 0,
           remainingRevenue: 0,
+          profit: 0,
         ),
         (acc, r) => (
           received: acc.received + r.receivedQuantity,
+          purchaseValue: acc.purchaseValue + r.purchaseValue,
+          receivedRevenue: acc.receivedRevenue + r.receivedRevenue,
           consumed: acc.consumed + r.consumedQuantity,
           consumedRevenue: acc.consumedRevenue + r.consumedRevenue,
           loss: acc.loss + r.lossQuantity,
           lossRevenue: acc.lossRevenue + r.lossRevenue,
           remaining: acc.remaining + r.remainingQuantity,
           remainingRevenue: acc.remainingRevenue + r.remainingRevenue,
+          profit: acc.profit + r.profit,
         ),
       );
 
@@ -206,36 +300,45 @@ class _StockPageState extends State<StockPage> {
                     headers: const [
                       'Produit',
                       'Qté reçue',
+                      "Prix d'achat qté reçue (FCFA)",
+                      'Recette qté reçue (FCFA)',
                       'Consommé',
                       'Recette consommé (FCFA)',
                       'Perdu',
                       'Recette perdue (FCFA)',
                       'Restant',
                       'Recette stock (FCFA)',
+                      'Bénéfice (FCFA)',
                     ],
-                    numericColumns: const [false, true, true, true, true, true, true, true],
+                    numericColumns: const [false, true, true, true, true, true, true, true, true, true, true],
                     rows: [
                       for (final r in rows)
                         [
                           r.productName,
                           _qty(r.receivedQuantity),
+                          formatAmount(r.purchaseValue),
+                          formatAmount(r.receivedRevenue),
                           _qty(r.consumedQuantity),
                           formatAmount(r.consumedRevenue),
                           _qty(r.lossQuantity),
                           formatAmount(r.lossRevenue),
                           _qty(r.remainingQuantity),
                           formatAmount(r.remainingRevenue),
+                          formatAmount(r.profit),
                         ],
                     ],
                     totalRow: [
                       'TOTAL',
                       _qty(totals.received),
+                      formatAmount(totals.purchaseValue),
+                      formatAmount(totals.receivedRevenue),
                       _qty(totals.consumed),
                       formatAmount(totals.consumedRevenue),
                       _qty(totals.loss),
                       formatAmount(totals.lossRevenue),
                       _qty(totals.remaining),
                       formatAmount(totals.remainingRevenue),
+                      formatAmount(totals.profit),
                     ],
                   ),
           ),
@@ -254,7 +357,7 @@ class _StockPageState extends State<StockPage> {
         ),
       );
       if (exportRequested == true) {
-        await _downloadActiveStockListingPdf();
+        await _downloadActiveStockListingPdf(categoryIds);
       }
     } on ApiException catch (e) {
       if (!mounted) return;
@@ -263,9 +366,9 @@ class _StockPageState extends State<StockPage> {
     }
   }
 
-  Future<void> _downloadActiveStockListingPdf() async {
+  Future<void> _downloadActiveStockListingPdf(Set<String> categoryIds) async {
     try {
-      final result = await _charts.exportActiveStockListingPdf();
+      final result = await _charts.exportActiveStockListingPdf(categoryIds: categoryIds);
       downloadBytes(result.bytes, result.filename ?? 'Stock actif.pdf');
     } on ApiException catch (e) {
       if (!mounted) return;
@@ -292,11 +395,12 @@ class _StockPageState extends State<StockPage> {
       appBar: AppBar(
         title: const Text('Stock'),
         actions: [
-          IconButton(
-            tooltip: 'Stock actif (listing, export PDF)',
-            icon: const Icon(Icons.picture_as_pdf_outlined),
-            onPressed: _showActiveStockListing,
-          ),
+          if (_isSuperAdmin)
+            IconButton(
+              tooltip: 'Stock actif (listing, export PDF)',
+              icon: const Icon(Icons.picture_as_pdf_outlined),
+              onPressed: _showActiveStockListing,
+            ),
         ],
       ),
       body: Column(

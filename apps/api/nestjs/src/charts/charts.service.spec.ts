@@ -724,12 +724,41 @@ describe('ChartsService — sous-module Dépenses', () => {
   });
 });
 
+function stockListingProduct(overrides: {
+  id: string;
+  name: string;
+  salePrice?: number | null;
+  referenceSalePrice?: number | null;
+  purchasePrice?: number | null;
+  categoryId?: string | null;
+  hasCasePricing?: boolean;
+  hasVariablePricing?: boolean;
+  bottlesPerCase?: number | null;
+  purchasePricePerCase?: number | null;
+}) {
+  const categoryId = overrides.categoryId === undefined ? 'c1' : overrides.categoryId;
+  return {
+    id: overrides.id,
+    name: overrides.name,
+    categoryId,
+    salePrice: overrides.salePrice == null ? null : new Decimal(overrides.salePrice),
+    referenceSalePrice: overrides.referenceSalePrice == null ? null : new Decimal(overrides.referenceSalePrice),
+    purchasePrice: overrides.purchasePrice == null ? null : new Decimal(overrides.purchasePrice),
+    bottlesPerCase: overrides.bottlesPerCase ?? null,
+    purchasePricePerCase: overrides.purchasePricePerCase != null ? new Decimal(overrides.purchasePricePerCase) : null,
+    category:
+      categoryId === null
+        ? null
+        : { hasCasePricing: overrides.hasCasePricing ?? false, hasVariablePricing: overrides.hasVariablePricing ?? false },
+  };
+}
+
 describe('ChartsService.activeStockListing', () => {
-  it('groups a product into a single row summed across its active lots only, net of losses', async () => {
+  it('groups a product into a single row summed across its active lots only, net of losses, with purchase/revenue/profit', async () => {
     const prisma = makePrismaMock();
     const service = new ChartsService(prisma as unknown as PrismaService);
     prisma.product.findMany.mockResolvedValue([
-      { id: 'p1', name: 'Bière', salePrice: new Decimal(1000), referenceSalePrice: null },
+      stockListingProduct({ id: 'p1', name: 'Bière', salePrice: 1000, purchasePrice: 600 }),
     ]);
     prisma.stockMovement.findMany.mockResolvedValue([
       // Deux lots reçus séparément (deux mouvements 'in') pour vérifier
@@ -745,16 +774,20 @@ describe('ChartsService.activeStockListing', () => {
     expect(result).toHaveLength(1);
     // Reçue 80, vendu+perdu 25 au total (20 vente + 5 perte), restant 55.
     // "consommé" est net des pertes (20), pour que reçue = consommé + perdu + restant.
+    // Prix d'achat qté reçue 80×600=48000, recette qté reçue 80×1000=80000, bénéfice 32000.
     expect(result[0]).toEqual({
       productId: 'p1',
       productName: 'Bière',
       receivedQuantity: 80,
+      purchaseValue: 48000,
+      receivedRevenue: 80000,
       consumedQuantity: 20,
       consumedRevenue: 20000,
       lossQuantity: 5,
       lossRevenue: 5000,
       remainingQuantity: 55,
       remainingRevenue: 55000,
+      profit: 32000,
     });
   });
 
@@ -762,8 +795,8 @@ describe('ChartsService.activeStockListing', () => {
     const prisma = makePrismaMock();
     const service = new ChartsService(prisma as unknown as PrismaService);
     prisma.product.findMany.mockResolvedValue([
-      { id: 'p1', name: 'Jamais approvisionné', salePrice: new Decimal(1000), referenceSalePrice: null },
-      { id: 'p2', name: 'Épuisé', salePrice: new Decimal(500), referenceSalePrice: null },
+      stockListingProduct({ id: 'p1', name: 'Jamais approvisionné', salePrice: 1000 }),
+      stockListingProduct({ id: 'p2', name: 'Épuisé', salePrice: 500 }),
     ]);
     prisma.stockMovement.findMany.mockResolvedValue([
       { productId: 'p2', type: 'in', quantity: new Decimal(10), createdAt: new Date('2026-09-01T08:00:00Z'), reason: null },
@@ -779,7 +812,7 @@ describe('ChartsService.activeStockListing', () => {
     const prisma = makePrismaMock();
     const service = new ChartsService(prisma as unknown as PrismaService);
     prisma.product.findMany.mockResolvedValue([
-      { id: 'p1', name: 'Gbêlê', salePrice: null, referenceSalePrice: new Decimal(3000) },
+      stockListingProduct({ id: 'p1', name: 'Gbêlê', referenceSalePrice: 3000 }),
     ]);
     prisma.stockMovement.findMany.mockResolvedValue([
       { productId: 'p1', type: 'in', quantity: new Decimal(25), createdAt: new Date('2026-09-01T08:00:00Z'), reason: null },
@@ -789,6 +822,64 @@ describe('ChartsService.activeStockListing', () => {
 
     expect(result[0].remainingQuantity).toBe(25);
     expect(result[0].remainingRevenue).toBe(75000);
+  });
+
+  it('uses the per-case purchase price ÷ bottles per case for a hasCasePricing product (same rule as Bénéfices)', async () => {
+    const prisma = makePrismaMock();
+    const service = new ChartsService(prisma as unknown as PrismaService);
+    prisma.product.findMany.mockResolvedValue([
+      stockListingProduct({
+        id: 'p1',
+        name: 'Bière Flag 65cl',
+        salePrice: 1000,
+        purchasePrice: 999999, // ne doit pas être utilisé : hasCasePricing privilégie le prix par casier
+        hasCasePricing: true,
+        bottlesPerCase: 12,
+        purchasePricePerCase: 6000,
+      }),
+    ]);
+    prisma.stockMovement.findMany.mockResolvedValue([
+      { productId: 'p1', type: 'in', quantity: new Decimal(12), createdAt: new Date('2026-09-01T08:00:00Z'), reason: null },
+    ]);
+
+    const result = await service.activeStockListing('est-1');
+
+    // Coût unitaire = 6000/12 = 500 ; 12 bouteilles reçues × 500 = 6000.
+    expect(result[0].purchaseValue).toBe(6000);
+  });
+
+  it('always excludes hasVariablePricing categories (Plats africains/Poissons/Poulets), even when explicitly requested', async () => {
+    const prisma = makePrismaMock();
+    const service = new ChartsService(prisma as unknown as PrismaService);
+    prisma.product.findMany.mockResolvedValue([
+      stockListingProduct({ id: 'p1', name: 'Bière', categoryId: 'c1', salePrice: 1000 }),
+      stockListingProduct({ id: 'p2', name: 'Poulet Braisé', categoryId: 'c2', salePrice: 3000, hasVariablePricing: true }),
+    ]);
+    prisma.stockMovement.findMany.mockResolvedValue([
+      { productId: 'p1', type: 'in', quantity: new Decimal(10), createdAt: new Date('2026-09-01T08:00:00Z'), reason: null },
+      { productId: 'p2', type: 'in', quantity: new Decimal(10), createdAt: new Date('2026-09-01T08:00:00Z'), reason: null },
+    ]);
+
+    const result = await service.activeStockListing('est-1', ['c1', 'c2']);
+
+    expect(result.map((r) => r.productName)).toEqual(['Bière']);
+  });
+
+  it('further narrows to the requested categoryIds among the eligible ones', async () => {
+    const prisma = makePrismaMock();
+    const service = new ChartsService(prisma as unknown as PrismaService);
+    prisma.product.findMany.mockResolvedValue([
+      stockListingProduct({ id: 'p1', name: 'Bière', categoryId: 'c1', salePrice: 1000 }),
+      stockListingProduct({ id: 'p2', name: 'Gbêlê', categoryId: 'c2', referenceSalePrice: 3000 }),
+    ]);
+    prisma.stockMovement.findMany.mockResolvedValue([
+      { productId: 'p1', type: 'in', quantity: new Decimal(10), createdAt: new Date('2026-09-01T08:00:00Z'), reason: null },
+      { productId: 'p2', type: 'in', quantity: new Decimal(10), createdAt: new Date('2026-09-01T08:00:00Z'), reason: null },
+    ]);
+
+    const result = await service.activeStockListing('est-1', ['c2']);
+
+    expect(result.map((r) => r.productName)).toEqual(['Gbêlê']);
   });
 });
 
@@ -800,12 +891,12 @@ async function chartsPdfText(buffer: Buffer): Promise<string> {
 }
 
 describe('ChartsService.activeStockListingPdf', () => {
-  it('renders a real, readable PDF with each product, its columns, and a TOTAL row', async () => {
+  it('renders a real, readable PDF with each product, its columns (incl. Prix d\'achat/Recette/Bénéfice), and a TOTAL row', async () => {
     const prisma = makePrismaMock();
     const service = new ChartsService(prisma as unknown as PrismaService);
     prisma.product.findMany.mockResolvedValue([
-      { id: 'p1', name: 'Bière', salePrice: new Decimal(1000), referenceSalePrice: null },
-      { id: 'p2', name: 'Gbêlê', salePrice: null, referenceSalePrice: new Decimal(3000) },
+      stockListingProduct({ id: 'p1', name: 'Bière', salePrice: 1000, purchasePrice: 600 }),
+      stockListingProduct({ id: 'p2', name: 'Gbêlê', referenceSalePrice: 3000 }),
     ]);
     prisma.stockMovement.findMany.mockResolvedValue([
       { productId: 'p1', type: 'in', quantity: new Decimal(50), createdAt: new Date('2026-09-01T08:00:00Z'), reason: null },
@@ -822,5 +913,28 @@ describe('ChartsService.activeStockListingPdf', () => {
     expect(text).toContain('Gbêlê');
     expect(text).toContain('TOTAL');
     expect(text).toContain('75 000'); // 25 restant × 3000 (Gbêlê)
+    expect(text).toContain('Prix d\'achat');
+    expect(text).toContain('Bénéfice');
+    expect(text).toContain('30 000'); // 50 reçus × 600 (Bière, Prix d'achat qté reçue)
+    expect(text).toContain('20 000'); // 50000 recette − 30000 prix d'achat (Bière, Bénéfice)
+  });
+
+  it('applies the categoryIds filter through to the PDF export', async () => {
+    const prisma = makePrismaMock();
+    const service = new ChartsService(prisma as unknown as PrismaService);
+    prisma.product.findMany.mockResolvedValue([
+      stockListingProduct({ id: 'p1', name: 'Bière', categoryId: 'c1', salePrice: 1000 }),
+      stockListingProduct({ id: 'p2', name: 'Gbêlê', categoryId: 'c2', referenceSalePrice: 3000 }),
+    ]);
+    prisma.stockMovement.findMany.mockResolvedValue([
+      { productId: 'p1', type: 'in', quantity: new Decimal(10), createdAt: new Date('2026-09-01T08:00:00Z'), reason: null },
+      { productId: 'p2', type: 'in', quantity: new Decimal(10), createdAt: new Date('2026-09-01T08:00:00Z'), reason: null },
+    ]);
+
+    const { buffer } = await service.activeStockListingPdf('est-1', ['c1']);
+    const text = await chartsPdfText(buffer);
+
+    expect(text).toContain('Bière');
+    expect(text).not.toContain('Gbêlê');
   });
 });
