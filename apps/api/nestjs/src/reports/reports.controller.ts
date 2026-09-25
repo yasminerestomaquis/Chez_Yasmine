@@ -31,31 +31,31 @@ export class ReportsController {
     return this.reports.summaryCsv(establishmentId, query);
   }
 
-  /** Nom de fichier dépendant de la date choisie par l'utilisateur — `@Header` n'accepte qu'une valeur statique, d'où `@Res({ passthrough: true })`. */
-  @Get('beverages-sold.xlsx')
-  async beveragesSoldExcel(
+  /** Nom de fichier dépendant de la/les date(s) choisie(s) par l'utilisateur — `@Header` n'accepte qu'une valeur statique, d'où `@Res({ passthrough: true })`. PDF (pas Excel) et sélection multiple de dates — décision utilisateur du 2026-09-25. */
+  @Get('beverages-sold.pdf')
+  async beveragesSoldPdf(
     @Param('establishmentId') establishmentId: string,
     @Query() query: BeveragesSoldQueryDto,
     @Res({ passthrough: true }) res: Response,
   ) {
-    const { buffer, filename } = await this.reports.beveragesSoldExcel(establishmentId, query.date);
+    const { buffer, filename } = await this.reports.beveragesSoldPdf(establishmentId, query.dates);
     res.set({
-      'Content-Type': 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
+      'Content-Type': 'application/pdf',
       'Content-Disposition': `attachment; filename="${filename}"`,
     });
     return buffer;
   }
 
-  /** Même principe que beveragesSoldExcel ci-dessus, pour les catégories à prix variable (Poulets/Poissons/Plats africains). */
-  @Get('plats-sold.xlsx')
-  async platsSoldExcel(
+  /** Même principe que beveragesSoldPdf ci-dessus, pour les catégories à prix variable (Poulets/Poissons/Plats africains). */
+  @Get('plats-sold.pdf')
+  async platsSoldPdf(
     @Param('establishmentId') establishmentId: string,
     @Query() query: PlatsSoldQueryDto,
     @Res({ passthrough: true }) res: Response,
   ) {
-    const { buffer, filename } = await this.reports.platsSoldExcel(establishmentId, query.date);
+    const { buffer, filename } = await this.reports.platsSoldPdf(establishmentId, query.dates);
     res.set({
-      'Content-Type': 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
+      'Content-Type': 'application/pdf',
       'Content-Disposition': `attachment; filename="${filename}"`,
     });
     return buffer;

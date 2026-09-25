@@ -1,5 +1,5 @@
 import { Decimal } from '@prisma/client';
-import ExcelJS from 'exceljs';
+import { PDFParse } from 'pdf-parse';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import type { PrismaService } from '../prisma/prisma.service.js';
 import type { StockMovementsService } from '../stock/stock-movements.service.js';
@@ -399,7 +399,14 @@ describe('ReportsService.paymentCategoryBreakdown', () => {
   });
 });
 
-describe('ReportsService.beveragesSoldExcel', () => {
+async function pdfText(buffer: Buffer): Promise<string> {
+  const parser = new PDFParse({ data: buffer });
+  const result = await parser.getText();
+  await parser.destroy();
+  return result.text;
+}
+
+describe('ReportsService.beveragesSoldPdf', () => {
   let prisma: ReturnType<typeof makePrismaMock>;
   let service: ReportsService;
 
@@ -411,60 +418,76 @@ describe('ReportsService.beveragesSoldExcel', () => {
   it('scopes the query to the chosen day, establishment, and Boissons categories (case-pricing or isBeverage)', async () => {
     (prisma.saleItem as any).findMany.mockResolvedValue([]);
 
-    await service.beveragesSoldExcel('est-1', '2026-09-11');
+    await service.beveragesSoldPdf('est-1', '2026-09-11');
 
     expect(prisma.saleItem.findMany).toHaveBeenCalledWith(
       expect.objectContaining({
         where: expect.objectContaining({
-          sale: expect.objectContaining({ establishmentId: 'est-1', voidedAt: null }),
+          sale: expect.objectContaining({
+            establishmentId: 'est-1',
+            voidedAt: null,
+            OR: [{ createdAt: { gte: new Date(2026, 8, 11, 0, 0, 0, 0), lte: new Date(2026, 8, 11, 23, 59, 59, 999) } }],
+          }),
           product: { category: { OR: [{ hasCasePricing: true }, { isBeverage: true }] } },
         }),
       }),
     );
   });
 
-  it('builds a workbook with a header row, one row per sale item, and a bold total row', async () => {
+  it('combines several selected dates into one OR-ed range per day, and names the file after the day count', async () => {
+    (prisma.saleItem as any).findMany.mockResolvedValue([]);
+
+    const { filename } = await service.beveragesSoldPdf('est-1', '2026-09-11,2026-09-13');
+
+    expect(filename).toBe('Boissons vendues (2 jours).pdf');
+    expect(prisma.saleItem.findMany).toHaveBeenCalledWith(
+      expect.objectContaining({
+        where: expect.objectContaining({
+          sale: expect.objectContaining({
+            OR: [
+              { createdAt: { gte: new Date(2026, 8, 11, 0, 0, 0, 0), lte: new Date(2026, 8, 11, 23, 59, 59, 999) } },
+              { createdAt: { gte: new Date(2026, 8, 13, 0, 0, 0, 0), lte: new Date(2026, 8, 13, 23, 59, 59, 999) } },
+            ],
+          }),
+        }),
+      }),
+    );
+  });
+
+  it('produces a real PDF (buffer signature) whose text contains every product, order number, and a bold-looking TOTAL row', async () => {
     (prisma.saleItem as any).findMany.mockResolvedValue([
-      { name: 'Heineken', quantity: new Decimal(3), unitPrice: new Decimal(1000), sale: { orderNumber: 12, createdAt: new Date() } },
-      { name: 'Castel', quantity: new Decimal(2), unitPrice: new Decimal(800), sale: { orderNumber: 13, createdAt: new Date() } },
+      { name: 'Heineken', quantity: new Decimal(3), unitPrice: new Decimal(1000), sale: { orderNumber: 12, createdAt: new Date(2026, 8, 11) } },
+      { name: 'Castel', quantity: new Decimal(2), unitPrice: new Decimal(800), sale: { orderNumber: 13, createdAt: new Date(2026, 8, 11) } },
     ]);
 
-    const { buffer, filename } = await service.beveragesSoldExcel('est-1', '2026-09-11');
+    const { buffer, filename } = await service.beveragesSoldPdf('est-1', '2026-09-11');
 
-    expect(filename).toBe('Boissons vendues 11-09-2026.xlsx');
+    expect(filename).toBe('Boissons vendues 11-09-2026.pdf');
+    expect(buffer.subarray(0, 5).toString('latin1')).toBe('%PDF-');
 
-    const workbook = new ExcelJS.Workbook();
-    await workbook.xlsx.load(buffer);
-    const sheet = workbook.getWorksheet('Boissons vendues')!;
-    expect(sheet.getRow(1).getCell(1).value).toBe('Nom du produit');
-    expect(sheet.getRow(2).getCell(1).value).toBe('Heineken');
-    expect(sheet.getRow(2).getCell(2).value).toBe(12);
-    expect(sheet.getRow(2).getCell(3).value).toBe(3);
-    expect(sheet.getRow(2).getCell(4).value).toBe(3000);
-    expect(sheet.getRow(3).getCell(1).value).toBe('Castel');
-
-    const totalRow = sheet.getRow(4);
-    expect(totalRow.getCell(1).value).toBe('TOTAL');
-    expect(totalRow.getCell(3).value).toBe(5);
-    expect(totalRow.getCell(4).value).toBe(4600);
-    expect(totalRow.font?.bold).toBe(true);
+    const text = await pdfText(buffer);
+    expect(text).toContain('Boissons vendues');
+    expect(text).toContain('Heineken');
+    expect(text).toContain('Castel');
+    expect(text).toContain('12'); // N° commande
+    expect(text).toContain('3 000'); // 3 × 1000, séparateur de milliers
+    expect(text).toContain('TOTAL');
+    expect(text).toContain('4 600'); // 3000 + 1600
   });
 
   it('leaves the order number blank when a sale has none', async () => {
     (prisma.saleItem as any).findMany.mockResolvedValue([
-      { name: 'Sucrerie', quantity: new Decimal(1), unitPrice: new Decimal(500), sale: { orderNumber: null, createdAt: new Date() } },
+      { name: 'Sucrerie', quantity: new Decimal(1), unitPrice: new Decimal(500), sale: { orderNumber: null, createdAt: new Date(2026, 8, 11) } },
     ]);
 
-    const { buffer } = await service.beveragesSoldExcel('est-1', '2026-09-11');
+    const { buffer } = await service.beveragesSoldPdf('est-1', '2026-09-11');
 
-    const workbook = new ExcelJS.Workbook();
-    await workbook.xlsx.load(buffer);
-    const sheet = workbook.getWorksheet('Boissons vendues')!;
-    expect(sheet.getRow(2).getCell(2).value).toBe('');
+    const text = await pdfText(buffer);
+    expect(text).toContain('Sucrerie');
   });
 });
 
-describe('ReportsService.platsSoldExcel', () => {
+describe('ReportsService.platsSoldPdf', () => {
   let prisma: ReturnType<typeof makePrismaMock>;
   let service: ReportsService;
 
@@ -476,7 +499,7 @@ describe('ReportsService.platsSoldExcel', () => {
   it('scopes the query to the chosen day, establishment, and variable-pricing categories', async () => {
     (prisma.saleItem as any).findMany.mockResolvedValue([]);
 
-    await service.platsSoldExcel('est-1', '2026-09-11');
+    await service.platsSoldPdf('est-1', '2026-09-11');
 
     expect(prisma.saleItem.findMany).toHaveBeenCalledWith(
       expect.objectContaining({
@@ -488,44 +511,33 @@ describe('ReportsService.platsSoldExcel', () => {
     );
   });
 
-  it('builds a workbook with a header row (market number, not order number), one row per sale item, and a bold total row', async () => {
+  it('produces a real PDF whose text has the market number column (not order number), every product, and the TOTAL row', async () => {
     (prisma.saleItem as any).findMany.mockResolvedValue([
-      { name: 'Poulet Braisé', quantity: new Decimal(2), unitPrice: new Decimal(3000), sale: { marketNumber: 5, createdAt: new Date() } },
-      { name: 'Poisson Braisé', quantity: new Decimal(1), unitPrice: new Decimal(2500), sale: { marketNumber: 6, createdAt: new Date() } },
+      { name: 'Poulet Braisé', quantity: new Decimal(2), unitPrice: new Decimal(3000), sale: { marketNumber: 5, createdAt: new Date(2026, 8, 11) } },
+      { name: 'Poisson Braisé', quantity: new Decimal(1), unitPrice: new Decimal(2500), sale: { marketNumber: 6, createdAt: new Date(2026, 8, 11) } },
     ]);
 
-    const { buffer, filename } = await service.platsSoldExcel('est-1', '2026-09-11');
+    const { buffer, filename } = await service.platsSoldPdf('est-1', '2026-09-11');
 
-    expect(filename).toBe('Plats vendus 11-09-2026.xlsx');
+    expect(filename).toBe('Plats vendus 11-09-2026.pdf');
 
-    const workbook = new ExcelJS.Workbook();
-    await workbook.xlsx.load(buffer);
-    const sheet = workbook.getWorksheet('Plats vendus')!;
-    expect(sheet.getRow(1).getCell(1).value).toBe('Nom du produit');
-    expect(sheet.getRow(1).getCell(2).value).toBe('Numéro de marché');
-    expect(sheet.getRow(2).getCell(1).value).toBe('Poulet Braisé');
-    expect(sheet.getRow(2).getCell(2).value).toBe(5);
-    expect(sheet.getRow(2).getCell(3).value).toBe(2);
-    expect(sheet.getRow(2).getCell(4).value).toBe(6000);
-    expect(sheet.getRow(3).getCell(1).value).toBe('Poisson Braisé');
-
-    const totalRow = sheet.getRow(4);
-    expect(totalRow.getCell(1).value).toBe('TOTAL');
-    expect(totalRow.getCell(3).value).toBe(3);
-    expect(totalRow.getCell(4).value).toBe(8500);
-    expect(totalRow.font?.bold).toBe(true);
+    const text = await pdfText(buffer);
+    expect(text).toContain('Plats vendus');
+    expect(text).toContain('N° marché');
+    expect(text).toContain('Poulet Braisé');
+    expect(text).toContain('Poisson Braisé');
+    expect(text).toContain('TOTAL');
+    expect(text).toContain('8 500'); // 6000 + 2500
   });
 
   it('leaves the market number blank when a sale has none', async () => {
     (prisma.saleItem as any).findMany.mockResolvedValue([
-      { name: 'Alloco', quantity: new Decimal(1), unitPrice: new Decimal(1000), sale: { marketNumber: null, createdAt: new Date() } },
+      { name: 'Alloco', quantity: new Decimal(1), unitPrice: new Decimal(1000), sale: { marketNumber: null, createdAt: new Date(2026, 8, 11) } },
     ]);
 
-    const { buffer } = await service.platsSoldExcel('est-1', '2026-09-11');
+    const { buffer } = await service.platsSoldPdf('est-1', '2026-09-11');
 
-    const workbook = new ExcelJS.Workbook();
-    await workbook.xlsx.load(buffer);
-    const sheet = workbook.getWorksheet('Plats vendus')!;
-    expect(sheet.getRow(2).getCell(2).value).toBe('');
+    const text = await pdfText(buffer);
+    expect(text).toContain('Alloco');
   });
 });

@@ -2,6 +2,12 @@
 
 ## [Unreleased]
 
+### Modifié (2026-09-25) — Rapports : exports Excel → PDF, sélection multiple de dates
+- Les exports « Boissons vendues »/« Plats vendus » passent d'Excel (`.xlsx`) à **PDF** (`pdfkit`, sans dépendance à un moteur externe) : tableau à **quadrillage complet** (bordures verticales et horizontales sur chaque cellule) dessiné par `drawPdfTable`.
+- Les deux exports (et le listing intégré à l'écran) acceptent désormais une **sélection multiple de dates** (`?dates=YYYY-MM-DD[,...]`) au lieu d'un seul jour — dialogue à puces retirables (`ReportsPage._pickExportDates`), même principe que « Choisir la semaine » de Graphiques. Colonne Date ajoutée dès que plusieurs jours sont sélectionnés.
+- Le CSV (`summary.csv`) n'est pas concerné.
+- Tests : 25 backend (`reports.service.spec.ts`, dont relecture du texte réel du PDF via `pdf-parse`), 2 widgets Flutter nouveaux.
+
 ### Modifié (2026-09-25) — Graphiques > Bénéfices : sépare Bénéfice net et Marge brute
 - Les 5 graphiques de l'onglet Bénéfices portaient tous le même mot « Bénéfices » alors que Total/Mensuel calculent un bénéfice **net** (déduit toutes les dépenses et pertes) et que Par catégorie/Par produit/Top calculent une marge **brute** (recette − coût d'achat uniquement, aucune dépense générale ne pouvant être rattachée à un produit) — une même semaine pouvait ainsi afficher un Total négatif à côté d'une ventilation par catégorie positive, sans explication.
 - Aucun changement de calcul (les deux définitions restaient déjà justifiées et documentées) — nouveaux intitulés explicites (« Bénéfice net — … » vs « Marge brute — … ») et réorganisation en deux sections étiquetées et expliquées (« BÉNÉFICE NET » puis « MARGE BRUTE »). Recettes, qui n'a pas cette dualité, reste inchangé.

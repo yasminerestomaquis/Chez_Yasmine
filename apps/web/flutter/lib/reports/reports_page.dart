@@ -319,27 +319,28 @@ class _ReportsPageState extends State<ReportsPage> {
   }
 
   /// Listing des produits vendus des catégories Bières/Vins/Sucreries
-  /// (`hasCasePricing`) pour un jour choisi par l'utilisateur, affiché
-  /// directement dans l'application — construit côté client à partir de
-  /// deux routes déjà existantes (`GET .../products` et
-  /// `GET .../sales?day=`), sans dépendre d'un nouvel endpoint serveur.
-  /// Le dialogue propose aussi « Exporter en Excel », qui réutilise
-  /// `GET .../reports/beverages-sold.xlsx` (`ReportsRepository.exportBeveragesSoldExcel`).
+  /// (`hasCasePricing`) pour un ou plusieurs jours choisis par l'utilisateur
+  /// (sélection multiple — demande utilisateur du 2026-09-25, voir
+  /// [_pickExportDates]), affiché directement dans l'application — construit
+  /// côté client à partir de deux routes déjà existantes (`GET .../products`
+  /// et `GET .../sales?day=`, une requête par jour coché, le serveur ne
+  /// résolvant qu'un jour à la fois), sans dépendre d'un nouvel endpoint.
+  /// Le dialogue propose aussi « Exporter en PDF » (plus Excel, même
+  /// décision), qui réutilise `GET .../reports/beverages-sold.pdf`
+  /// (`ReportsRepository.exportBeveragesSoldPdf`).
   Future<void> _showBeveragesSoldListing() async {
-    final picked = await showDatePicker(
-      context: context,
-      initialDate: DateTime.now(),
-      firstDate: DateTime(2020),
-      lastDate: DateTime(2100),
-      helpText: 'Date des ventes à afficher',
+    final today = DateTime.now();
+    final chosen = await _pickExportDates(
+      selected: {DateTime(today.year, today.month, today.day)},
     );
-    if (picked == null) return;
+    if (chosen == null || chosen.isEmpty) return;
+    final sortedDates = chosen.toList()..sort();
 
     try {
-      final day = _isoDateFormat.format(picked);
-      final (products, sales) = await (
+      final isoDates = [for (final d in sortedDates) _isoDateFormat.format(d)];
+      final (products, salesByDay) = await (
         _catalog.listProducts(),
-        _pos.listForDay(day),
+        Future.wait(isoDates.map(_pos.listForDay)),
       ).wait;
 
       final caseProductIds = products
@@ -348,27 +349,34 @@ class _ReportsPageState extends State<ReportsPage> {
           .toSet();
 
       final rows =
-          <({String name, int? orderNumber, double quantity, double total})>[];
-      for (final sale in sales) {
-        if (sale.voidedAt != null) continue;
-        for (final item in sale.items) {
-          if (!caseProductIds.contains(item.productId)) continue;
-          rows.add((
-            name: item.name,
-            orderNumber: sale.orderNumber,
-            quantity: item.quantity,
-            total: item.quantity * item.unitPrice,
-          ));
+          <({DateTime date, String name, int? orderNumber, double quantity, double total})>[];
+      for (var i = 0; i < sortedDates.length; i++) {
+        for (final sale in salesByDay[i]) {
+          if (sale.voidedAt != null) continue;
+          for (final item in sale.items) {
+            if (!caseProductIds.contains(item.productId)) continue;
+            rows.add((
+              date: sortedDates[i],
+              name: item.name,
+              orderNumber: sale.orderNumber,
+              quantity: item.quantity,
+              total: item.quantity * item.unitPrice,
+            ));
+          }
         }
       }
       final totalQuantity = rows.fold<double>(0, (sum, r) => sum + r.quantity);
       final totalAmount = rows.fold<double>(0, (sum, r) => sum + r.total);
+      final multiDay = sortedDates.length > 1;
+      final title = multiDay
+          ? 'Boissons vendues — ${sortedDates.length} jours'
+          : 'Boissons vendues — ${_orderDateFormat.format(sortedDates.first)}';
 
       if (!mounted) return;
       final exportRequested = await showDialog<bool>(
         context: context,
         builder: (context) => AlertDialog(
-          title: Text('Boissons vendues — ${_orderDateFormat.format(picked)}'),
+          title: Text(title),
           content: SizedBox(
             width: double.maxFinite,
             child: SingleChildScrollView(
@@ -376,15 +384,16 @@ class _ReportsPageState extends State<ReportsPage> {
                   ? const Padding(
                       padding: EdgeInsets.symmetric(vertical: 16),
                       child: Text(
-                        'Aucune vente Bières/Vins/Sucreries ce jour-là.',
+                        'Aucune vente Bières/Vins/Sucreries sur cette période.',
                       ),
                     )
                   : DataTable(
-                      columns: const [
-                        DataColumn(label: Text('Produit')),
-                        DataColumn(label: Text('N° commande')),
-                        DataColumn(label: Text('Qté'), numeric: true),
-                        DataColumn(
+                      columns: [
+                        if (multiDay) const DataColumn(label: Text('Date')),
+                        const DataColumn(label: Text('Produit')),
+                        const DataColumn(label: Text('N° commande')),
+                        const DataColumn(label: Text('Qté'), numeric: true),
+                        const DataColumn(
                           label: Text('Montant (FCFA)'),
                           numeric: true,
                         ),
@@ -393,6 +402,7 @@ class _ReportsPageState extends State<ReportsPage> {
                         for (final r in rows)
                           DataRow(
                             cells: [
+                              if (multiDay) DataCell(Text(_orderDateFormat.format(r.date))),
                               DataCell(Text(r.name)),
                               DataCell(Text(r.orderNumber?.toString() ?? '—')),
                               DataCell(Text(r.quantity.toStringAsFixed(0))),
@@ -401,6 +411,7 @@ class _ReportsPageState extends State<ReportsPage> {
                           ),
                         DataRow(
                           cells: [
+                            if (multiDay) const DataCell(Text('')),
                             const DataCell(
                               Text(
                                 'TOTAL',
@@ -438,14 +449,14 @@ class _ReportsPageState extends State<ReportsPage> {
             if (rows.isNotEmpty)
               FilledButton.icon(
                 onPressed: () => Navigator.of(context).pop(true),
-                icon: const Icon(Icons.file_download_outlined),
-                label: const Text('Exporter en Excel'),
+                icon: const Icon(Icons.picture_as_pdf_outlined),
+                label: const Text('Exporter en PDF'),
               ),
           ],
         ),
       );
       if (exportRequested == true) {
-        await _downloadBeveragesSoldExcel(day, picked);
+        await _downloadBeveragesSoldPdf(isoDates, sortedDates);
       }
     } on ApiException catch (e) {
       if (!mounted) return;
@@ -454,14 +465,13 @@ class _ReportsPageState extends State<ReportsPage> {
     }
   }
 
-  Future<void> _downloadBeveragesSoldExcel(String day, DateTime picked) async {
+  Future<void> _downloadBeveragesSoldPdf(List<String> isoDates, List<DateTime> dates) async {
     try {
-      final result = await _repository.exportBeveragesSoldExcel(day);
-      downloadBytes(
-        result.bytes,
-        result.filename ??
-            'Boissons vendues ${DateFormat('dd-MM-yyyy').format(picked)}.xlsx',
-      );
+      final result = await _repository.exportBeveragesSoldPdf(isoDates);
+      final fallbackName = dates.length == 1
+          ? 'Boissons vendues ${DateFormat('dd-MM-yyyy').format(dates.first)}.pdf'
+          : 'Boissons vendues (${dates.length} jours).pdf';
+      downloadBytes(result.bytes, result.filename ?? fallbackName);
     } on ApiException catch (e) {
       if (!mounted) return;
       ScaffoldMessenger.of(context)
@@ -473,20 +483,18 @@ class _ReportsPageState extends State<ReportsPage> {
   /// prix variable (Poulets/Poissons/Plats africains, `hasVariablePricing`)
   /// — N° de marché plutôt que N° de commande (voir docs/api/pos.md).
   Future<void> _showPlatsSoldListing() async {
-    final picked = await showDatePicker(
-      context: context,
-      initialDate: DateTime.now(),
-      firstDate: DateTime(2020),
-      lastDate: DateTime(2100),
-      helpText: 'Date des ventes à afficher',
+    final today = DateTime.now();
+    final chosen = await _pickExportDates(
+      selected: {DateTime(today.year, today.month, today.day)},
     );
-    if (picked == null) return;
+    if (chosen == null || chosen.isEmpty) return;
+    final sortedDates = chosen.toList()..sort();
 
     try {
-      final day = _isoDateFormat.format(picked);
-      final (products, sales) = await (
+      final isoDates = [for (final d in sortedDates) _isoDateFormat.format(d)];
+      final (products, salesByDay) = await (
         _catalog.listProducts(),
-        _pos.listForDay(day),
+        Future.wait(isoDates.map(_pos.listForDay)),
       ).wait;
 
       final variableProductIds = products
@@ -495,27 +503,34 @@ class _ReportsPageState extends State<ReportsPage> {
           .toSet();
 
       final rows =
-          <({String name, int? marketNumber, double quantity, double total})>[];
-      for (final sale in sales) {
-        if (sale.voidedAt != null) continue;
-        for (final item in sale.items) {
-          if (!variableProductIds.contains(item.productId)) continue;
-          rows.add((
-            name: item.name,
-            marketNumber: sale.marketNumber,
-            quantity: item.quantity,
-            total: item.quantity * item.unitPrice,
-          ));
+          <({DateTime date, String name, int? marketNumber, double quantity, double total})>[];
+      for (var i = 0; i < sortedDates.length; i++) {
+        for (final sale in salesByDay[i]) {
+          if (sale.voidedAt != null) continue;
+          for (final item in sale.items) {
+            if (!variableProductIds.contains(item.productId)) continue;
+            rows.add((
+              date: sortedDates[i],
+              name: item.name,
+              marketNumber: sale.marketNumber,
+              quantity: item.quantity,
+              total: item.quantity * item.unitPrice,
+            ));
+          }
         }
       }
       final totalQuantity = rows.fold<double>(0, (sum, r) => sum + r.quantity);
       final totalAmount = rows.fold<double>(0, (sum, r) => sum + r.total);
+      final multiDay = sortedDates.length > 1;
+      final title = multiDay
+          ? 'Plats vendus — ${sortedDates.length} jours'
+          : 'Plats vendus — ${_orderDateFormat.format(sortedDates.first)}';
 
       if (!mounted) return;
       final exportRequested = await showDialog<bool>(
         context: context,
         builder: (context) => AlertDialog(
-          title: Text('Plats vendus — ${_orderDateFormat.format(picked)}'),
+          title: Text(title),
           content: SizedBox(
             width: double.maxFinite,
             child: SingleChildScrollView(
@@ -523,15 +538,16 @@ class _ReportsPageState extends State<ReportsPage> {
                   ? const Padding(
                       padding: EdgeInsets.symmetric(vertical: 16),
                       child: Text(
-                        'Aucune vente Plats africains/Poissons/Poulets ce jour-là.',
+                        'Aucune vente Plats africains/Poissons/Poulets sur cette période.',
                       ),
                     )
                   : DataTable(
-                      columns: const [
-                        DataColumn(label: Text('Produit')),
-                        DataColumn(label: Text('N° marché')),
-                        DataColumn(label: Text('Qté'), numeric: true),
-                        DataColumn(
+                      columns: [
+                        if (multiDay) const DataColumn(label: Text('Date')),
+                        const DataColumn(label: Text('Produit')),
+                        const DataColumn(label: Text('N° marché')),
+                        const DataColumn(label: Text('Qté'), numeric: true),
+                        const DataColumn(
                           label: Text('Montant (FCFA)'),
                           numeric: true,
                         ),
@@ -540,6 +556,7 @@ class _ReportsPageState extends State<ReportsPage> {
                         for (final r in rows)
                           DataRow(
                             cells: [
+                              if (multiDay) DataCell(Text(_orderDateFormat.format(r.date))),
                               DataCell(Text(r.name)),
                               DataCell(
                                 Text(r.marketNumber?.toString() ?? '—'),
@@ -550,6 +567,7 @@ class _ReportsPageState extends State<ReportsPage> {
                           ),
                         DataRow(
                           cells: [
+                            if (multiDay) const DataCell(Text('')),
                             const DataCell(
                               Text(
                                 'TOTAL',
@@ -587,14 +605,14 @@ class _ReportsPageState extends State<ReportsPage> {
             if (rows.isNotEmpty)
               FilledButton.icon(
                 onPressed: () => Navigator.of(context).pop(true),
-                icon: const Icon(Icons.file_download_outlined),
-                label: const Text('Exporter en Excel'),
+                icon: const Icon(Icons.picture_as_pdf_outlined),
+                label: const Text('Exporter en PDF'),
               ),
           ],
         ),
       );
       if (exportRequested == true) {
-        await _downloadPlatsSoldExcel(day, picked);
+        await _downloadPlatsSoldPdf(isoDates, sortedDates);
       }
     } on ApiException catch (e) {
       if (!mounted) return;
@@ -603,19 +621,103 @@ class _ReportsPageState extends State<ReportsPage> {
     }
   }
 
-  Future<void> _downloadPlatsSoldExcel(String day, DateTime picked) async {
+  Future<void> _downloadPlatsSoldPdf(List<String> isoDates, List<DateTime> dates) async {
     try {
-      final result = await _repository.exportPlatsSoldExcel(day);
-      downloadBytes(
-        result.bytes,
-        result.filename ??
-            'Plats vendus ${DateFormat('dd-MM-yyyy').format(picked)}.xlsx',
-      );
+      final result = await _repository.exportPlatsSoldPdf(isoDates);
+      final fallbackName = dates.length == 1
+          ? 'Plats vendus ${DateFormat('dd-MM-yyyy').format(dates.first)}.pdf'
+          : 'Plats vendus (${dates.length} jours).pdf';
+      downloadBytes(result.bytes, result.filename ?? fallbackName);
     } on ApiException catch (e) {
       if (!mounted) return;
       ScaffoldMessenger.of(context)
           .showSnackBar(SnackBar(content: Text(e.message)));
     }
+  }
+
+  /// Sélection multiple de dates pour l'export Boissons/Plats vendus
+  /// (décision utilisateur du 2026-09-25) — même principe que `pickWeeks`
+  /// (lib/charts/week_selection.dart) : chaque date cochée s'affiche en puce
+  /// retirable, « Ajouter une date » ouvre le sélecteur natif, « Réinitialiser »
+  /// revient à aujourd'hui seul. Retourne `null` si annulé, sinon l'ensemble
+  /// final (jamais vide : réinitialise plutôt que de vider complètement).
+  Future<Set<DateTime>?> _pickExportDates({required Set<DateTime> selected}) {
+    final today = DateTime.now();
+    final defaultDate = DateTime(today.year, today.month, today.day);
+
+    return showDialog<Set<DateTime>>(
+      context: context,
+      builder: (dialogContext) {
+        var working = Set<DateTime>.from(selected);
+        return StatefulBuilder(
+          builder: (dialogContext, setDialogState) {
+            Future<void> addDate() async {
+              final picked = await showDatePicker(
+                context: dialogContext,
+                initialDate: working.isEmpty ? defaultDate : working.last,
+                firstDate: DateTime(2020),
+                lastDate: DateTime(2100),
+                helpText: 'Ajouter une date',
+              );
+              if (picked == null) return;
+              setDialogState(
+                () => working.add(DateTime(picked.year, picked.month, picked.day)),
+              );
+            }
+
+            final sortedDates = working.toList()..sort();
+            return AlertDialog(
+              title: const Text('Choisir la ou les dates'),
+              content: SizedBox(
+                width: 360,
+                child: Column(
+                  mainAxisSize: MainAxisSize.min,
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    if (sortedDates.isEmpty)
+                      const Text('Aucune date sélectionnée.')
+                    else
+                      Wrap(
+                        spacing: 8,
+                        runSpacing: 8,
+                        children: [
+                          for (final date in sortedDates)
+                            Chip(
+                              label: Text(_orderDateFormat.format(date)),
+                              onDeleted: () => setDialogState(() => working.remove(date)),
+                            ),
+                        ],
+                      ),
+                    const SizedBox(height: 12),
+                    OutlinedButton.icon(
+                      onPressed: addDate,
+                      icon: const Icon(Icons.add, size: 18),
+                      label: const Text('Ajouter une date'),
+                    ),
+                  ],
+                ),
+              ),
+              actions: [
+                TextButton(
+                  onPressed: () => setDialogState(() => working = {defaultDate}),
+                  child: const Text('Réinitialiser'),
+                ),
+                TextButton(
+                  onPressed: () => Navigator.of(dialogContext).pop(),
+                  child: const Text('Annuler'),
+                ),
+                FilledButton(
+                  onPressed: () => Navigator.of(dialogContext).pop(
+                    working.isEmpty ? {defaultDate} : working,
+                  ),
+                  child: const Text('Appliquer'),
+                ),
+              ],
+            );
+          },
+        );
+      },
+    );
   }
 
   ({String text, bool positive})? _pctChange(double current, double? previous) {

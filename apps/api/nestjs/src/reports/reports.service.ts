@@ -1,10 +1,48 @@
 import { Injectable } from '@nestjs/common';
-import ExcelJS from 'exceljs';
+import PDFDocument from 'pdfkit';
 import { PrismaService } from '../prisma/prisma.service.js';
 import { effectiveUnitCost } from '../catalog/product-cost.util.js';
 import { StockMovementsService } from '../stock/stock-movements.service.js';
 import type { ReportQueryDto } from './dto/report-query.dto.js';
 import { lossRevenueByGroup } from './loss-revenue.js';
+import { drawPdfTable } from './pdf-table.util.js';
+
+/** "147000" → "147 000" — même convention que `formatAmount` côté Flutter (lib/common/formatting.dart). */
+function formatFcfa(value: number): string {
+  const rounded = Math.round(value);
+  const digits = Math.abs(rounded).toString();
+  let out = '';
+  for (let i = 0; i < digits.length; i++) {
+    if (i > 0 && (digits.length - i) % 3 === 0) out += ' ';
+    out += digits[i];
+  }
+  return rounded < 0 ? `-${out}` : out;
+}
+
+const pad2 = (n: number) => String(n).padStart(2, '0');
+
+/** "YYYY-MM-DD" → plage [00:00:00.000, 23:59:59.999] heure serveur, même convention que `ReportsService.resolveRange`. */
+function dayRange(dateStr: string): { from: Date; to: Date } {
+  const [year, month, day] = dateStr.split('-').map(Number);
+  return {
+    from: new Date(year, month - 1, day, 0, 0, 0, 0),
+    to: new Date(year, month - 1, day, 23, 59, 59, 999),
+  };
+}
+
+/**
+ * Sélection multiple de dates (décision utilisateur du 2026-09-25) : `dates`
+ * est une liste de "YYYY-MM-DD" séparées par des virgules, chacune résolue
+ * en sa propre plage [00:00:00.000, 23:59:59.999] — pas un intervalle
+ * continu, des jours non contigus doivent pouvoir être combinés.
+ */
+function parseDatesCsv(datesCsv: string): { from: Date; to: Date }[] {
+  return datesCsv.split(',').map(dayRange);
+}
+
+function formatDayFr(date: Date): string {
+  return `${pad2(date.getDate())}/${pad2(date.getMonth() + 1)}/${date.getFullYear()}`;
+}
 
 export interface ReportRange {
   from: Date;
@@ -338,21 +376,22 @@ export class ReportsService {
   }
 
   /**
-   * Listing Excel des produits vendus des catégories "Boissons" — à prix par
+   * Listing PDF des produits vendus des catégories "Boissons" — à prix par
    * casier (Bières/Vins/Sucreries — `hasCasePricing`) ou marquées `isBeverage`
    * (ex. Gbêlê, décision utilisateur du 2026-09-17 — voir docs/api/catalog.md)
-   * pour un jour choisi par l'utilisateur, une ligne par `SaleItem` (pas
-   * agrégé par produit : "Numéro de la commande" varie ligne à ligne, un même
-   * produit pouvant appartenir à plusieurs ventes/commandes le même jour).
+   * pour un ou plusieurs jours choisis par l'utilisateur (sélection multiple,
+   * décision utilisateur du 2026-09-25 — voir `parseDatesCsv`), une ligne par
+   * `SaleItem` (pas agrégé par produit : "Numéro de la commande" varie ligne
+   * à ligne, un même produit pouvant appartenir à plusieurs ventes/commandes
+   * le même jour). Remplace l'export Excel précédent (même décision) : tableau
+   * PDF avec quadrillage complet (`drawPdfTable`), pas un classeur.
    */
-  async beveragesSoldExcel(establishmentId: string, dateStr: string): Promise<{ buffer: Buffer; filename: string }> {
-    const [year, month, day] = dateStr.split('-').map(Number);
-    const from = new Date(year, month - 1, day, 0, 0, 0, 0);
-    const to = new Date(year, month - 1, day, 23, 59, 59, 999);
+  async beveragesSoldPdf(establishmentId: string, datesCsv: string): Promise<{ buffer: Buffer; filename: string }> {
+    const ranges = parseDatesCsv(datesCsv);
 
     const items = await this.prisma.saleItem.findMany({
       where: {
-        sale: { establishmentId, voidedAt: null, createdAt: { gte: from, lte: to } },
+        sale: { establishmentId, voidedAt: null, OR: ranges.map((r) => ({ createdAt: { gte: r.from, lte: r.to } })) },
         product: { category: { OR: [{ hasCasePricing: true }, { isBeverage: true }] } },
       },
       include: { sale: { select: { orderNumber: true, createdAt: true } } },
@@ -362,48 +401,60 @@ export class ReportsService {
     const rows = items.map((item) => {
       const quantity = item.quantity.toNumber();
       const total = quantity * item.unitPrice.toNumber();
-      return { name: item.name, orderNumber: item.sale.orderNumber, quantity, total };
+      return { date: item.sale.createdAt, name: item.name, orderNumber: item.sale.orderNumber, quantity, total };
     });
     const totalQuantity = rows.reduce((sum, r) => sum + r.quantity, 0);
     const totalAmount = rows.reduce((sum, r) => sum + r.total, 0);
 
-    const workbook = new ExcelJS.Workbook();
-    const sheet = workbook.addWorksheet('Boissons vendues');
-    sheet.columns = [
-      { header: 'Nom du produit', key: 'name', width: 30 },
-      { header: 'Numéro de la commande', key: 'orderNumber', width: 22 },
-      { header: 'Nombre de produits vendus', key: 'quantity', width: 24 },
-      { header: 'Montant total produit vendu (FCFA)', key: 'total', width: 28 },
-    ];
-    sheet.getRow(1).font = { bold: true };
-    for (const r of rows) {
-      sheet.addRow({ name: r.name, orderNumber: r.orderNumber ?? '', quantity: r.quantity, total: r.total });
-    }
-    const totalRow = sheet.addRow({ name: 'TOTAL', orderNumber: '', quantity: totalQuantity, total: totalAmount });
-    totalRow.font = { bold: true };
+    const doc = new PDFDocument({ margin: 30, size: 'A4' });
+    const chunks: Buffer[] = [];
+    doc.on('data', (chunk: Buffer) => chunks.push(chunk));
+    const done = new Promise<void>((resolve) => doc.on('end', () => resolve()));
 
-    const buffer = (await workbook.xlsx.writeBuffer()) as ExcelJS.Buffer;
-    const pad = (n: number) => String(n).padStart(2, '0');
-    const filename = `Boissons vendues ${pad(day)}-${pad(month)}-${year}.xlsx`;
-    return { buffer: Buffer.from(buffer), filename };
+    doc.fontSize(14).font('Helvetica-Bold').text('Boissons vendues', { align: 'left' });
+    doc.fontSize(10).font('Helvetica').text(ranges.map((r) => formatDayFr(r.from)).join(', '));
+    doc.moveDown(0.5);
+
+    drawPdfTable(
+      doc,
+      [
+        { header: 'Date', width: 70 },
+        { header: 'Nom du produit', width: 170 },
+        { header: 'N° commande', width: 90, align: 'right' },
+        { header: 'Qté vendue', width: 55, align: 'right' },
+        { header: 'Montant (FCFA)', width: 140, align: 'right' },
+      ],
+      [
+        ...rows.map((r) => [formatDayFr(r.date), r.name, r.orderNumber?.toString() ?? '', r.quantity.toString(), formatFcfa(r.total)]),
+        ['TOTAL', '', '', totalQuantity.toString(), formatFcfa(totalAmount)],
+      ],
+      { boldRowIndexes: new Set([rows.length]) },
+    );
+
+    doc.end();
+    await done;
+    const buffer = Buffer.concat(chunks);
+    const filename =
+      ranges.length === 1
+        ? `Boissons vendues ${formatDayFr(ranges[0].from).replaceAll('/', '-')}.pdf`
+        : `Boissons vendues (${ranges.length} jours).pdf`;
+    return { buffer, filename };
   }
 
   /**
-   * Même principe que `beveragesSoldExcel`, pour les catégories à prix
+   * Même principe que `beveragesSoldPdf`, pour les catégories à prix
    * variable (Poulets/Poissons/Plats africains — `hasVariablePricing`, voir
    * docs/api/catalog.md) plutôt qu'à prix par casier. Colonne "Numéro de
    * marché" au lieu de "Numéro de la commande" — c'est `Sale.marketNumber`,
    * pas `orderNumber`, qui rattache ces catégories à une dépense « Marché »
    * (voir docs/api/pos.md, « N° de commande / N° de marché »).
    */
-  async platsSoldExcel(establishmentId: string, dateStr: string): Promise<{ buffer: Buffer; filename: string }> {
-    const [year, month, day] = dateStr.split('-').map(Number);
-    const from = new Date(year, month - 1, day, 0, 0, 0, 0);
-    const to = new Date(year, month - 1, day, 23, 59, 59, 999);
+  async platsSoldPdf(establishmentId: string, datesCsv: string): Promise<{ buffer: Buffer; filename: string }> {
+    const ranges = parseDatesCsv(datesCsv);
 
     const items = await this.prisma.saleItem.findMany({
       where: {
-        sale: { establishmentId, voidedAt: null, createdAt: { gte: from, lte: to } },
+        sale: { establishmentId, voidedAt: null, OR: ranges.map((r) => ({ createdAt: { gte: r.from, lte: r.to } })) },
         product: { category: { hasVariablePricing: true } },
       },
       include: { sale: { select: { marketNumber: true, createdAt: true } } },
@@ -413,29 +464,43 @@ export class ReportsService {
     const rows = items.map((item) => {
       const quantity = item.quantity.toNumber();
       const total = quantity * item.unitPrice.toNumber();
-      return { name: item.name, marketNumber: item.sale.marketNumber, quantity, total };
+      return { date: item.sale.createdAt, name: item.name, marketNumber: item.sale.marketNumber, quantity, total };
     });
     const totalQuantity = rows.reduce((sum, r) => sum + r.quantity, 0);
     const totalAmount = rows.reduce((sum, r) => sum + r.total, 0);
 
-    const workbook = new ExcelJS.Workbook();
-    const sheet = workbook.addWorksheet('Plats vendus');
-    sheet.columns = [
-      { header: 'Nom du produit', key: 'name', width: 30 },
-      { header: 'Numéro de marché', key: 'marketNumber', width: 22 },
-      { header: 'Nombre de produits vendus', key: 'quantity', width: 24 },
-      { header: 'Montant total produit vendu (FCFA)', key: 'total', width: 28 },
-    ];
-    sheet.getRow(1).font = { bold: true };
-    for (const r of rows) {
-      sheet.addRow({ name: r.name, marketNumber: r.marketNumber ?? '', quantity: r.quantity, total: r.total });
-    }
-    const totalRow = sheet.addRow({ name: 'TOTAL', marketNumber: '', quantity: totalQuantity, total: totalAmount });
-    totalRow.font = { bold: true };
+    const doc = new PDFDocument({ margin: 30, size: 'A4' });
+    const chunks: Buffer[] = [];
+    doc.on('data', (chunk: Buffer) => chunks.push(chunk));
+    const done = new Promise<void>((resolve) => doc.on('end', () => resolve()));
 
-    const buffer = (await workbook.xlsx.writeBuffer()) as ExcelJS.Buffer;
-    const pad = (n: number) => String(n).padStart(2, '0');
-    const filename = `Plats vendus ${pad(day)}-${pad(month)}-${year}.xlsx`;
-    return { buffer: Buffer.from(buffer), filename };
+    doc.fontSize(14).font('Helvetica-Bold').text('Plats vendus', { align: 'left' });
+    doc.fontSize(10).font('Helvetica').text(ranges.map((r) => formatDayFr(r.from)).join(', '));
+    doc.moveDown(0.5);
+
+    drawPdfTable(
+      doc,
+      [
+        { header: 'Date', width: 70 },
+        { header: 'Nom du produit', width: 170 },
+        { header: 'N° marché', width: 90, align: 'right' },
+        { header: 'Qté vendue', width: 55, align: 'right' },
+        { header: 'Montant (FCFA)', width: 140, align: 'right' },
+      ],
+      [
+        ...rows.map((r) => [formatDayFr(r.date), r.name, r.marketNumber?.toString() ?? '', r.quantity.toString(), formatFcfa(r.total)]),
+        ['TOTAL', '', '', totalQuantity.toString(), formatFcfa(totalAmount)],
+      ],
+      { boldRowIndexes: new Set([rows.length]) },
+    );
+
+    doc.end();
+    await done;
+    const buffer = Buffer.concat(chunks);
+    const filename =
+      ranges.length === 1
+        ? `Plats vendus ${formatDayFr(ranges[0].from).replaceAll('/', '-')}.pdf`
+        : `Plats vendus (${ranges.length} jours).pdf`;
+    return { buffer, filename };
   }
 }
