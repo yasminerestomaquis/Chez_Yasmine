@@ -1,5 +1,4 @@
-import { Controller, Get, Header, Param, Query, Res, UseGuards } from '@nestjs/common';
-import type { Response } from 'express';
+import { Controller, Get, Header, Param, Query, StreamableFile, UseGuards } from '@nestjs/common';
 import { PermissionsGuard } from '../auth/permissions.guard.js';
 import { RequirePermissions } from '../auth/permissions.decorator.js';
 import { SupabaseJwtGuard } from '../auth/supabase-jwt.guard.js';
@@ -31,19 +30,30 @@ export class ReportsController {
     return this.reports.summaryCsv(establishmentId, query);
   }
 
-  /** Nom de fichier dépendant de la/les date(s) choisie(s) par l'utilisateur — `@Header` n'accepte qu'une valeur statique, d'où `@Res({ passthrough: true })`. PDF (pas Excel) et sélection multiple de dates — décision utilisateur du 2026-09-25. */
+  /**
+   * `StreamableFile` (pas un `Buffer` brut) : NestJS n'a pas de cas
+   * particulier pour un `Buffer` retourné via `@Res({ passthrough: true })`
+   * — `ExpressAdapter.reply()` teste seulement `isObject(body)` (vrai pour
+   * un Buffer, `typeof buffer === 'object'`) et appelle alors
+   * `response.json(body)`, qui sérialise le buffer en
+   * `{"type":"Buffer","data":[...]}` au lieu de l'envoyer en binaire — fichier
+   * téléchargé du bon nom/de la bonne extension mais illisible par tout
+   * lecteur PDF (constaté par l'utilisateur, 2026-09-25, après la régénération
+   * de package-lock.json qui a fait passer @nestjs/platform-express de 12.0.1
+   * à 12.1.0 ; probablement déjà latent avec l'export Excel équivalent avant
+   * ce commit, jamais rouvert en conditions réelles). `StreamableFile` est le
+   * seul type explicitement court-circuité avant cette branche `isObject`.
+   */
   @Get('beverages-sold.pdf')
   async beveragesSoldPdf(
     @Param('establishmentId') establishmentId: string,
     @Query() query: BeveragesSoldQueryDto,
-    @Res({ passthrough: true }) res: Response,
-  ) {
+  ): Promise<StreamableFile> {
     const { buffer, filename } = await this.reports.beveragesSoldPdf(establishmentId, query.dates);
-    res.set({
-      'Content-Type': 'application/pdf',
-      'Content-Disposition': `attachment; filename="${filename}"`,
+    return new StreamableFile(buffer, {
+      type: 'application/pdf',
+      disposition: `attachment; filename="${filename}"`,
     });
-    return buffer;
   }
 
   /** Même principe que beveragesSoldPdf ci-dessus, pour les catégories à prix variable (Poulets/Poissons/Plats africains). */
@@ -51,13 +61,11 @@ export class ReportsController {
   async platsSoldPdf(
     @Param('establishmentId') establishmentId: string,
     @Query() query: PlatsSoldQueryDto,
-    @Res({ passthrough: true }) res: Response,
-  ) {
+  ): Promise<StreamableFile> {
     const { buffer, filename } = await this.reports.platsSoldPdf(establishmentId, query.dates);
-    res.set({
-      'Content-Type': 'application/pdf',
-      'Content-Disposition': `attachment; filename="${filename}"`,
+    return new StreamableFile(buffer, {
+      type: 'application/pdf',
+      disposition: `attachment; filename="${filename}"`,
     });
-    return buffer;
   }
 }

@@ -1,3 +1,4 @@
+import { StreamableFile } from '@nestjs/common';
 import { Decimal } from '@prisma/client';
 import { of } from 'rxjs';
 import { describe, expect, it } from 'vitest';
@@ -40,6 +41,13 @@ describe('transformDecimals', () => {
     expect(Buffer.isBuffer(result)).toBe(true);
     expect(result).toBe(buffer);
     expect((result as Buffer).equals(buffer)).toBe(true);
+  });
+
+  it('leaves a StreamableFile instance untouched instead of flattening it into a plain object (regression 2026-09-25: broke the PDF exports — reply() only bypasses JSON serialization for an actual StreamableFile instance)', () => {
+    const file = new StreamableFile(Buffer.from('%PDF-1.3'), { type: 'application/pdf' });
+    const result = transformDecimals(file);
+    expect(result).toBe(file);
+    expect(result instanceof StreamableFile).toBe(true);
   });
 });
 

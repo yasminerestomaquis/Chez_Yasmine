@@ -2,6 +2,16 @@
 
 ## [Unreleased]
 
+### Corrigé (2026-09-25) — PDF téléchargé illisible (`{"type":"Buffer",...}` au lieu du binaire)
+- Après déploiement, les exports PDF « Boissons vendues »/« Plats vendus » (voir entrée juste en dessous) téléchargeaient un fichier illisible par tout lecteur PDF. NestJS n'a pas de cas particulier pour un `Buffer` brut retourné avec `@Res({ passthrough: true })` : `ExpressAdapter.reply()` teste seulement `isObject(body)` (vrai pour un Buffer) et appelle `response.json(body)`, sérialisant le buffer en `{"type":"Buffer","data":[...]}` au lieu de l'envoyer en binaire.
+- Les deux routes retournent désormais un `StreamableFile` (le seul type explicitement court-circuité avant cette sérialisation JSON) au lieu d'un `Buffer` brut. `DecimalTransformInterceptor` reçoit un garde-fou supplémentaire pour laisser passer un `StreamableFile` sans le décomposer.
+- Probablement déjà latent avec l'export Excel équivalent (même motif `return buffer`), jamais rouvert dans un vrai lecteur depuis son premier correctif du 2026-09-14 (qui ne couvrait qu'une corruption différente, interne à `DecimalTransformInterceptor`). Détails complets et reproduction : `docs/api/reports.md`.
+- Tests : 461 backend (`decimal-transform.interceptor.spec.ts` — nouveau test de régression `StreamableFile`).
+
+### Corrigé (2026-09-25) — Déploiement Render en échec (`npm ci` : `Missing: typescript@5.9.3 from lock file`)
+- Le déploiement du commit précédent (export PDF) échouait au build (`npm ci`, exit 1) : `vite-tsconfig-paths` → `tsconfck` exige un `typescript` distinct (`^5.0.0`) du `typescript` racine (`^6.0.2`), et `package-lock.json` ne contenait pas l'entrée imbriquée correspondante — incohérence invisible à `npm ci --dry-run` mais bloquante pour un vrai `npm ci`.
+- `package-lock.json` régénéré depuis zéro ; 460/460 tests et build de production revérifiés après régénération.
+
 ### Modifié (2026-09-25) — Rapports : exports Excel → PDF, sélection multiple de dates
 - Les exports « Boissons vendues »/« Plats vendus » passent d'Excel (`.xlsx`) à **PDF** (`pdfkit`, sans dépendance à un moteur externe) : tableau à **quadrillage complet** (bordures verticales et horizontales sur chaque cellule) dessiné par `drawPdfTable`.
 - Les deux exports (et le listing intégré à l'écran) acceptent désormais une **sélection multiple de dates** (`?dates=YYYY-MM-DD[,...]`) au lieu d'un seul jour — dialogue à puces retirables (`ReportsPage._pickExportDates`), même principe que « Choisir la semaine » de Graphiques. Colonne Date ajoutée dès que plusieurs jours sont sélectionnés.

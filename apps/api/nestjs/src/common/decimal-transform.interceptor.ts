@@ -1,5 +1,5 @@
 import type { CallHandler, ExecutionContext, NestInterceptor } from '@nestjs/common';
-import { Injectable } from '@nestjs/common';
+import { Injectable, StreamableFile } from '@nestjs/common';
 import { Prisma } from '@prisma/client';
 import type { Observable } from 'rxjs';
 import { map } from 'rxjs';
@@ -42,6 +42,15 @@ export function transformDecimals(value: unknown): unknown {
   // la bonne extension mais un contenu invalide (« format ou extension non
   // valide » à l'ouverture, constaté par l'utilisateur, 2026-09-14).
   if (Buffer.isBuffer(value)) {
+    return value;
+  }
+  // Un `StreamableFile` (ex. les exports PDF de ReportsService) est aussi un
+  // objet — même risque que le Buffer ci-dessus, en pire : la branche
+  // générique le reconstruirait en objet JSON *simple*, perdant au passage
+  // sa classe (`instanceof StreamableFile`), le seul type que
+  // `ExpressAdapter.reply()` court-circuite avant d'appeler `response.json()`
+  // sur tout le reste (voir le commentaire dans reports.controller.ts).
+  if (value instanceof StreamableFile) {
     return value;
   }
   if (Array.isArray(value)) {
