@@ -31,10 +31,9 @@ Future<({DateTime from, DateTime to})?> pickDateTimeRange(
             );
             if (pickedDate == null) return;
             if (!dialogContext.mounted) return;
-            final pickedTime = await showTimePicker(
-              context: dialogContext,
+            final pickedTime = await _pickHourMinute(
+              dialogContext,
               initialTime: TimeOfDay.fromDateTime(current),
-              helpText: isFrom ? 'Heure de début' : 'Heure de fin',
             );
             if (pickedTime == null) return;
             final combined = DateTime(
@@ -97,6 +96,78 @@ Future<({DateTime from, DateTime to})?> pickDateTimeRange(
             ],
           );
         },
+      );
+    },
+  );
+}
+
+/// Saisie de l'heure en 24 h — deux menus "Heure" (0-23)/"Minute" (0-59) où
+/// l'on peut aussi bien taper le nombre au clavier que le choisir dans la
+/// liste (`DropdownMenu`, filtrable) — remplace `showTimePicker` (système
+/// AM/PM par défaut sur ce navigateur/cette locale, et liste seule, non
+/// éditable, avec `DropdownButtonFormField`) : décisions utilisateur du
+/// 2026-09-26, aucun AM/PM souhaité. Retourne `null` si annulé.
+Future<TimeOfDay?> _pickHourMinute(
+  BuildContext context, {
+  required TimeOfDay initialTime,
+}) {
+  return showDialog<TimeOfDay>(
+    context: context,
+    builder: (dialogContext) {
+      var hour = initialTime.hour;
+      var minute = initialTime.minute;
+      return StatefulBuilder(
+        builder: (dialogContext, setDialogState) => AlertDialog(
+          title: Text(
+            '${hour.toString().padLeft(2, '0')}:${minute.toString().padLeft(2, '0')}',
+            textAlign: TextAlign.center,
+          ),
+          content: Row(
+            mainAxisSize: MainAxisSize.min,
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              DropdownMenu<int>(
+                width: 140,
+                initialSelection: hour,
+                label: const Text('Heure'),
+                enableFilter: true,
+                requestFocusOnTap: true,
+                dropdownMenuEntries: [
+                  for (var h = 0; h < 24; h++)
+                    DropdownMenuEntry(value: h, label: h.toString().padLeft(2, '0')),
+                ],
+                onSelected: (value) {
+                  if (value != null) setDialogState(() => hour = value);
+                },
+              ),
+              const SizedBox(width: 16),
+              DropdownMenu<int>(
+                width: 140,
+                initialSelection: minute,
+                label: const Text('Minute'),
+                enableFilter: true,
+                requestFocusOnTap: true,
+                dropdownMenuEntries: [
+                  for (var m = 0; m < 60; m++)
+                    DropdownMenuEntry(value: m, label: m.toString().padLeft(2, '0')),
+                ],
+                onSelected: (value) {
+                  if (value != null) setDialogState(() => minute = value);
+                },
+              ),
+            ],
+          ),
+          actions: [
+            TextButton(
+              onPressed: () => Navigator.of(dialogContext).pop(),
+              child: const Text('Annuler'),
+            ),
+            FilledButton(
+              onPressed: () => Navigator.of(dialogContext).pop(TimeOfDay(hour: hour, minute: minute)),
+              child: const Text('OK'),
+            ),
+          ],
+        ),
       );
     },
   );

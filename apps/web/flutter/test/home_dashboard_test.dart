@@ -164,6 +164,29 @@ void main() {
       expect(find.text('Choisir un intervalle'), findsOneWidget);
       expect(find.text('Du'), findsOneWidget);
       expect(find.text('Au'), findsOneWidget);
+
+      // Tape "Du" -> calendrier natif (confirmé tel quel, aujourd'hui par
+      // défaut) -> le sélecteur d'heure en 24h (menus "Heure"/"Minute",
+      // jamais AM/PM) doit s'ouvrir ensuite, éditable au clavier ou par
+      // sélection dans la liste (décisions utilisateur du 2026-09-26).
+      await tester.tap(find.text('Du'));
+      await tester.pumpAndSettle();
+      await tester.tap(find.text('OK'));
+      await tester.pumpAndSettle();
+
+      // `DropdownMenu` peut garder deux copies de son libellé flottant
+      // pendant l'animation d'apparition (détail d'implémentation) — au
+      // moins une de chaque suffit à confirmer que le sélecteur s'est ouvert.
+      expect(find.text('Heure'), findsWidgets);
+      expect(find.text('Minute'), findsWidgets);
+      expect(find.textContaining('AM'), findsNothing);
+      expect(find.textContaining('PM'), findsNothing);
+
+      await tester.tap(find.text('OK'));
+      await tester.pumpAndSettle();
+
+      // De retour sur "Choisir un intervalle", l'heure choisie a mis à jour "Du".
+      expect(find.text('Choisir un intervalle'), findsOneWidget);
     },
   );
 }
