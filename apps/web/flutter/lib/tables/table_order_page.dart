@@ -58,6 +58,12 @@ class _TableOrderPageState extends State<TableOrderPage> {
 
   Future<List<OrderDetail>>? _ordersFuture;
   Future<(List<Category>, List<Product>)>? _catalogFuture;
+  // Copie synchrone du catalogue chargé par `_catalogFuture`, pour que
+  // `_changeQuantity` retrouve le `Product` d'une ligne (prix de référence,
+  // nom) sans dépendre du `FutureBuilder` de `build()` — voir
+  // `_promptManualPrice`, appelé depuis le "+" d'une ligne à prix de
+  // référence variable.
+  List<Product> _allProducts = [];
   // Sélection par identifiant d'addition plutôt que par position : si une
   // autre addition de la table est encaissée depuis un autre appareil, un
   // rechargement ne doit pas glisser silencieusement la sélection vers une
@@ -80,6 +86,7 @@ class _TableOrderPageState extends State<TableOrderPage> {
   Future<(List<Category>, List<Product>)> _loadCatalog() async {
     final categories = await _catalog.listCategories();
     final products = await _catalog.listProducts();
+    _allProducts = products;
     return (categories, products);
   }
 
@@ -131,9 +138,15 @@ class _TableOrderPageState extends State<TableOrderPage> {
   /// référence variable (`referenceSalePrice` non nul, ex. Gbêlê) : saisie
   /// du MONTANT payé, avec aperçu de la quantité (litres) — même dialogue
   /// qu'en Caisse (`pos_page.dart._promptManualPrice`), voir docs/api/pos.md.
-  Future<double?> _promptManualPrice(Product product) async {
+  Future<double?> _promptManualPrice(Product product, {double? initialAmount}) async {
     final referencePrice = product.referenceSalePrice;
-    final controller = TextEditingController();
+    final controller = TextEditingController(
+      text: initialAmount != null ? initialAmount.round().toString() : '',
+    );
+    // Le montant reconduit est présélectionné : un tapotement sur "Ajouter"
+    // le reprend tel quel, ou l'utilisateur tape directement un nouveau
+    // montant pour l'écraser (ex. versement suivant à un prix différent).
+    controller.selection = TextSelection(baseOffset: 0, extentOffset: controller.text.length);
     return showDialog<double>(
       context: context,
       builder: (context) => StatefulBuilder(
@@ -263,6 +276,66 @@ class _TableOrderPageState extends State<TableOrderPage> {
     // Même garde que _addProduct : CartPanel désactive déjà ses boutons
     // +/- pendant isCharging, ce return est la deuxième ligne de défense.
     if (_isBusy) return;
+
+    // Prix de référence variable (ex. Gbêlê) : `quantity` est une fraction
+    // (litres) déduite d'un montant payé, pas un compte d'unités — un "+1"
+    // brut ajouterait ~1 L (le prix de référence entier, ex. 3 333 FCFA) au
+    // lieu de reconduire le montant payé (ex. 100 FCFA). "+" rouvre donc le
+    // dialogue de montant, pré-rempli avec ce qui a déjà été payé sur cette
+    // ligne ; "−" retire la ligne entière, faute de pouvoir isoler "un
+    // versement" dans une quantité fusionnée (décision utilisateur du
+    // 2026-09-26).
+    if (item.referenceSalePrice != null) {
+      if (delta > 0) {
+        final product = _allProducts.where((p) => p.id == item.productId).firstOrNull;
+        if (product == null) return;
+        final amount = await _promptManualPrice(
+          product,
+          initialAmount: item.quantity * item.unitPrice,
+        );
+        if (amount == null) return;
+        setState(() => _isBusy = true);
+        try {
+          await widget.repository.addItem(
+            order.id,
+            productId: item.productId,
+            quantity: 1,
+            amountPaid: amount,
+          );
+          _reloadOrders();
+        } on ApiException catch (e) {
+          if (!mounted) return;
+          ScaffoldMessenger.of(context)
+              .showSnackBar(SnackBar(content: Text(e.message)));
+        } catch (_) {
+          if (!mounted) return;
+          ScaffoldMessenger.of(context).showSnackBar(
+            const SnackBar(content: Text('Erreur réseau — article non ajouté')),
+          );
+        } finally {
+          if (mounted) setState(() => _isBusy = false);
+        }
+        return;
+      }
+      setState(() => _isBusy = true);
+      try {
+        await widget.repository.removeItem(order.id, item.id);
+        _reloadOrders();
+      } on ApiException catch (e) {
+        if (!mounted) return;
+        ScaffoldMessenger.of(context)
+            .showSnackBar(SnackBar(content: Text(e.message)));
+      } catch (_) {
+        if (!mounted) return;
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(content: Text('Erreur réseau — article non retiré')),
+        );
+      } finally {
+        if (mounted) setState(() => _isBusy = false);
+      }
+      return;
+    }
+
     final nextQuantity = item.quantity + delta;
     setState(() => _isBusy = true);
     try {
@@ -527,6 +600,8 @@ class _TableOrderPageState extends State<TableOrderPage> {
                           onChangeQuantity: (item, delta) =>
                               _changeQuantity(order, item, delta),
                           onCheckout: () => _checkout(order),
+                          isReferencePriced: (item) =>
+                              item.referenceSalePrice != null,
                         );
 
                         if (!isMobile) {

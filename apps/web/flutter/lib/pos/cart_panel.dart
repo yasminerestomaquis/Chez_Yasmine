@@ -21,6 +21,7 @@ class CartPanel<T> extends StatelessWidget {
     required this.onChangeQuantity,
     required this.onCheckout,
     this.scrollController,
+    this.isReferencePriced,
   });
 
   final List<T> lines;
@@ -32,6 +33,46 @@ class CartPanel<T> extends StatelessWidget {
   final void Function(T line, int delta) onChangeQuantity;
   final VoidCallback onCheckout;
   final ScrollController? scrollController;
+
+  /// Ligne à prix de référence variable (ex. Gbêlê) : `quantity` y est une
+  /// fraction (litres) déduite d'un montant payé, jamais un compte d'unités —
+  /// change l'affichage (pas d'arrondi à l'entier, prix annoncé "au litre")
+  /// et le sens de `onChangeQuantity` côté appelant (voir `TableOrderPage`).
+  /// `null` : jamais de ligne à prix de référence variable (panier local de
+  /// la Caisse, `PosPage`), comportement inchangé.
+  final bool Function(T line)? isReferencePriced;
+
+  Widget _lineTile(T line) {
+    final referencePriced = isReferencePriced?.call(line) ?? false;
+    final quantity = quantityOf(line);
+    final unitPrice = unitPriceOf(line);
+    final subtitle = referencePriced
+        ? '${formatDecimalAmount(unitPrice)} FCFA/L x ${formatDecimalAmount(quantity)} L = ${formatAmount(unitPrice * quantity)} FCFA'
+        : '${formatAmount(unitPrice)} FCFA x ${quantity.toStringAsFixed(0)}';
+    return ListTile(
+      title: Text(nameOf(line)),
+      subtitle: Text(subtitle),
+      trailing: Row(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          IconButton(
+            icon: const Icon(Icons.remove_circle_outline, color: AppColors.alert),
+            // Désactivé pendant une mutation en cours : sans ça, un
+            // double-tap pendant l'aller-retour réseau calcule deux fois le
+            // delta depuis la même quantité affichée (encore l'ancienne) et
+            // perd un incrément — particulièrement néfaste sur l'écran de
+            // table (persistance immédiate).
+            onPressed: isCharging ? null : () => onChangeQuantity(line, -1),
+          ),
+          if (!referencePriced) Text(quantity.toStringAsFixed(0)),
+          IconButton(
+            icon: const Icon(Icons.add_circle_outline, color: AppColors.green),
+            onPressed: isCharging ? null : () => onChangeQuantity(line, 1),
+          ),
+        ],
+      ),
+    );
+  }
 
   @override
   Widget build(BuildContext context) {
@@ -64,45 +105,7 @@ class CartPanel<T> extends StatelessWidget {
               ? const Center(child: Text('Panier vide'))
               : ListView(
                   controller: scrollController,
-                  children: [
-                    for (final line in lines)
-                      ListTile(
-                        title: Text(nameOf(line)),
-                        subtitle: Text(
-                          '${formatAmount(unitPriceOf(line))} FCFA x ${quantityOf(line).toStringAsFixed(0)}',
-                        ),
-                        trailing: Row(
-                          mainAxisSize: MainAxisSize.min,
-                          children: [
-                            IconButton(
-                              icon: const Icon(
-                                Icons.remove_circle_outline,
-                                color: AppColors.alert,
-                              ),
-                              // Désactivé pendant une mutation en cours : sans
-                              // ça, un double-tap pendant l'aller-retour
-                              // réseau calcule deux fois le delta depuis la
-                              // même quantité affichée (encore l'ancienne) et
-                              // perd un incrément — particulièrement néfaste
-                              // sur l'écran de table (persistance immédiate).
-                              onPressed: isCharging
-                                  ? null
-                                  : () => onChangeQuantity(line, -1),
-                            ),
-                            Text(quantityOf(line).toStringAsFixed(0)),
-                            IconButton(
-                              icon: const Icon(
-                                Icons.add_circle_outline,
-                                color: AppColors.green,
-                              ),
-                              onPressed: isCharging
-                                  ? null
-                                  : () => onChangeQuantity(line, 1),
-                            ),
-                          ],
-                        ),
-                      ),
-                  ],
+                  children: [for (final line in lines) _lineTile(line)],
                 ),
         ),
         Padding(

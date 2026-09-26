@@ -103,7 +103,11 @@ export class OrdersService {
       orderBy: { openedAt: 'asc' },
       include: {
         items: {
-          include: { product: { select: { name: true, category: { select: { hasCasePricing: true, hasVariablePricing: true } } } } },
+          include: {
+            product: {
+              select: { name: true, referenceSalePrice: true, category: { select: { hasCasePricing: true, hasVariablePricing: true } } },
+            },
+          },
         },
       },
     });

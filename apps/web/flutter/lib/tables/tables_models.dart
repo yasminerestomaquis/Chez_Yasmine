@@ -78,6 +78,7 @@ class OrderItemDetail {
     this.hasCasePricing = false,
     this.hasVariablePricing = false,
     this.sellAsUnit = false,
+    this.referenceSalePrice,
   });
 
   final String id;
@@ -91,6 +92,13 @@ class OrderItemDetail {
   /// l'encaissement, exactement comme en Caisse (voir `pos_page.dart`).
   final bool hasCasePricing;
   final bool hasVariablePricing;
+
+  /// Recopié de `product.referenceSalePrice` (ex. Gbêlê) : non nul si cette
+  /// ligne vient d'un produit à prix de référence variable, où `quantity` est
+  /// une fraction (litres) déduite d'un montant payé plutôt qu'un compte
+  /// d'unités — voir `TableOrderPage._changeQuantity`, qui traite ces lignes
+  /// différemment du +/- générique.
+  final double? referenceSalePrice;
 
   /// Vendu à l'unité plutôt qu'au tarif normal (`unitPrice` reflète déjà le
   /// bon prix) — voir `OrdersService.addItem`. Nécessaire pour que le
@@ -109,6 +117,7 @@ class OrderItemDetail {
       hasCasePricing: category?['hasCasePricing'] as bool? ?? false,
       hasVariablePricing: category?['hasVariablePricing'] as bool? ?? false,
       sellAsUnit: json['sellAsUnit'] as bool? ?? false,
+      referenceSalePrice: (product?['referenceSalePrice'] as num?)?.toDouble(),
     );
   }
 }
