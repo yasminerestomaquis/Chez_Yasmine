@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'package:intl/intl.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 
 import '../api/api_client.dart';
@@ -6,6 +7,7 @@ import '../cash/cash_page.dart';
 import '../catalog/catalog_page.dart';
 import '../charts/graphiques_page.dart';
 import '../common/app_reload.dart';
+import '../common/date_time_range_picker.dart';
 import '../common/formatting.dart';
 import '../customers/customers_page.dart';
 import '../expenses/expenses_page.dart';
@@ -23,6 +25,8 @@ import '../sync/global_sync_context.dart';
 import '../tables/floor_plan_page.dart';
 import '../theme/app_theme.dart';
 import '../users/users_page.dart';
+
+final _rangeLabelFormat = DateFormat('dd/MM/yyyy HH:mm');
 
 class _ModuleEntry {
   const _ModuleEntry(this.icon, this.label, this.builder);
@@ -118,23 +122,46 @@ class _HomeDashboardState extends State<HomeDashboard> {
 
   late Set<DateTime> _selectedDates = {_todayDate};
 
-  bool get _isToday =>
-      _selectedDates.length == 1 && _selectedDates.first == _todayDate;
+  /// Intervalle précis (date + heure + minute pour chaque borne), choisi via
+  /// « Définir un intervalle précis » dans le filtre Date — demande
+  /// utilisateur du 2026-09-26. `null` par défaut (et après
+  /// "Réinitialiser") : le filtre par jour(s) entier(s) ci-dessus
+  /// (`_selectedDates`, minuit-minuit) reste le comportement par défaut,
+  /// inchangé.
+  ({DateTime from, DateTime to})? _customRange;
 
-  String get _periodPhrase => periodPhrase(_selectedDates, _todayDate);
+  bool get _isToday =>
+      _customRange == null &&
+      _selectedDates.length == 1 &&
+      _selectedDates.first == _todayDate;
+
+  String get _periodPhrase => _customRange != null
+      ? 'du ${_rangeLabelFormat.format(_customRange!.from)} au ${_rangeLabelFormat.format(_customRange!.to)}'
+      : periodPhrase(_selectedDates, _todayDate);
+
+  String get _dateFilterLabel => _customRange != null
+      ? '${_rangeLabelFormat.format(_customRange!.from)} → ${_rangeLabelFormat.format(_customRange!.to)}'
+      : dateFilterLabel(_selectedDates, _todayDate);
 
   Future<void> _pickDates() async {
-    final chosen = await showDialog<Set<DateTime>>(
+    final chosen = await showDialog<Object>(
       context: context,
       builder: (dialogContext) {
         var working = {..._selectedDates};
         return StatefulBuilder(
           builder: (dialogContext, setDialogState) => AlertDialog(
+            // `scrollable: true` (plutôt qu'un `ListView`/`shrinkWrap`
+            // imbriqué, qui ne construit paresseusement que les tuiles
+            // visibles dans sa hauteur bornée) : la liste des 7 jours ET le
+            // bouton d'intervalle précis en dessous restent tous construits,
+            // le dialogue défilant lui-même si le contenu dépasse la hauteur
+            // disponible.
+            scrollable: true,
             title: const Text('Filtrer par date'),
             content: SizedBox(
               width: 360,
-              child: ListView(
-                shrinkWrap: true,
+              child: Column(
+                mainAxisSize: MainAxisSize.min,
                 children: [
                   for (final date in _dateOptions)
                     CheckboxListTile(
@@ -151,6 +178,29 @@ class _HomeDashboardState extends State<HomeDashboard> {
                         }
                       }),
                     ),
+                  const Divider(),
+                  // Si l'utilisateur veut véritablement définir, pour chaque
+                  // borne, la date, l'heure et la minute plutôt qu'un ou
+                  // plusieurs jours entiers — ferme aussi ce dialogue-ci en
+                  // renvoyant directement l'intervalle choisi (demande
+                  // utilisateur du 2026-09-26).
+                  Align(
+                    alignment: Alignment.centerLeft,
+                    child: TextButton.icon(
+                      onPressed: () async {
+                        final range = await pickDateTimeRange(
+                          dialogContext,
+                          initialFrom: _customRange?.from ?? _todayDate,
+                          initialTo: _customRange?.to ?? DateTime.now(),
+                        );
+                        if (range == null) return;
+                        if (!dialogContext.mounted) return;
+                        Navigator.of(dialogContext).pop(range);
+                      },
+                      icon: const Icon(Icons.schedule_outlined, size: 18),
+                      label: const Text('Définir un intervalle précis'),
+                    ),
+                  ),
                 ],
               ),
             ),
@@ -175,7 +225,14 @@ class _HomeDashboardState extends State<HomeDashboard> {
       },
     );
     if (chosen == null) return;
-    setState(() => _selectedDates = chosen);
+    setState(() {
+      if (chosen is Set<DateTime>) {
+        _selectedDates = chosen;
+        _customRange = null;
+      } else if (chosen is ({DateTime from, DateTime to})) {
+        _customRange = chosen;
+      }
+    });
     _reload();
   }
 
@@ -301,22 +358,28 @@ class _HomeDashboardState extends State<HomeDashboard> {
   /// hors ligne est un compromis largement préférable à bloquer la
   /// navigation.
   Future<_DashboardData> _load() async {
-    // Bornes UTC explicites de chaque jour choisi (00:00:00.000 ->
-    // 23:59:59.999) : ReportsService.resolveRange fait `new Date(from)`/
-    // `new Date(to)` côté serveur sans ajouter de fin de journée — envoyer la
-    // même date pour from et to donnerait un intervalle de largeur nulle
-    // (aucune vente ne tombe pile à minuit) et ne renverrait jamais rien.
-    // Une requête par jour coché (le serveur ne résout qu'un intervalle
-    // continu), cumulées ensuite par `mergeSummaries`/`mergeBreakdowns`.
-    final ranges = [
-      for (final date in _selectedDates)
-        (
-          from: DateTime.utc(date.year, date.month, date.day),
-          to: DateTime.utc(date.year, date.month, date.day)
-              .add(const Duration(days: 1))
-              .subtract(const Duration(milliseconds: 1)),
-        ),
-    ];
+    // Intervalle précis choisi via "Définir un intervalle précis" (date +
+    // heure + minute pour chaque borne, demande utilisateur du 2026-09-26) :
+    // un seul intervalle continu, envoyé tel quel au serveur. Par défaut
+    // (`_customRange` nul), comportement inchangé — bornes UTC explicites de
+    // chaque jour choisi (00:00:00.000 -> 23:59:59.999) :
+    // ReportsService.resolveRange fait `new Date(from)`/`new Date(to)` côté
+    // serveur sans ajouter de fin de journée — envoyer la même date pour
+    // from et to donnerait un intervalle de largeur nulle (aucune vente ne
+    // tombe pile à minuit) et ne renverrait jamais rien. Une requête par
+    // jour coché (le serveur ne résout qu'un intervalle continu), cumulées
+    // ensuite par `mergeSummaries`/`mergeBreakdowns`.
+    final ranges = _customRange != null
+        ? [(from: _customRange!.from.toUtc(), to: _customRange!.to.toUtc())]
+        : [
+            for (final date in _selectedDates)
+              (
+                from: DateTime.utc(date.year, date.month, date.day),
+                to: DateTime.utc(date.year, date.month, date.day)
+                    .add(const Duration(days: 1))
+                    .subtract(const Duration(milliseconds: 1)),
+              ),
+          ];
 
     final summaryFuture = Future.wait([
       for (final r in ranges)
@@ -1018,7 +1081,7 @@ class _HomeDashboardState extends State<HomeDashboard> {
                           mainAxisSize: MainAxisSize.min,
                           children: [
                             Text(
-                              dateFilterLabel(_selectedDates, _todayDate),
+                              _dateFilterLabel,
                               style: const TextStyle(
                                 color: AppColors.textSecondary,
                                 fontSize: 14,

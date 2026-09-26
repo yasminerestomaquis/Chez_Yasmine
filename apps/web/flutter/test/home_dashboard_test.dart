@@ -130,4 +130,40 @@ void main() {
       expect(find.text("Aujourd'hui"), findsNothing);
     },
   );
+
+  testWidgets(
+    'the Date filter offers a precise date+time interval option, on top of the default day selection (2026-09-26)',
+    (tester) async {
+      await tester.pumpWidget(
+        const MaterialApp(
+          home: HomeDashboard(
+            establishmentId: 'est-1',
+            establishmentName: 'Chez Yasmine',
+            roleName: 'Propriétaire',
+          ),
+        ),
+      );
+      await tester.pumpAndSettle();
+
+      await tester.tap(find.text("Aujourd'hui").first);
+      await tester.pumpAndSettle();
+
+      // Toujours 7 jours (comportement par défaut inchangé), plus l'option
+      // d'intervalle précis en plus, jamais à la place.
+      expect(find.byType(CheckboxListTile), findsNWidgets(7));
+      expect(find.text('Définir un intervalle précis'), findsOneWidget);
+
+      // Le dialogue est scrollable (`AlertDialog(scrollable: true)`, 7 jours
+      // + séparateur + bouton dépassent souvent la hauteur visible) — fait
+      // défiler jusqu'au bouton avant de le taper.
+      await tester.ensureVisible(find.text('Définir un intervalle précis'));
+      await tester.pumpAndSettle();
+      await tester.tap(find.text('Définir un intervalle précis'));
+      await tester.pumpAndSettle();
+
+      expect(find.text('Choisir un intervalle'), findsOneWidget);
+      expect(find.text('Du'), findsOneWidget);
+      expect(find.text('Au'), findsOneWidget);
+    },
+  );
 }
