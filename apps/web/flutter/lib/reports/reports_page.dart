@@ -21,6 +21,24 @@ import 'reports_repository.dart';
 
 final _orderDateFormat = DateFormat('dd/MM/yyyy');
 final _isoDateFormat = DateFormat('yyyy-MM-dd');
+final _rangeDateTimeFormat = DateFormat('dd/MM/yyyy HH:mm');
+
+bool _isSameDay(DateTime a, DateTime b) => a.year == b.year && a.month == b.month && a.day == b.day;
+
+/// Jours calendaires couverts par [from]..[to] (inclusif) — sert uniquement
+/// à réutiliser l'export PDF existant (`exportBeveragesSoldPdf`/
+/// `exportPlatsSoldPdf`, résolu par jour côté serveur) pour un intervalle
+/// précis à la minute près : le listing à l'écran, lui, est filtré sur
+/// l'intervalle exact via `PosRepository.listForRange`.
+List<DateTime> _datesSpanning(DateTime from, DateTime to) {
+  final start = DateTime(from.year, from.month, from.day);
+  final end = DateTime(to.year, to.month, to.day);
+  final dates = <DateTime>[];
+  for (var d = start; !d.isAfter(end); d = d.add(const Duration(days: 1))) {
+    dates.add(d);
+  }
+  return dates;
+}
 
 const _periodLabels = {
   'day': 'Jour',
@@ -327,28 +345,28 @@ class _ReportsPageState extends State<ReportsPage> {
   }
 
   /// Listing des produits vendus des catégories Bières/Vins/Sucreries
-  /// (`hasCasePricing`) pour un ou plusieurs jours choisis par l'utilisateur
-  /// (sélection multiple — demande utilisateur du 2026-09-25, voir
-  /// [_pickExportDates]), affiché directement dans l'application — construit
-  /// côté client à partir de deux routes déjà existantes (`GET .../products`
-  /// et `GET .../sales?day=`, une requête par jour coché, le serveur ne
-  /// résolvant qu'un jour à la fois), sans dépendre d'un nouvel endpoint.
-  /// Le dialogue propose aussi « Exporter en PDF » (plus Excel, même
-  /// décision), qui réutilise `GET .../reports/beverages-sold.pdf`
-  /// (`ReportsRepository.exportBeveragesSoldPdf`).
+  /// (`hasCasePricing`) sur un intervalle précis à la minute près, choisi par
+  /// l'utilisateur (voir [_pickDateTimeRange] — remplace la sélection
+  /// multiple de jours entiers, demande utilisateur du 2026-09-26), affiché
+  /// directement dans l'application — construit côté client à partir de deux
+  /// routes déjà existantes (`GET .../products` et `GET .../sales?from=&to=`,
+  /// une seule requête), sans dépendre d'un nouvel endpoint pour le listing
+  /// lui-même. Le dialogue propose aussi « Exporter en PDF » (plus Excel,
+  /// même décision), qui réutilise `GET .../reports/beverages-sold.pdf`
+  /// (`ReportsRepository.exportBeveragesSoldPdf`, résolu par jour côté
+  /// serveur — voir [_datesSpanning]).
   Future<void> _showBeveragesSoldListing() async {
-    final today = DateTime.now();
-    final chosen = await _pickExportDates(
-      selected: {DateTime(today.year, today.month, today.day)},
+    final now = DateTime.now();
+    final range = await _pickDateTimeRange(
+      initialFrom: DateTime(now.year, now.month, now.day),
+      initialTo: now,
     );
-    if (chosen == null || chosen.isEmpty) return;
-    final sortedDates = chosen.toList()..sort();
+    if (range == null) return;
 
     try {
-      final isoDates = [for (final d in sortedDates) _isoDateFormat.format(d)];
-      final (products, salesByDay) = await (
+      final (products, sales) = await (
         _catalog.listProducts(),
-        Future.wait(isoDates.map(_pos.listForDay)),
+        _pos.listForRange(range.from, range.to),
       ).wait;
 
       final caseProductIds = products
@@ -357,28 +375,26 @@ class _ReportsPageState extends State<ReportsPage> {
           .toSet();
 
       final rows =
-          <({DateTime date, String name, int? orderNumber, double quantity, double total})>[];
-      for (var i = 0; i < sortedDates.length; i++) {
-        for (final sale in salesByDay[i]) {
-          if (sale.voidedAt != null) continue;
-          for (final item in sale.items) {
-            if (!caseProductIds.contains(item.productId)) continue;
-            rows.add((
-              date: sortedDates[i],
-              name: item.name,
-              orderNumber: sale.orderNumber,
-              quantity: item.quantity,
-              total: item.quantity * item.unitPrice,
-            ));
-          }
+          <({DateTime date, String name, int? orderNumber, double quantity, double total, bool isReferencePriced})>[];
+      for (final sale in sales) {
+        if (sale.voidedAt != null) continue;
+        for (final item in sale.items) {
+          if (!caseProductIds.contains(item.productId)) continue;
+          rows.add((
+            date: sale.createdAt.toLocal(),
+            name: item.name,
+            orderNumber: sale.orderNumber,
+            quantity: item.quantity,
+            total: item.quantity * item.unitPrice,
+            isReferencePriced: item.referenceSalePrice != null,
+          ));
         }
       }
       final totalQuantity = rows.fold<double>(0, (sum, r) => sum + r.quantity);
       final totalAmount = rows.fold<double>(0, (sum, r) => sum + r.total);
-      final multiDay = sortedDates.length > 1;
-      final title = multiDay
-          ? 'Boissons vendues — ${sortedDates.length} jours'
-          : 'Boissons vendues — ${_orderDateFormat.format(sortedDates.first)}';
+      final multiDay = !_isSameDay(range.from, range.to);
+      final title =
+          'Boissons vendues — ${_rangeDateTimeFormat.format(range.from)} → ${_rangeDateTimeFormat.format(range.to)}';
 
       if (!mounted) return;
       final exportRequested = await showDialog<bool>(
@@ -414,10 +430,10 @@ class _ReportsPageState extends State<ReportsPage> {
                     rows: [
                       for (final r in rows)
                         [
-                          if (multiDay) _orderDateFormat.format(r.date),
+                          if (multiDay) _rangeDateTimeFormat.format(r.date),
                           r.name,
                           r.orderNumber?.toString() ?? '—',
-                          r.quantity.toStringAsFixed(0),
+                          r.isReferencePriced ? formatDecimalAmount(r.quantity) : r.quantity.toStringAsFixed(0),
                           formatAmount(r.total),
                         ],
                     ],
@@ -445,7 +461,8 @@ class _ReportsPageState extends State<ReportsPage> {
         ),
       );
       if (exportRequested == true) {
-        await _downloadBeveragesSoldPdf(isoDates, sortedDates);
+        final dates = _datesSpanning(range.from, range.to);
+        await _downloadBeveragesSoldPdf([for (final d in dates) _isoDateFormat.format(d)], dates);
       }
     } on ApiException catch (e) {
       if (!mounted) return;
@@ -472,18 +489,17 @@ class _ReportsPageState extends State<ReportsPage> {
   /// prix variable (Poulets/Poissons/Plats africains, `hasVariablePricing`)
   /// — N° de marché plutôt que N° de commande (voir docs/api/pos.md).
   Future<void> _showPlatsSoldListing() async {
-    final today = DateTime.now();
-    final chosen = await _pickExportDates(
-      selected: {DateTime(today.year, today.month, today.day)},
+    final now = DateTime.now();
+    final range = await _pickDateTimeRange(
+      initialFrom: DateTime(now.year, now.month, now.day),
+      initialTo: now,
     );
-    if (chosen == null || chosen.isEmpty) return;
-    final sortedDates = chosen.toList()..sort();
+    if (range == null) return;
 
     try {
-      final isoDates = [for (final d in sortedDates) _isoDateFormat.format(d)];
-      final (products, salesByDay) = await (
+      final (products, sales) = await (
         _catalog.listProducts(),
-        Future.wait(isoDates.map(_pos.listForDay)),
+        _pos.listForRange(range.from, range.to),
       ).wait;
 
       final variableProductIds = products
@@ -493,27 +509,24 @@ class _ReportsPageState extends State<ReportsPage> {
 
       final rows =
           <({DateTime date, String name, int? marketNumber, double quantity, double total})>[];
-      for (var i = 0; i < sortedDates.length; i++) {
-        for (final sale in salesByDay[i]) {
-          if (sale.voidedAt != null) continue;
-          for (final item in sale.items) {
-            if (!variableProductIds.contains(item.productId)) continue;
-            rows.add((
-              date: sortedDates[i],
-              name: item.name,
-              marketNumber: sale.marketNumber,
-              quantity: item.quantity,
-              total: item.quantity * item.unitPrice,
-            ));
-          }
+      for (final sale in sales) {
+        if (sale.voidedAt != null) continue;
+        for (final item in sale.items) {
+          if (!variableProductIds.contains(item.productId)) continue;
+          rows.add((
+            date: sale.createdAt.toLocal(),
+            name: item.name,
+            marketNumber: sale.marketNumber,
+            quantity: item.quantity,
+            total: item.quantity * item.unitPrice,
+          ));
         }
       }
       final totalQuantity = rows.fold<double>(0, (sum, r) => sum + r.quantity);
       final totalAmount = rows.fold<double>(0, (sum, r) => sum + r.total);
-      final multiDay = sortedDates.length > 1;
-      final title = multiDay
-          ? 'Plats vendus — ${sortedDates.length} jours'
-          : 'Plats vendus — ${_orderDateFormat.format(sortedDates.first)}';
+      final multiDay = !_isSameDay(range.from, range.to);
+      final title =
+          'Plats vendus — ${_rangeDateTimeFormat.format(range.from)} → ${_rangeDateTimeFormat.format(range.to)}';
 
       if (!mounted) return;
       final exportRequested = await showDialog<bool>(
@@ -549,7 +562,7 @@ class _ReportsPageState extends State<ReportsPage> {
                     rows: [
                       for (final r in rows)
                         [
-                          if (multiDay) _orderDateFormat.format(r.date),
+                          if (multiDay) _rangeDateTimeFormat.format(r.date),
                           r.name,
                           r.marketNumber?.toString() ?? '—',
                           r.quantity.toStringAsFixed(0),
@@ -580,7 +593,8 @@ class _ReportsPageState extends State<ReportsPage> {
         ),
       );
       if (exportRequested == true) {
-        await _downloadPlatsSoldPdf(isoDates, sortedDates);
+        final dates = _datesSpanning(range.from, range.to);
+        await _downloadPlatsSoldPdf([for (final d in dates) _isoDateFormat.format(d)], dates);
       }
     } on ApiException catch (e) {
       if (!mounted) return;
@@ -603,81 +617,94 @@ class _ReportsPageState extends State<ReportsPage> {
     }
   }
 
-  /// Sélection multiple de dates pour l'export Boissons/Plats vendus
-  /// (décision utilisateur du 2026-09-25) — même principe que `pickWeeks`
-  /// (lib/charts/week_selection.dart) : chaque date cochée s'affiche en puce
-  /// retirable, « Ajouter une date » ouvre le sélecteur natif, « Réinitialiser »
-  /// revient à aujourd'hui seul. Retourne `null` si annulé, sinon l'ensemble
-  /// final (jamais vide : réinitialise plutôt que de vider complètement).
-  Future<Set<DateTime>?> _pickExportDates({required Set<DateTime> selected}) {
-    final today = DateTime.now();
-    final defaultDate = DateTime(today.year, today.month, today.day);
-
-    return showDialog<Set<DateTime>>(
+  /// Sélection d'un intervalle précis (date + heure + minute pour chaque
+  /// borne) pour Boissons/Plats vendus — remplace la sélection multiple de
+  /// jours entiers (décision utilisateur du 2026-09-26) : le listing est
+  /// filtré exactement sur cet intervalle plutôt que sur des jours
+  /// calendaires entiers. Retourne `null` si annulé.
+  Future<({DateTime from, DateTime to})?> _pickDateTimeRange({
+    required DateTime initialFrom,
+    required DateTime initialTo,
+  }) {
+    return showDialog<({DateTime from, DateTime to})>(
       context: context,
       builder: (dialogContext) {
-        var working = Set<DateTime>.from(selected);
+        var from = initialFrom;
+        var to = initialTo;
         return StatefulBuilder(
           builder: (dialogContext, setDialogState) {
-            Future<void> addDate() async {
-              final picked = await showDatePicker(
+            Future<void> pickBound({required bool isFrom}) async {
+              final current = isFrom ? from : to;
+              final pickedDate = await showDatePicker(
                 context: dialogContext,
-                initialDate: working.isEmpty ? defaultDate : working.last,
+                initialDate: current,
                 firstDate: DateTime(2020),
                 lastDate: DateTime(2100),
-                helpText: 'Ajouter une date',
+                helpText: isFrom ? 'Date de début' : 'Date de fin',
               );
-              if (picked == null) return;
-              setDialogState(
-                () => working.add(DateTime(picked.year, picked.month, picked.day)),
+              if (pickedDate == null) return;
+              if (!dialogContext.mounted) return;
+              final pickedTime = await showTimePicker(
+                context: dialogContext,
+                initialTime: TimeOfDay.fromDateTime(current),
+                helpText: isFrom ? 'Heure de début' : 'Heure de fin',
               );
+              if (pickedTime == null) return;
+              final combined = DateTime(
+                pickedDate.year,
+                pickedDate.month,
+                pickedDate.day,
+                pickedTime.hour,
+                pickedTime.minute,
+              );
+              setDialogState(() {
+                if (isFrom) {
+                  from = combined;
+                } else {
+                  to = combined;
+                }
+              });
             }
 
-            final sortedDates = working.toList()..sort();
+            final invalidRange = !to.isAfter(from);
             return AlertDialog(
-              title: const Text('Choisir la ou les dates'),
-              content: SizedBox(
-                width: 360,
-                child: Column(
-                  mainAxisSize: MainAxisSize.min,
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    if (sortedDates.isEmpty)
-                      const Text('Aucune date sélectionnée.')
-                    else
-                      Wrap(
-                        spacing: 8,
-                        runSpacing: 8,
-                        children: [
-                          for (final date in sortedDates)
-                            Chip(
-                              label: Text(_orderDateFormat.format(date)),
-                              onDeleted: () => setDialogState(() => working.remove(date)),
-                            ),
-                        ],
+              title: const Text('Choisir un intervalle'),
+              content: Column(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  ListTile(
+                    contentPadding: EdgeInsets.zero,
+                    title: const Text('Du'),
+                    subtitle: Text(_rangeDateTimeFormat.format(from)),
+                    trailing: const Icon(Icons.edit_calendar_outlined),
+                    onTap: () => pickBound(isFrom: true),
+                  ),
+                  ListTile(
+                    contentPadding: EdgeInsets.zero,
+                    title: const Text('Au'),
+                    subtitle: Text(_rangeDateTimeFormat.format(to)),
+                    trailing: const Icon(Icons.edit_calendar_outlined),
+                    onTap: () => pickBound(isFrom: false),
+                  ),
+                  if (invalidRange)
+                    const Padding(
+                      padding: EdgeInsets.only(top: 8),
+                      child: Text(
+                        'La date de fin doit être après la date de début.',
+                        style: TextStyle(color: Colors.red),
                       ),
-                    const SizedBox(height: 12),
-                    OutlinedButton.icon(
-                      onPressed: addDate,
-                      icon: const Icon(Icons.add, size: 18),
-                      label: const Text('Ajouter une date'),
                     ),
-                  ],
-                ),
+                ],
               ),
               actions: [
-                TextButton(
-                  onPressed: () => setDialogState(() => working = {defaultDate}),
-                  child: const Text('Réinitialiser'),
-                ),
                 TextButton(
                   onPressed: () => Navigator.of(dialogContext).pop(),
                   child: const Text('Annuler'),
                 ),
                 FilledButton(
-                  onPressed: () => Navigator.of(dialogContext).pop(
-                    working.isEmpty ? {defaultDate} : working,
-                  ),
+                  onPressed: invalidRange
+                      ? null
+                      : () => Navigator.of(dialogContext).pop((from: from, to: to)),
                   child: const Text('Appliquer'),
                 ),
               ],

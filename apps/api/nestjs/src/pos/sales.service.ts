@@ -1,10 +1,13 @@
 import { BadRequestException, ConflictException, Injectable, NotFoundException } from '@nestjs/common';
+import type { Prisma } from '@prisma/client';
 import { PrismaService } from '../prisma/prisma.service.js';
 import { ActivityNotifierService } from '../notifications/activity-notifier.service.js';
 import { applyCreditSale } from './credit-math.js';
 import type { CreateSaleDto } from './dto/create-sale.dto.js';
 import { computeCartTotals, validatePayments, type CartLine } from './pos-math.js';
 import { resolveReferencePriceLine } from './reference-price.js';
+
+type Tx = Prisma.TransactionClient;
 
 @Injectable()
 export class SalesService {
@@ -272,11 +275,25 @@ export class SalesService {
   }
 
   async listForDay(establishmentId: string, day: string) {
-    const start = new Date(`${day}T00:00:00.000Z`);
-    const end = new Date(`${day}T23:59:59.999Z`);
+    return this.listForRange(establishmentId, `${day}T00:00:00.000Z`, `${day}T23:59:59.999Z`);
+  }
+
+  /**
+   * Même requête que `listForDay`, bornes explicites — utilisé par Rapports >
+   * Boissons/Plats vendus pour un intervalle précis à la minute près plutôt
+   * qu'un jour calendaire entier (décision utilisateur du 2026-09-26).
+   * `items.product.referenceSalePrice` est inclus pour que l'appelant sache
+   * quelles lignes sont à prix de référence variable (ex. Gbêlê) — leur
+   * quantité/correction ne se traite pas comme celle d'un produit normal,
+   * voir `correctReferencePricedItem`.
+   */
+  async listForRange(establishmentId: string, fromIso: string, toIso: string) {
     return this.prisma.sale.findMany({
-      where: { establishmentId, createdAt: { gte: start, lte: end } },
-      include: { items: true, payments: true },
+      where: { establishmentId, createdAt: { gte: new Date(fromIso), lte: new Date(toIso) } },
+      include: {
+        items: { include: { product: { select: { referenceSalePrice: true } } } },
+        payments: true,
+      },
       orderBy: { createdAt: 'desc' },
     });
   }
@@ -345,6 +362,27 @@ export class SalesService {
    * l'utilisateur n'a demandé que deux corrections indépendantes (quantité
    * OU mode de paiement), jamais une réconciliation des montants.
    */
+  /** Partagé par `updateItemQuantity`/`correctReferencePricedItem` : ajuste le stock de la différence de quantité, jamais via un mouvement `adjustment` (voir docstring d'`updateItemQuantity`). */
+  private async applyStockDelta(tx: Tx, saleId: string, userId: string, productId: string, delta: number) {
+    if (delta > 0) {
+      const { count } = await tx.product.updateMany({
+        where: { id: productId, stockQuantity: { gte: delta } },
+        data: { stockQuantity: { decrement: delta } },
+      });
+      if (count === 0) {
+        throw new ConflictException('Stock insuffisant pour cette correction');
+      }
+      await tx.stockMovement.create({
+        data: { productId, type: 'out', quantity: delta, reason: `Correction vente ${saleId}`, createdBy: userId },
+      });
+    } else if (delta < 0) {
+      await tx.product.update({ where: { id: productId }, data: { stockQuantity: { increment: -delta } } });
+      await tx.stockMovement.create({
+        data: { productId, type: 'in', quantity: -delta, reason: `Correction vente ${saleId}`, createdBy: userId },
+      });
+    }
+  }
+
   async updateItemQuantity(establishmentId: string, userId: string, saleId: string, itemId: string, quantity: number) {
     const sale = await this.prisma.sale.findFirst({
       where: { id: saleId, establishmentId },
@@ -366,25 +404,57 @@ export class SalesService {
     const totalDelta = delta * item.unitPrice.toNumber();
 
     return this.prisma.$transaction(async (tx) => {
-      if (delta > 0) {
-        const { count } = await tx.product.updateMany({
-          where: { id: item.productId, stockQuantity: { gte: delta } },
-          data: { stockQuantity: { decrement: delta } },
-        });
-        if (count === 0) {
-          throw new ConflictException('Stock insuffisant pour cette correction');
-        }
-        await tx.stockMovement.create({
-          data: { productId: item.productId, type: 'out', quantity: delta, reason: `Correction vente ${saleId}`, createdBy: userId },
-        });
-      } else if (delta < 0) {
-        await tx.product.update({ where: { id: item.productId }, data: { stockQuantity: { increment: -delta } } });
-        await tx.stockMovement.create({
-          data: { productId: item.productId, type: 'in', quantity: -delta, reason: `Correction vente ${saleId}`, createdBy: userId },
-        });
-      }
-
+      await this.applyStockDelta(tx, saleId, userId, item.productId, delta);
       await tx.saleItem.update({ where: { id: itemId }, data: { quantity } });
+      return tx.sale.update({
+        where: { id: saleId },
+        data: { subtotal: { increment: totalDelta }, total: { increment: totalDelta } },
+        include: { items: true, payments: true },
+      });
+    });
+  }
+
+  /**
+   * Corrige une ligne à prix de référence variable (ex. Gbêlê) via le
+   * MONTANT payé, plutôt qu'une quantité brute comme `updateItemQuantity` —
+   * recalcule quantité ET prix unitaire ensemble (`resolveReferencePriceLine`,
+   * même formule qu'à la vente). Sans ça, taper une quantité au hasard pour
+   * ce type de ligne (ex. `updateItemQuantity` utilisé tel quel) multiplierait
+   * cette quantité par l'ancien prix unitaire figé et produirait un total
+   * sans rapport avec un montant réellement encaissé — bug constaté en
+   * production (listing Rapports > Boissons vendues, montants 90/210 FCFA
+   * sans notification de vente correspondante), décision utilisateur du
+   * 2026-09-26.
+   */
+  async correctReferencePricedItem(establishmentId: string, userId: string, saleId: string, itemId: string, amountPaid: number) {
+    const sale = await this.prisma.sale.findFirst({
+      where: { id: saleId, establishmentId },
+      include: { items: true },
+    });
+    if (!sale) {
+      throw new NotFoundException('Vente introuvable pour cet établissement');
+    }
+    if (sale.voidedAt) {
+      throw new ConflictException('Cette vente a déjà été remboursée');
+    }
+    const item = sale.items.find((i) => i.id === itemId);
+    if (!item) {
+      throw new NotFoundException('Article introuvable pour cette vente');
+    }
+    const product = await this.prisma.product.findFirst({ where: { id: item.productId, establishmentId } });
+    if (!product?.referenceSalePrice) {
+      throw new BadRequestException("Cet article n'est pas à prix de référence variable");
+    }
+    const resolved = resolveReferencePriceLine(product.referenceSalePrice.toNumber(), amountPaid, product.name);
+
+    const oldTotal = item.quantity.toNumber() * item.unitPrice.toNumber();
+    const newTotal = resolved.quantity * resolved.unitPrice;
+    const delta = resolved.quantity - item.quantity.toNumber();
+    const totalDelta = newTotal - oldTotal;
+
+    return this.prisma.$transaction(async (tx) => {
+      await this.applyStockDelta(tx, saleId, userId, item.productId, delta);
+      await tx.saleItem.update({ where: { id: itemId }, data: { quantity: resolved.quantity, unitPrice: resolved.unitPrice } });
       return tx.sale.update({
         where: { id: saleId },
         data: { subtotal: { increment: totalDelta }, total: { increment: totalDelta } },

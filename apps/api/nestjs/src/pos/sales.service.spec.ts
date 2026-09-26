@@ -10,6 +10,7 @@ const activityNotifierMock = { notify: vi.fn() } as unknown as ActivityNotifierS
 function makePrismaMock() {
   const prisma: Record<string, unknown> = {
     product: {
+      findFirst: vi.fn(),
       findMany: vi.fn(),
       update: vi.fn(),
       updateMany: vi.fn().mockResolvedValue({ count: 1 }),
@@ -688,6 +689,135 @@ describe('SalesService.updateItemQuantity', () => {
     expect(prisma.product.updateMany).not.toHaveBeenCalled();
     expect(prisma.product.update).not.toHaveBeenCalled();
     expect(prisma.stockMovement.create).not.toHaveBeenCalled();
+  });
+});
+
+describe('SalesService.listForRange', () => {
+  let prisma: ReturnType<typeof makePrismaMock>;
+  let service: SalesService;
+
+  beforeEach(() => {
+    prisma = makePrismaMock();
+    service = new SalesService(prisma as unknown as PrismaService, activityNotifierMock);
+  });
+
+  it('queries sales within the given bounds, including each item\'s product referenceSalePrice', async () => {
+    (prisma.sale as any).findMany.mockResolvedValue([]);
+
+    await service.listForRange('est-1', '2026-09-22T18:00:00.000Z', '2026-09-23T02:30:00.000Z');
+
+    expect(prisma.sale.findMany).toHaveBeenCalledWith({
+      where: {
+        establishmentId: 'est-1',
+        createdAt: { gte: new Date('2026-09-22T18:00:00.000Z'), lte: new Date('2026-09-23T02:30:00.000Z') },
+      },
+      include: {
+        items: { include: { product: { select: { referenceSalePrice: true } } } },
+        payments: true,
+      },
+      orderBy: { createdAt: 'desc' },
+    });
+  });
+});
+
+describe('SalesService.listForDay', () => {
+  let prisma: ReturnType<typeof makePrismaMock>;
+  let service: SalesService;
+
+  beforeEach(() => {
+    prisma = makePrismaMock();
+    service = new SalesService(prisma as unknown as PrismaService, activityNotifierMock);
+  });
+
+  it('delegates to listForRange with the day\'s midnight-to-midnight bounds', async () => {
+    (prisma.sale as any).findMany.mockResolvedValue([]);
+
+    await service.listForDay('est-1', '2026-09-22');
+
+    expect(prisma.sale.findMany).toHaveBeenCalledWith(
+      expect.objectContaining({
+        where: {
+          establishmentId: 'est-1',
+          createdAt: { gte: new Date('2026-09-22T00:00:00.000Z'), lte: new Date('2026-09-22T23:59:59.999Z') },
+        },
+      }),
+    );
+  });
+});
+
+describe('SalesService.correctReferencePricedItem', () => {
+  let prisma: ReturnType<typeof makePrismaMock>;
+  let service: SalesService;
+
+  beforeEach(() => {
+    prisma = makePrismaMock();
+    service = new SalesService(prisma as unknown as PrismaService, activityNotifierMock);
+  });
+
+  it('throws NotFoundException for a sale outside the establishment', async () => {
+    (prisma.sale as any).findFirst.mockResolvedValue(null);
+    await expect(
+      service.correctReferencePricedItem('est-1', 'user-1', 'sale-x', 'item-1', 100),
+    ).rejects.toBeInstanceOf(NotFoundException);
+  });
+
+  it('rejects correcting an already-voided sale', async () => {
+    (prisma.sale as any).findFirst.mockResolvedValue({ id: 'sale-1', voidedAt: new Date(), items: [] });
+    await expect(
+      service.correctReferencePricedItem('est-1', 'user-1', 'sale-1', 'item-1', 100),
+    ).rejects.toBeInstanceOf(ConflictException);
+  });
+
+  it('throws NotFoundException for an item that does not belong to the sale', async () => {
+    (prisma.sale as any).findFirst.mockResolvedValue({ id: 'sale-1', voidedAt: null, items: [] });
+    await expect(
+      service.correctReferencePricedItem('est-1', 'user-1', 'sale-1', 'item-x', 100),
+    ).rejects.toBeInstanceOf(NotFoundException);
+  });
+
+  it('rejects a product that is not reference-priced', async () => {
+    (prisma.sale as any).findFirst.mockResolvedValue({
+      id: 'sale-1',
+      voidedAt: null,
+      items: [{ id: 'item-1', productId: 'p1', quantity: new Decimal(2), unitPrice: new Decimal(1000) }],
+    });
+    (prisma.product as any).findFirst.mockResolvedValue({ id: 'p1', name: 'Castel', referenceSalePrice: null });
+
+    await expect(
+      service.correctReferencePricedItem('est-1', 'user-1', 'sale-1', 'item-1', 100),
+    ).rejects.toBeInstanceOf(BadRequestException);
+  });
+
+  it('recomputes quantity AND unit price from the amount paid, and adjusts stock/total by the resulting delta', async () => {
+    // Ligne d'origine : 100 FCFA payés sur un produit à 100 FCFA/L -> 1 L.
+    (prisma.sale as any).findFirst.mockResolvedValue({
+      id: 'sale-1',
+      voidedAt: null,
+      items: [{ id: 'item-1', productId: 'p1', quantity: new Decimal(1), unitPrice: new Decimal(100) }],
+    });
+    (prisma.product as any).findFirst.mockResolvedValue({ id: 'p1', name: 'Gbêlê', referenceSalePrice: new Decimal(100) });
+    (prisma.sale as any).update.mockResolvedValue({ id: 'sale-1' });
+
+    // Correction : le montant réellement payé était 250 FCFA, pas 100.
+    await service.correctReferencePricedItem('est-1', 'user-1', 'sale-1', 'item-1', 250);
+
+    // Nouvelle ligne : quantité ET prix unitaire recalculés ensemble, jamais l'ancien prix figé multiplié par une quantité arbitraire.
+    expect(prisma.saleItem.update).toHaveBeenCalledWith({
+      where: { id: 'item-1' },
+      data: { quantity: 2.5, unitPrice: 100 },
+    });
+    // Delta de stock : 2,5 - 1 = 1,5 L supplémentaires décomptés.
+    expect(prisma.product.updateMany).toHaveBeenCalledWith({
+      where: { id: 'p1', stockQuantity: { gte: 1.5 } },
+      data: { stockQuantity: { decrement: 1.5 } },
+    });
+    // Delta de total : 250 - 100 = 150 FCFA de plus.
+    expect(prisma.sale.update).toHaveBeenCalledWith(
+      expect.objectContaining({
+        where: { id: 'sale-1' },
+        data: { subtotal: { increment: 150 }, total: { increment: 150 } },
+      }),
+    );
   });
 });
 

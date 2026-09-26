@@ -71,9 +71,24 @@ class PosRepository {
         .toList();
   }
 
+  /// Même route que [listForDay], bornes explicites (date + heure + minute) —
+  /// utilisé par Rapports > Boissons/Plats vendus pour un intervalle précis
+  /// plutôt qu'un jour calendaire entier (décision utilisateur du 2026-09-26).
+  Future<List<SaleResult>> listForRange(DateTime from, DateTime to) async {
+    final json = await _api.get(
+      '/establishments/$establishmentId/sales',
+      query: {'from': from.toUtc().toIso8601String(), 'to': to.toUtc().toIso8601String()},
+    ) as List<dynamic>;
+    return json
+        .map((e) => SaleResult.fromJson(e as Map<String, dynamic>))
+        .toList();
+  }
+
   /// Corrige le nombre de produits vendus d'une ligne — voir docs/api/pos.md
   /// (« Correction d'une vente déjà enregistrée »). Le stock est réajusté
-  /// par la différence côté serveur, jamais une valeur absolue.
+  /// par la différence côté serveur, jamais une valeur absolue. Ne s'applique
+  /// jamais à une ligne à prix de référence variable (ex. Gbêlê) — voir
+  /// [correctReferencePricedItemAmount].
   Future<SaleResult> updateItemQuantity(
     String saleId,
     String itemId,
@@ -82,6 +97,23 @@ class PosRepository {
     final json = await _api.patch(
       '/establishments/$establishmentId/sales/$saleId/items/$itemId',
       body: {'quantity': quantity},
+    ) as Map<String, dynamic>;
+    return SaleResult.fromJson(json);
+  }
+
+  /// Corrige une ligne à prix de référence variable (ex. Gbêlê) via le
+  /// MONTANT payé — le serveur recalcule quantité ET prix unitaire ensemble
+  /// (`resolveReferencePriceLine`), jamais via [updateItemQuantity] qui
+  /// multiplierait une quantité arbitraire par l'ancien prix unitaire figé
+  /// (décision utilisateur du 2026-09-26, voir docs/api/pos.md).
+  Future<SaleResult> correctReferencePricedItemAmount(
+    String saleId,
+    String itemId,
+    double amountPaid,
+  ) async {
+    final json = await _api.patch(
+      '/establishments/$establishmentId/sales/$saleId/items/$itemId/amount',
+      body: {'amountPaid': amountPaid},
     ) as Map<String, dynamic>;
     return SaleResult.fromJson(json);
   }

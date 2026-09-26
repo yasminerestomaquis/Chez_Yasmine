@@ -42,6 +42,7 @@ class SaleItemResult {
     required this.name,
     required this.quantity,
     required this.unitPrice,
+    this.referenceSalePrice,
   });
 
   final String id;
@@ -50,12 +51,21 @@ class SaleItemResult {
   final double quantity;
   final double unitPrice;
 
+  /// Recopié de `product.referenceSalePrice` (ex. Gbêlê) — non nul si cette
+  /// ligne vient d'un produit à prix de référence variable, où `quantity` est
+  /// une fraction (litres) déduite d'un montant payé plutôt qu'un compte
+  /// d'unités. Seuls `SalesRepository.listForDay`/`listForRange` le
+  /// renseignent (voir `SalesService.listForRange` côté serveur) ; toujours
+  /// nul ailleurs (ex. `get(saleId)`, non concerné par ce cas).
+  final double? referenceSalePrice;
+
   factory SaleItemResult.fromJson(Map<String, dynamic> json) => SaleItemResult(
     id: json['id'] as String,
     productId: json['productId'] as String,
     name: json['name'] as String,
     quantity: (json['quantity'] as num).toDouble(),
     unitPrice: (json['unitPrice'] as num).toDouble(),
+    referenceSalePrice: ((json['product'] as Map<String, dynamic>?)?['referenceSalePrice'] as num?)?.toDouble(),
   );
 }
 

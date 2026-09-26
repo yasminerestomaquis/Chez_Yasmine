@@ -156,6 +156,18 @@ class _CategorySoldItemsPageState extends State<CategorySoldItemsPage> {
   }
 
   Future<void> _editQuantity(SaleResult sale, SaleItemResult item) async {
+    // Prix de référence variable (ex. Gbêlê) : `quantity` est une fraction
+    // (litres) déduite d'un montant payé, pas un compte d'unités qu'on
+    // pourrait corriger directement — taper une quantité au hasard ici la
+    // multiplierait par l'ancien prix unitaire figé et produirait un total
+    // sans rapport avec un montant réellement encaissé (bug constaté en
+    // production : listing Rapports > Boissons vendues, décision utilisateur
+    // du 2026-09-26). On corrige donc le MONTANT payé à la place, le serveur
+    // recalculant quantité et prix unitaire ensemble.
+    if (item.referenceSalePrice != null) {
+      return _editReferencePricedAmount(sale, item);
+    }
+
     final controller = TextEditingController(text: _formatQuantity(item.quantity));
     final newQuantity = await showDialog<double>(
       context: context,
@@ -195,6 +207,52 @@ class _CategorySoldItemsPageState extends State<CategorySoldItemsPage> {
       if (!mounted) return;
       ScaffoldMessenger.of(context).showSnackBar(
         const SnackBar(content: Text('Erreur réseau — quantité non modifiée')),
+      );
+    }
+  }
+
+  Future<void> _editReferencePricedAmount(SaleResult sale, SaleItemResult item) async {
+    final currentAmount = item.quantity * item.unitPrice;
+    final controller = TextEditingController(text: currentAmount.round().toString());
+    controller.selection = TextSelection(baseOffset: 0, extentOffset: controller.text.length);
+    final newAmount = await showDialog<double>(
+      context: context,
+      builder: (context) => AlertDialog(
+        title: Text('Modifier le montant payé — ${item.name}'),
+        content: TextField(
+          controller: controller,
+          autofocus: true,
+          keyboardType: const TextInputType.numberWithOptions(decimal: true),
+          decoration: const InputDecoration(labelText: 'Montant payé (FCFA)'),
+          onSubmitted: (_) {
+            final value = double.tryParse(controller.text.trim().replaceAll(',', '.'));
+            if (value != null && value > 0) Navigator.of(context).pop(value);
+          },
+        ),
+        actions: [
+          TextButton(onPressed: () => Navigator.of(context).pop(), child: const Text('Annuler')),
+          FilledButton(
+            onPressed: () {
+              final value = double.tryParse(controller.text.trim().replaceAll(',', '.'));
+              if (value == null || value <= 0) return;
+              Navigator.of(context).pop(value);
+            },
+            child: const Text('Enregistrer'),
+          ),
+        ],
+      ),
+    );
+    if (newAmount == null) return;
+    try {
+      await _repository.correctReferencePricedItemAmount(sale.id, item.id, newAmount);
+      _reload();
+    } on ApiException catch (e) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text(e.message)));
+    } catch (_) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('Erreur réseau — montant non modifié')),
       );
     }
   }
@@ -369,7 +427,9 @@ class _CategorySoldItemsPageState extends State<CategorySoldItemsPage> {
                                   '${_formatQuantity(item.quantity)} × ${formatAmount(item.unitPrice)} FCFA',
                                 ),
                                 trailing: IconButton(
-                                  tooltip: 'Modifier la quantité',
+                                  tooltip: item.referenceSalePrice != null
+                                      ? 'Modifier le montant payé'
+                                      : 'Modifier la quantité',
                                   icon: const Icon(Icons.edit_outlined, size: 20),
                                   onPressed: () => _editQuantity(sale, item),
                                 ),

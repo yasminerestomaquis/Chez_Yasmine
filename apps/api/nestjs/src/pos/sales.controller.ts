@@ -3,6 +3,7 @@ import type { Request } from 'express';
 import { PermissionsGuard } from '../auth/permissions.guard.js';
 import { RequirePermissions } from '../auth/permissions.decorator.js';
 import { SupabaseJwtGuard } from '../auth/supabase-jwt.guard.js';
+import { CorrectReferencePricedItemDto } from './dto/correct-reference-priced-item.dto.js';
 import { CreateSaleDto } from './dto/create-sale.dto.js';
 import { UpdateSaleItemDto } from './dto/update-sale-item.dto.js';
 import { UpdateSalePaymentDto } from './dto/update-sale-payment.dto.js';
@@ -37,9 +38,18 @@ export class SalesController {
     return this.sales.get(establishmentId, saleId);
   }
 
+  /** `from`/`to` (ISO complet, date+heure) prévalent sur `day` quand fournis ensemble — voir SalesService.listForRange. */
   @Get()
   @RequirePermissions('pos.sell')
-  listForDay(@Param('establishmentId') establishmentId: string, @Query('day') day: string) {
+  listForDay(
+    @Param('establishmentId') establishmentId: string,
+    @Query('day') day: string,
+    @Query('from') from?: string,
+    @Query('to') to?: string,
+  ) {
+    if (from && to) {
+      return this.sales.listForRange(establishmentId, from, to);
+    }
     return this.sales.listForDay(establishmentId, day ?? new Date().toISOString().slice(0, 10));
   }
 
@@ -65,6 +75,19 @@ export class SalesController {
     @Body() dto: UpdateSaleItemDto,
   ) {
     return this.sales.updateItemQuantity(establishmentId, request.user!.sub, saleId, itemId, dto.quantity);
+  }
+
+  /** Corrige une ligne à prix de référence variable (ex. Gbêlê) via le montant payé — voir SalesService.correctReferencePricedItem. */
+  @Patch(':saleId/items/:itemId/amount')
+  @RequirePermissions('pos.correct')
+  correctReferencePricedItem(
+    @Req() request: Request,
+    @Param('establishmentId') establishmentId: string,
+    @Param('saleId') saleId: string,
+    @Param('itemId') itemId: string,
+    @Body() dto: CorrectReferencePricedItemDto,
+  ) {
+    return this.sales.correctReferencePricedItem(establishmentId, request.user!.sub, saleId, itemId, dto.amountPaid);
   }
 
   /** Corrige le mode de paiement (Espèces/Mobile Money) d'une ligne — voir SalesService.updatePaymentMethod. */

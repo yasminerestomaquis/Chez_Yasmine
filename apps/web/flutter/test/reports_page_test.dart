@@ -73,8 +73,8 @@ void main() {
       // répond 400 instantané à toute requête réseau, donc
       // `_reportsPermissions` retombe sur l'ensemble vide et les trois
       // boutons restent masqués (voir aussi StockPage, même limitation de
-      // test). Le sélecteur multi-dates ("Choisir la ou les dates",
-      // `_pickExportDates`) reste exercé indirectement : il n'est plus
+      // test). Le sélecteur d'intervalle ("Choisir un intervalle",
+      // `_pickDateTimeRange`) reste exercé indirectement : il n'est plus
       // atteignable sans un bouton visible à taper.
       await tester.pumpWidget(
         const MaterialApp(
