@@ -223,9 +223,12 @@ class ActiveStockListingRow {
     required this.consumedRevenue,
     required this.lossQuantity,
     required this.lossRevenue,
+    required this.remainingAfterLossRevenue,
     required this.remainingQuantity,
+    required this.currentProfit,
     required this.remainingRevenue,
     required this.profit,
+    required this.currentProfitRate,
   });
 
   final String productId;
@@ -237,9 +240,23 @@ class ActiveStockListingRow {
   final double consumedRevenue;
   final double lossQuantity;
   final double lossRevenue;
+
+  /// "Recette restant après perte" = Recette consommé − Recette perdue
+  /// (demande utilisateur du 2026-09-27).
+  final double remainingAfterLossRevenue;
   final double remainingQuantity;
+
+  /// "Bénéfice actuel" = [remainingAfterLossRevenue] − Prix d'achat qté reçue.
+  final double currentProfit;
   final double remainingRevenue;
+
+  /// "Bénéfice stock" (ex-"Bénéfice") — calcul inchangé, seul le libellé
+  /// affiché change (demande utilisateur du 2026-09-27).
   final double profit;
+
+  /// "Taux Bénéfice actuel" = [currentProfit] × 100 / [profit], déjà en % —
+  /// 0 si `profit` est nul (voir `ChartsService.activeStockListing`).
+  final double currentProfitRate;
 
   factory ActiveStockListingRow.fromJson(Map<String, dynamic> json) =>
       ActiveStockListingRow(
@@ -252,9 +269,12 @@ class ActiveStockListingRow {
         consumedRevenue: (json['consumedRevenue'] as num).toDouble(),
         lossQuantity: (json['lossQuantity'] as num).toDouble(),
         lossRevenue: (json['lossRevenue'] as num).toDouble(),
+        remainingAfterLossRevenue: (json['remainingAfterLossRevenue'] as num).toDouble(),
         remainingQuantity: (json['remainingQuantity'] as num).toDouble(),
+        currentProfit: (json['currentProfit'] as num).toDouble(),
         remainingRevenue: (json['remainingRevenue'] as num).toDouble(),
         profit: (json['profit'] as num).toDouble(),
+        currentProfitRate: (json['currentProfitRate'] as num).toDouble(),
       );
 }
 

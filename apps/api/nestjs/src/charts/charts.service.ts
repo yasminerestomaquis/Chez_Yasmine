@@ -642,9 +642,12 @@ export class ChartsService {
       consumedRevenue: number;
       lossQuantity: number;
       lossRevenue: number;
+      remainingAfterLossRevenue: number;
       remainingQuantity: number;
+      currentProfit: number;
       remainingRevenue: number;
       profit: number;
+      currentProfitRate: number;
     }[]
   > {
     const allProducts = await this.prisma.product.findMany({
@@ -684,9 +687,12 @@ export class ChartsService {
       consumedRevenue: number;
       lossQuantity: number;
       lossRevenue: number;
+      remainingAfterLossRevenue: number;
       remainingQuantity: number;
+      currentProfit: number;
       remainingRevenue: number;
       profit: number;
+      currentProfitRate: number;
     }[] = [];
     for (const product of products) {
       const productMovements = movements
@@ -704,6 +710,23 @@ export class ChartsService {
       const unitCost = effectiveUnitCost(product);
       const purchaseValue = receivedQuantity * unitCost;
       const receivedRevenue = receivedQuantity * unitPrice;
+      const consumedRevenue = consumedQuantity * unitPrice;
+      const lossRevenue = lossQuantity * unitPrice;
+      // "Recette restant après perte" (demande utilisateur du 2026-09-27) :
+      // ce que la quantité consommée a réellement rapporté une fois la part
+      // perdue (déjà comptée dans `consumedQuantity`, voir docstring plus
+      // haut) déduite de sa recette.
+      const remainingAfterLossRevenue = consumedRevenue - lossRevenue;
+      // "Bénéfice actuel" : ce résultat net une fois le coût d'achat de TOUTE
+      // la quantité reçue (pas seulement la part consommée) retranché —
+      // distinct de `profit` ("Bénéfice stock"), qui rapporte la recette de
+      // la quantité reçue (vendue ou non) à son coût.
+      const currentProfit = remainingAfterLossRevenue - purchaseValue;
+      const profit = receivedRevenue - purchaseValue;
+      // "Taux Bénéfice actuel" = Bénéfice actuel / Bénéfice stock, en % — 0 si
+      // `profit` est nul, pour éviter une division par zéro (même convention
+      // que `mealsProfitListing.rate`).
+      const currentProfitRate = profit !== 0 ? (currentProfit * 100) / profit : 0;
 
       rows.push({
         productId: product.id,
@@ -712,12 +735,15 @@ export class ChartsService {
         purchaseValue,
         receivedRevenue,
         consumedQuantity,
-        consumedRevenue: consumedQuantity * unitPrice,
+        consumedRevenue,
         lossQuantity,
-        lossRevenue: lossQuantity * unitPrice,
+        lossRevenue,
+        remainingAfterLossRevenue,
         remainingQuantity,
+        currentProfit,
         remainingRevenue: remainingQuantity * unitPrice,
-        profit: receivedRevenue - purchaseValue,
+        profit,
+        currentProfitRate,
       });
     }
     return rows;
@@ -727,7 +753,9 @@ export class ChartsService {
    * Export PDF du listing `activeStockListing` ci-dessus — tableau à
    * quadrillage complet (`drawPdfTable`, même principe que les exports du
    * module Rapports), format paysage plutôt que portrait vu le nombre de
-   * colonnes (11). Une ligne TOTAL somme chaque colonne.
+   * colonnes (14). Une ligne TOTAL somme chaque colonne — sauf "Taux
+   * Bénéfice actuel", recalculé depuis les totaux (`currentProfit`/`profit`
+   * agrégés), jamais la moyenne des taux par ligne, qui n'aurait pas de sens.
    */
   async activeStockListingPdf(establishmentId: string, categoryIds?: string[]): Promise<{ buffer: Buffer; filename: string }> {
     const rows = await this.activeStockListing(establishmentId, categoryIds);
@@ -741,7 +769,9 @@ export class ChartsService {
         consumedRevenue: acc.consumedRevenue + r.consumedRevenue,
         lossQuantity: acc.lossQuantity + r.lossQuantity,
         lossRevenue: acc.lossRevenue + r.lossRevenue,
+        remainingAfterLossRevenue: acc.remainingAfterLossRevenue + r.remainingAfterLossRevenue,
         remainingQuantity: acc.remainingQuantity + r.remainingQuantity,
+        currentProfit: acc.currentProfit + r.currentProfit,
         remainingRevenue: acc.remainingRevenue + r.remainingRevenue,
         profit: acc.profit + r.profit,
       }),
@@ -753,11 +783,14 @@ export class ChartsService {
         consumedRevenue: 0,
         lossQuantity: 0,
         lossRevenue: 0,
+        remainingAfterLossRevenue: 0,
         remainingQuantity: 0,
+        currentProfit: 0,
         remainingRevenue: 0,
         profit: 0,
       },
     );
+    const totalCurrentProfitRate = totals.profit !== 0 ? (totals.currentProfit * 100) / totals.profit : 0;
 
     const doc = new PDFDocument({ margin: 30, size: 'A4', layout: 'landscape' });
     const chunks: Buffer[] = [];
@@ -769,21 +802,25 @@ export class ChartsService {
     doc.moveDown(0.5);
 
     const qty = (n: number) => (Number.isInteger(n) ? n.toString() : n.toFixed(2));
+    const pct = (n: number) => `${n.toFixed(2)} %`;
 
     drawPdfTable(
       doc,
       [
-        { header: 'Produit', width: 105 },
-        { header: 'Qté reçue', width: 55, align: 'right' },
-        { header: "Prix d'achat qté reçue (FCFA)", width: 85, align: 'right' },
-        { header: 'Recette qté reçue (FCFA)', width: 80, align: 'right' },
-        { header: 'Consommé', width: 55, align: 'right' },
-        { header: 'Recette consommé (FCFA)', width: 80, align: 'right' },
-        { header: 'Perdu', width: 45, align: 'right' },
-        { header: 'Recette perdue (FCFA)', width: 75, align: 'right' },
-        { header: 'Restant', width: 50, align: 'right' },
-        { header: 'Recette stock (FCFA)', width: 75, align: 'right' },
-        { header: 'Bénéfice (FCFA)', width: 75, align: 'right' },
+        { header: 'Produit', width: 100 },
+        { header: 'Qté reçue', width: 50, align: 'right' },
+        { header: "Prix d'achat qté reçue (FCFA)", width: 80, align: 'right' },
+        { header: 'Recette qté reçue (FCFA)', width: 75, align: 'right' },
+        { header: 'Consommé', width: 50, align: 'right' },
+        { header: 'Recette consommé (FCFA)', width: 75, align: 'right' },
+        { header: 'Perdu', width: 40, align: 'right' },
+        { header: 'Recette perdue (FCFA)', width: 70, align: 'right' },
+        { header: 'Recette restant après perte (FCFA)', width: 80, align: 'right' },
+        { header: 'Restant', width: 45, align: 'right' },
+        { header: 'Bénéfice actuel (FCFA)', width: 70, align: 'right' },
+        { header: 'Recette stock (FCFA)', width: 70, align: 'right' },
+        { header: 'Bénéfice stock(FCFA)', width: 70, align: 'right' },
+        { header: 'Taux Bénéfice actuel', width: 60, align: 'right' },
       ],
       [
         ...rows.map((r) => [
@@ -795,9 +832,12 @@ export class ChartsService {
           formatFcfa(r.consumedRevenue),
           qty(r.lossQuantity),
           formatFcfa(r.lossRevenue),
+          formatFcfa(r.remainingAfterLossRevenue),
           qty(r.remainingQuantity),
+          formatFcfa(r.currentProfit),
           formatFcfa(r.remainingRevenue),
           formatFcfa(r.profit),
+          pct(r.currentProfitRate),
         ]),
         [
           'TOTAL',
@@ -808,9 +848,12 @@ export class ChartsService {
           formatFcfa(totals.consumedRevenue),
           qty(totals.lossQuantity),
           formatFcfa(totals.lossRevenue),
+          formatFcfa(totals.remainingAfterLossRevenue),
           qty(totals.remainingQuantity),
+          formatFcfa(totals.currentProfit),
           formatFcfa(totals.remainingRevenue),
           formatFcfa(totals.profit),
+          pct(totalCurrentProfitRate),
         ],
       ],
       { boldRowIndexes: new Set([rows.length]) },

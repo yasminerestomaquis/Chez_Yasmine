@@ -775,6 +775,8 @@ describe('ChartsService.activeStockListing', () => {
     // Reçue 80, vendu+perdu 25 au total (20 vente + 5 perte), restant 55.
     // "consommé" est net des pertes (20), pour que reçue = consommé + perdu + restant.
     // Prix d'achat qté reçue 80×600=48000, recette qté reçue 80×1000=80000, bénéfice 32000.
+    // Recette restant après perte = 20000 − 5000 = 15000 ; Bénéfice actuel = 15000 − 48000 = −33000 ;
+    // Taux Bénéfice actuel = −33000×100/32000 = −103.125.
     expect(result[0]).toEqual({
       productId: 'p1',
       productName: 'Bière',
@@ -785,9 +787,12 @@ describe('ChartsService.activeStockListing', () => {
       consumedRevenue: 20000,
       lossQuantity: 5,
       lossRevenue: 5000,
+      remainingAfterLossRevenue: 15000,
       remainingQuantity: 55,
+      currentProfit: -33000,
       remainingRevenue: 55000,
       profit: 32000,
+      currentProfitRate: -103.125,
     });
   });
 

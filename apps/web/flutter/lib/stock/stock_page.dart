@@ -254,7 +254,9 @@ class _StockPageState extends State<StockPage> {
             double consumedRevenue,
             double loss,
             double lossRevenue,
+            double remainingAfterLoss,
             double remaining,
+            double currentProfit,
             double remainingRevenue,
             double profit,
           })>(
@@ -266,7 +268,9 @@ class _StockPageState extends State<StockPage> {
           consumedRevenue: 0,
           loss: 0,
           lossRevenue: 0,
+          remainingAfterLoss: 0,
           remaining: 0,
+          currentProfit: 0,
           remainingRevenue: 0,
           profit: 0,
         ),
@@ -278,11 +282,17 @@ class _StockPageState extends State<StockPage> {
           consumedRevenue: acc.consumedRevenue + r.consumedRevenue,
           loss: acc.loss + r.lossQuantity,
           lossRevenue: acc.lossRevenue + r.lossRevenue,
+          remainingAfterLoss: acc.remainingAfterLoss + r.remainingAfterLossRevenue,
           remaining: acc.remaining + r.remainingQuantity,
+          currentProfit: acc.currentProfit + r.currentProfit,
           remainingRevenue: acc.remainingRevenue + r.remainingRevenue,
           profit: acc.profit + r.profit,
         ),
       );
+      // Taux global recalculé depuis les totaux agrégés, jamais la moyenne
+      // des taux par ligne (qui n'aurait pas de sens) — même principe que
+      // ChartsService.activeStockListingPdf côté serveur.
+      final totalCurrentProfitRate = totals.profit != 0 ? (totals.currentProfit * 100) / totals.profit : 0.0;
 
       if (!mounted) return;
       final exportRequested = await showDialog<bool>(
@@ -308,11 +318,14 @@ class _StockPageState extends State<StockPage> {
                       'Recette consommé (FCFA)',
                       'Perdu',
                       'Recette perdue (FCFA)',
+                      'Recette restant après perte (FCFA)',
                       'Restant',
+                      'Bénéfice actuel (FCFA)',
                       'Recette stock (FCFA)',
-                      'Bénéfice (FCFA)',
+                      'Bénéfice stock(FCFA)',
+                      'Taux Bénéfice actuel',
                     ],
-                    numericColumns: const [false, true, true, true, true, true, true, true, true, true, true],
+                    numericColumns: const [false, true, true, true, true, true, true, true, true, true, true, true, true, true],
                     rows: [
                       for (final r in rows)
                         [
@@ -324,9 +337,12 @@ class _StockPageState extends State<StockPage> {
                           formatAmount(r.consumedRevenue),
                           _qty(r.lossQuantity),
                           formatAmount(r.lossRevenue),
+                          formatAmount(r.remainingAfterLossRevenue),
                           _qty(r.remainingQuantity),
+                          formatAmount(r.currentProfit),
                           formatAmount(r.remainingRevenue),
                           formatAmount(r.profit),
+                          '${r.currentProfitRate.toStringAsFixed(2)} %',
                         ],
                     ],
                     totalRow: [
@@ -338,9 +354,12 @@ class _StockPageState extends State<StockPage> {
                       formatAmount(totals.consumedRevenue),
                       _qty(totals.loss),
                       formatAmount(totals.lossRevenue),
+                      formatAmount(totals.remainingAfterLoss),
                       _qty(totals.remaining),
+                      formatAmount(totals.currentProfit),
                       formatAmount(totals.remainingRevenue),
                       formatAmount(totals.profit),
+                      '${totalCurrentProfitRate.toStringAsFixed(2)} %',
                     ],
                   ),
           ),
