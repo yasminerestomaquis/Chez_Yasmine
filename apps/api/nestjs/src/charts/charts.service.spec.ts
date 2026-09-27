@@ -925,8 +925,12 @@ describe('ChartsService.activeStockListingPdf', () => {
     const { buffer, filename } = await service.activeStockListingPdf('est-1');
     const text = await chartsPdfText(buffer);
 
+    const today = new Date();
+    const todayStr = `${String(today.getDate()).padStart(2, '0')}/${String(today.getMonth() + 1).padStart(2, '0')}/${today.getFullYear()}`;
+
     expect(filename).toBe('Stock actif.pdf');
-    expect(text).toContain('Stock actif');
+    expect(text).toContain('BILAN COMPTABLE DES BOISSONS+GBELE A LA DATE DU');
+    expect(text).toContain(todayStr);
     expect(text).toContain('Bière');
     expect(text).toContain('Gbêlê');
     expect(text).toContain('TOTAL');

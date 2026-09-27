@@ -63,4 +63,18 @@ describe('drawPdfTable', () => {
     const occurrences = text.match(/EnTeteUnique/g)?.length ?? 0;
     expect(occurrences).toBeGreaterThanOrEqual(2);
   });
+
+  it('gives the header row extra height when its text needs several lines, instead of the fixed data row height (2026-09-27)', () => {
+    const doc = new PDFDocument({ margin: 30, size: 'A4' });
+    const before = doc.y;
+    drawPdfTable(
+      doc,
+      [{ header: 'Un intitulé de colonne bien trop long pour tenir sur une seule ligne dans une colonne aussi étroite', width: 60 }],
+      [['x']],
+    );
+    // Une ligne de donnée fait toujours 22pt (hauteur fixe) ; si l'en-tête en
+    // avait fait autant malgré un texte qui a besoin de plusieurs lignes, le
+    // total après en-tête + 1 ligne ne dépasserait pas 44pt.
+    expect(doc.y - before).toBeGreaterThan(22 + 22);
+  });
 });

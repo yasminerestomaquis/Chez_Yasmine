@@ -800,7 +800,13 @@ export class ChartsService {
     doc.on('data', (chunk: Buffer) => chunks.push(chunk));
     const done = new Promise<void>((resolve) => doc.on('end', () => resolve()));
 
-    doc.fontSize(14).font('Helvetica-Bold').text('Stock actif', { align: 'left' });
+    // Titre demandé par l'utilisateur le 2026-09-27, date du jour toujours
+    // recalculée (jamais figée) — le listing couvre Boissons (hasCasePricing)
+    // + Gbêlê (isBeverage), les seules catégories restantes une fois
+    // hasVariablePricing exclu (voir docstring d'activeStockListing).
+    const today = new Date();
+    const todayStr = `${String(today.getDate()).padStart(2, '0')}/${String(today.getMonth() + 1).padStart(2, '0')}/${today.getFullYear()}`;
+    doc.fontSize(14).font('Helvetica-Bold').text(`BILAN COMPTABLE DES BOISSONS+GBELE A LA DATE DU ${todayStr}`, { align: 'left' });
     doc.fontSize(10).font('Helvetica').text(`${rows.length} produit${rows.length > 1 ? 's' : ''}`);
     doc.moveDown(0.5);
 

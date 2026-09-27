@@ -65,27 +65,41 @@ export function drawPdfTable(
   );
   const headerCells = columns.map((c) => c.header);
 
-  const drawCells = (cells: string[], bold: boolean) => {
+  // Hauteur de la ligne d'en-tête mesurée sur son propre texte, jamais
+  // `rowHeight` (celle, fixe, des lignes de données) : avec des colonnes
+  // resserrées et des libellés longs, un en-tête tenu à la même hauteur
+  // qu'une ligne de donnée se faisait chevaucher par la ligne suivante (bug
+  // constaté le 2026-09-27, "Stock actif", 14 colonnes) — décision
+  // utilisateur du même jour.
+  doc.font('Helvetica-Bold').fontSize(9);
+  const headerHeight = Math.max(
+    rowHeight,
+    ...headerCells.map((text, i) => doc.heightOfString(text, { width: widths[i] - 8 }) + 12),
+  );
+
+  const drawCells = (cells: string[], bold: boolean, height: number) => {
     const y = doc.y;
     let x = startX;
     doc.font(bold ? 'Helvetica-Bold' : 'Helvetica').fontSize(9);
     for (let i = 0; i < columns.length; i++) {
-      doc.rect(x, y, widths[i], rowHeight).stroke();
+      doc.rect(x, y, widths[i], height).stroke();
       doc.text(cells[i] ?? '', x + 4, y + 6, { width: widths[i] - 8, align: columns[i].align ?? 'left' });
       x += widths[i];
     }
-    doc.y = y + rowHeight;
+    doc.y = y + height;
   };
+
+  const drawHeader = () => drawCells(headerCells, true, headerHeight);
 
   const drawRow = (cells: string[], bold: boolean) => {
     const pageBottom = doc.page.height - doc.page.margins.bottom;
     if (doc.y + rowHeight > pageBottom) {
       doc.addPage();
-      drawCells(headerCells, true);
+      drawHeader();
     }
-    drawCells(cells, bold);
+    drawCells(cells, bold, rowHeight);
   };
 
-  drawRow(headerCells, true);
+  drawHeader();
   rows.forEach((row, i) => drawRow(row, boldRowIndexes.has(i)));
 }
