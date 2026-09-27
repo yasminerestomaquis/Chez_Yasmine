@@ -796,13 +796,23 @@ describe('ChartsService.activeStockListing', () => {
     });
   });
 
-  it('excludes a product with no active lot (never received, or fully depleted)', async () => {
+  it('excludes a product with no stock movement at all (never received)', async () => {
     const prisma = makePrismaMock();
     const service = new ChartsService(prisma as unknown as PrismaService);
     prisma.product.findMany.mockResolvedValue([
       stockListingProduct({ id: 'p1', name: 'Jamais approvisionné', salePrice: 1000 }),
-      stockListingProduct({ id: 'p2', name: 'Épuisé', salePrice: 500 }),
     ]);
+    prisma.stockMovement.findMany.mockResolvedValue([]);
+
+    const result = await service.activeStockListing('est-1');
+
+    expect(result).toEqual([]);
+  });
+
+  it('includes a fully depleted product — the listing covers all stock history, not just what remains today (2026-09-27)', async () => {
+    const prisma = makePrismaMock();
+    const service = new ChartsService(prisma as unknown as PrismaService);
+    prisma.product.findMany.mockResolvedValue([stockListingProduct({ id: 'p2', name: 'Épuisé', salePrice: 500 })]);
     prisma.stockMovement.findMany.mockResolvedValue([
       { productId: 'p2', type: 'in', quantity: new Decimal(10), createdAt: new Date('2026-09-01T08:00:00Z'), reason: null },
       { productId: 'p2', type: 'sale', quantity: new Decimal(10), createdAt: new Date('2026-09-02T08:00:00Z'), reason: null },
@@ -810,7 +820,10 @@ describe('ChartsService.activeStockListing', () => {
 
     const result = await service.activeStockListing('est-1');
 
-    expect(result).toEqual([]);
+    expect(result).toHaveLength(1);
+    expect(result[0].receivedQuantity).toBe(10);
+    expect(result[0].consumedQuantity).toBe(10);
+    expect(result[0].remainingQuantity).toBe(0);
   });
 
   it('falls back to referenceSalePrice when salePrice is null (ex. Gbêlê)', async () => {

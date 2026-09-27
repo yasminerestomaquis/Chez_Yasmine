@@ -603,12 +603,12 @@ export class ChartsService {
   /**
    * Listing "Stock actif" (module Stock, bouton d'export réservé au Super
    * Administrateur — demande utilisateur du 2026-09-25) : un produit = une
-   * ligne, agrégée sur ses seuls lots FIFO de statut `'actif'`
-   * (`computeFifoLots`, même critère que l'onglet "Lots actifs" de Graphiques
-   * > Stock > Détail d'un produit — un lot devient `'epuise'` dès que sa
-   * quantité restante atteint 0, voir `stock-lots.ts`). Produits sans aucun
-   * lot actif (jamais approvisionnés, ou entièrement épuisés) absents du
-   * résultat — ce listing ne porte que sur le stock réellement présent.
+   * ligne, agrégée sur **tous** ses lots FIFO (`computeFifoLots`, actifs ET
+   * épuisés — décision utilisateur du 2026-09-27, revenue sur le filtre
+   * `status === 'actif'` d'origine : ce listing porte désormais sur tout
+   * l'historique de stock d'un produit, pas seulement ce qu'il en reste
+   * aujourd'hui). Seuls les produits sans AUCUN mouvement de stock (jamais
+   * approvisionnés) sont absents du résultat.
    *
    * Catégories à prix variable (Plats africains/Poissons/Poulets,
    * `hasVariablePricing`) **toujours exclues** — ni prix d'achat ni prix de
@@ -698,14 +698,17 @@ export class ChartsService {
       const productMovements = movements
         .filter((m) => m.productId === product.id)
         .map((m) => ({ type: m.type as StockLotMovementType, quantity: m.quantity.toNumber(), createdAt: m.createdAt, reason: m.reason }));
-      const activeLots = computeFifoLots(productMovements).filter((lot) => lot.status === 'actif');
-      if (activeLots.length === 0) continue;
+      // Tous les lots (actifs ET épuisés) — décision utilisateur du
+      // 2026-09-27 : ce listing porte sur tout l'historique de stock, pas
+      // seulement ce qui en reste aujourd'hui.
+      const lots = computeFifoLots(productMovements);
+      if (lots.length === 0) continue;
 
-      const receivedQuantity = activeLots.reduce((sum, lot) => sum + lot.receivedQuantity, 0);
-      const lossQuantity = activeLots.reduce((sum, lot) => sum + lot.lossQuantity, 0);
-      const totalConsumed = activeLots.reduce((sum, lot) => sum + lot.consumedQuantity, 0);
+      const receivedQuantity = lots.reduce((sum, lot) => sum + lot.receivedQuantity, 0);
+      const lossQuantity = lots.reduce((sum, lot) => sum + lot.lossQuantity, 0);
+      const totalConsumed = lots.reduce((sum, lot) => sum + lot.consumedQuantity, 0);
       const consumedQuantity = totalConsumed - lossQuantity;
-      const remainingQuantity = activeLots.reduce((sum, lot) => sum + lot.remainingQuantity, 0);
+      const remainingQuantity = lots.reduce((sum, lot) => sum + lot.remainingQuantity, 0);
       const unitPrice = product.salePrice?.toNumber() ?? product.referenceSalePrice?.toNumber() ?? 0;
       const unitCost = effectiveUnitCost(product);
       const purchaseValue = receivedQuantity * unitCost;
@@ -807,20 +810,20 @@ export class ChartsService {
     drawPdfTable(
       doc,
       [
-        { header: 'Produit', width: 100 },
-        { header: 'Qté reçue', width: 50, align: 'right' },
-        { header: "Prix d'achat qté reçue (FCFA)", width: 80, align: 'right' },
-        { header: 'Recette qté reçue (FCFA)', width: 75, align: 'right' },
-        { header: 'Consommé', width: 50, align: 'right' },
-        { header: 'Recette consommé (FCFA)', width: 75, align: 'right' },
-        { header: 'Perdu', width: 40, align: 'right' },
-        { header: 'Recette perdue (FCFA)', width: 70, align: 'right' },
-        { header: 'Recette restant après perte (FCFA)', width: 80, align: 'right' },
-        { header: 'Restant', width: 45, align: 'right' },
-        { header: 'Bénéfice actuel (FCFA)', width: 70, align: 'right' },
-        { header: 'Recette stock (FCFA)', width: 70, align: 'right' },
-        { header: 'Bénéfice stock(FCFA)', width: 70, align: 'right' },
-        { header: 'Taux Bénéfice actuel', width: 60, align: 'right' },
+        { header: 'Produit', width: 85 },
+        { header: 'Qté reçue', width: 40, align: 'right' },
+        { header: "Prix d'achat qté reçue (FCFA)", width: 65, align: 'right' },
+        { header: 'Recette qté reçue (FCFA)', width: 60, align: 'right' },
+        { header: 'Consommé', width: 40, align: 'right' },
+        { header: 'Recette consommé (FCFA)', width: 60, align: 'right' },
+        { header: 'Perdu', width: 32, align: 'right' },
+        { header: 'Recette perdue (FCFA)', width: 55, align: 'right' },
+        { header: 'Recette restant après perte (FCFA)', width: 62, align: 'right' },
+        { header: 'Restant', width: 38, align: 'right' },
+        { header: 'Bénéfice actuel (FCFA)', width: 55, align: 'right' },
+        { header: 'Recette stock (FCFA)', width: 55, align: 'right' },
+        { header: 'Bénéfice stock(FCFA)', width: 55, align: 'right' },
+        { header: 'Taux Bénéfice actuel', width: 48, align: 'right' },
       ],
       [
         ...rows.map((r) => [
