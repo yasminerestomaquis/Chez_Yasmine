@@ -4,7 +4,6 @@ import { PrismaService } from '../prisma/prisma.service.js';
 import { effectiveUnitCost } from '../catalog/product-cost.util.js';
 import { StockMovementsService } from '../stock/stock-movements.service.js';
 import type { ReportQueryDto } from './dto/report-query.dto.js';
-import { lossRevenueByGroup } from './loss-revenue.js';
 import { drawPdfTable, formatFcfa } from '../common/pdf-table.util.js';
 
 const pad2 = (n: number) => String(n).padStart(2, '0');
@@ -218,10 +217,12 @@ export class ReportsService {
    * (anciennes ventes, module Clients) ne comptent dans aucun des deux
    * totaux demandés (Espèces/Mobile Money uniquement).
    *
-   * Les pertes de la période (valorisées au prix de vente) s'ajoutent, dans le
-   * groupe de leur produit, à Mobile Money uniquement — donc aussi au total
-   * des ventes — jamais à Espèces (demande utilisateur du 2026-09-20, voir
-   * docs/api/reports.md).
+   * Une perte n'est **jamais** comptée ici, dans aucun groupe ni mode de
+   * paiement : ce n'est pas une vente encaissée. Entre le 2026-09-20 et le
+   * 2026-09-27, une version antérieure l'ajoutait côté Mobile Money (demande
+   * utilisateur du 2026-09-20) — revenu sur cette décision le 2026-09-27,
+   * l'utilisateur ayant constaté que ça gonflait "Total ventes"/Mobile Money
+   * de l'Accueil d'une valeur jamais réellement encaissée. Voir docs/api/reports.md.
    */
   async paymentCategoryBreakdown(establishmentId: string, query: ReportQueryDto) {
     const { from, to } = this.resolveRange(query);
@@ -239,26 +240,6 @@ export class ReportsService {
         },
       },
     });
-
-    // Pertes de la période (date de la perte, éventuellement saisie), valorisées
-    // au prix de vente : comptées côté Mobile Money uniquement, dans le groupe
-    // Boissons/Plats de leur produit — jamais en Espèces (voir loss-revenue.ts).
-    const losses = await this.prisma.loss.findMany({
-      where: { establishmentId, createdAt: { gte: from, lte: to } },
-      select: {
-        quantity: true,
-        sellAsUnit: true,
-        product: {
-          select: {
-            salePrice: true,
-            unitSalePrice: true,
-            referenceSalePrice: true,
-            category: { select: { hasCasePricing: true, hasVariablePricing: true, isBeverage: true } },
-          },
-        },
-      },
-    });
-    const lossRevenue = lossRevenueByGroup(losses);
 
     let cashRevenue = 0;
     let mobileMoneyRevenue = 0;
@@ -307,20 +288,10 @@ export class ReportsService {
       }
     }
 
-    const lossesRevenue = lossRevenue.boissonsSansGbele + lossRevenue.gbele + lossRevenue.plats;
-    mobileMoneyRevenue += lossesRevenue;
-    boissonsSansGbeleRevenue += lossRevenue.boissonsSansGbele;
-    gbeleRevenue += lossRevenue.gbele;
-    platsRevenue += lossRevenue.plats;
-    boissonsSansGbeleMobileMoney += lossRevenue.boissonsSansGbele;
-    gbeleMobileMoney += lossRevenue.gbele;
-    platsMobileMoney += lossRevenue.plats;
-
     return {
       from,
       to,
       totalRevenue: cashRevenue + mobileMoneyRevenue,
-      lossesRevenue,
       cashRevenue,
       mobileMoneyRevenue,
       boissonsSansGbeleRevenue,

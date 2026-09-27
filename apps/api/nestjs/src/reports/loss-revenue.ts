@@ -1,11 +1,9 @@
 /**
- * Valeur des pertes dans les statistiques Espèces/Mobile Money × Boissons
- * sans Gbêlê/Gbêlê/Plats de l'Accueil (`ReportsService.
- * paymentCategoryBreakdown`) — demande utilisateur du 2026-09-20 : une perte
- * enregistrée à une date précise compte, à son prix de vente, dans le groupe
- * de la catégorie de son produit et **uniquement côté Mobile Money** (jamais
- * Espèces). Le groupe Boissons s'est scindé en deux le 2026-09-24 (Boissons
- * sans Gbêlê / Gbêlê) — voir `lossGroupOf`.
+ * Valorisation d'une perte pour l'affichage (module Pertes) et le décompte du
+ * stock — jamais pour les recettes de l'Accueil : `ReportsService.
+ * paymentCategoryBreakdown` ne compte plus les pertes depuis le 2026-09-27
+ * (revenu sur la décision du 2026-09-20, qui les ajoutait côté Mobile Money —
+ * voir docs/api/reports.md), une perte n'étant pas une vente encaissée.
  */
 export interface LossForRevenue {
   quantity: { toNumber(): number };
@@ -19,21 +17,6 @@ export interface LossForRevenue {
 }
 
 /**
- * Même critère que les ventes (`ReportsService.paymentCategoryBreakdown`) :
- * `hasCasePricing` (Bières/Vins/Sucreries) → Boissons sans Gbêlê,
- * `isBeverage` sans `hasCasePricing` (ex. Gbêlê) → Gbêlê, isolé le
- * 2026-09-24 (auparavant fusionné avec Boissons), `hasVariablePricing` → Plats.
- */
-export function lossGroupOf(
-  category: LossForRevenue['product']['category'],
-): 'boissonsSansGbele' | 'gbele' | 'plats' | null {
-  if (category?.hasCasePricing) return 'boissonsSansGbele';
-  if (category?.isBeverage) return 'gbele';
-  if (category?.hasVariablePricing) return 'plats';
-  return null;
-}
-
-/**
  * Prix de vente unitaire d'un produit pour valoriser une perte : le prix à
  * l'unité si la perte est déclarée « Unité » (`sellAsUnit`, produit vendu par
  * lot ET à l'unité), sinon `salePrice`,
@@ -43,23 +26,6 @@ export function lossGroupOf(
 export function lossUnitSalePrice(product: Omit<LossForRevenue['product'], 'category'>, sellAsUnit = false): number {
   if (sellAsUnit && product.unitSalePrice != null) return product.unitSalePrice.toNumber();
   return product.salePrice?.toNumber() ?? product.referenceSalePrice?.toNumber() ?? 0;
-}
-
-/**
- * Cumul de la valeur des pertes par groupe. Une perte dont le produit n'est
- * dans aucun des trois groupes (catégorie fixe hors groupe, ou sans
- * catégorie) n'est comptée nulle part, comme une ligne de vente de même nature.
- */
-export function lossRevenueByGroup(
-  losses: LossForRevenue[],
-): { boissonsSansGbele: number; gbele: number; plats: number } {
-  const totals = { boissonsSansGbele: 0, gbele: 0, plats: 0 };
-  for (const loss of losses) {
-    const group = lossGroupOf(loss.product.category);
-    if (group === null) continue;
-    totals[group] += loss.quantity.toNumber() * lossUnitSalePrice(loss.product, loss.sellAsUnit);
-  }
-  return totals;
 }
 
 /** Taille du lot lue dans `Product.unit` (« 3 » pour « Lot (3) ») ; 1 si absente ou illisible. */

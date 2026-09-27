@@ -41,14 +41,13 @@ Alimente les cartes de l'écran Accueil (`lib/home/home_dashboard.dart`), toujou
 - **Espèces/Mobile Money** (`cashRevenue`/`mobileMoneyRevenue`) : somme de `Payment.amount` par méthode — reflète l'argent réellement encaissé, donc net de remise. `totalRevenue` est construit comme leur somme exacte (jamais un troisième chiffre indépendant) : sur une vente avec remise, `boissonsRevenue + platsRevenue` peut donc légèrement différer de `totalRevenue`, choix délibéré de cohérence interne plutôt qu'un alignement strict entre les deux.
 - **Croisement catégorie × mode de paiement** (`boissonsCash`, `boissonsMobileMoney`, `platsCash`, `platsMobileMoney`) : chaque vente répartit son chiffre d'affaires Boissons/Plats au prorata de sa propre part Espèces/Mobile Money — même principe de répartition proportionnelle que l'allocation du coût « Marché » dans `ChartsService`. Une vente payée en partie Carte/Crédit (anciennes données — ces méthodes ne sont plus sélectionnables en Caisse depuis le 2026-09-10) ne compte dans aucun des deux totaux demandés.
 
-### Les pertes comptent côté Mobile Money (décision actée 2026-09-20)
+### Les pertes comptent côté Mobile Money (décision actée 2026-09-20, **revenue le 2026-09-27**)
 
-Demande utilisateur : une perte enregistrée à une date précise s'ajoute, **à son prix de vente** (`quantité × Product.salePrice`, sinon `referenceSalePrice`, sinon 0 — même règle que le listing Pertes, voir `docs/api/accounting.md`), au groupe **Boissons ou Plats** de la catégorie de son produit, et **uniquement du côté Mobile Money** — jamais Espèces. `paymentCategoryBreakdown` lit donc aussi les `Loss` de la période (`Loss.createdAt`, la date de la perte, éventuellement saisie) et ajoute leur valeur à :
-- `mobileMoneyRevenue` et donc `totalRevenue` (= Espèces + Mobile Money → « Total ventes ») ;
-- `boissonsRevenue` **ou** `platsRevenue`, et `boissonsMobileMoney` **ou** `platsMobileMoney`.
-`cashRevenue`, `boissonsCash` et `platsCash` ne bougent jamais. Le groupe se détermine comme pour une ligne de vente (`hasCasePricing || isBeverage` → Boissons, `hasVariablePricing` → Plats ; `src/reports/loss-revenue.ts`) : une perte sur un produit hors des deux groupes n'est comptée nulle part. La réponse porte aussi `lossesRevenue` (total ajouté), pour transparence.
+~~Demande utilisateur : une perte enregistrée à une date précise s'ajoute, **à son prix de vente** (`quantité × Product.salePrice`, sinon `referenceSalePrice`, sinon 0 — même règle que le listing Pertes, voir `docs/api/accounting.md`), au groupe **Boissons ou Plats** de la catégorie de son produit, et **uniquement du côté Mobile Money** — jamais Espèces.~~
 
-Portée : c'est le seul endroit de l'application qui agrège le Mobile Money (cartes de l'Accueil, avec le filtre Date multi-sélection). `ReportsService.summary` (chiffre d'affaires `Sale.total`, bénéfice net) est inchangé — il valorise toujours les pertes au coût comme une charge. **À noter** : une perte n'est pas une vente encaissée ; cette règle gonfle donc volontairement le « Total ventes » et le Mobile Money de l'Accueil de la valeur des pertes, comme demandé.
+**Annulé le 2026-09-27** : l'utilisateur a constaté qu'enregistrer une perte (ex. 1 Bock 66, 600 FCFA) faisait apparaître ce montant comme une recette à l'Accueil — comportement jugé anormal une fois observé en conditions réelles, alors qu'il correspondait pourtant exactement à la demande du 2026-09-20. `paymentCategoryBreakdown` ne lit donc plus la table `Loss` du tout et ne compte plus aucune perte, dans aucun groupe ni mode de paiement — `lossGroupOf`/`lossRevenueByGroup` (`src/reports/loss-revenue.ts`) ont été supprimées (`lossUnitSalePrice` reste, toujours utilisée par le listing Pertes), et le champ `lossesRevenue` a disparu de la réponse.
+
+Portée : c'était le seul endroit de l'application qui agrégeait le Mobile Money (cartes de l'Accueil, avec le filtre Date multi-sélection) en y ajoutant des pertes. `ReportsService.summary` (chiffre d'affaires `Sale.total`, bénéfice net) n'a jamais été concerné — il valorise toujours les pertes au coût comme une charge, jamais comme une recette.
 
 ### Gbêlê isolé du groupe Boissons (décision actée 2026-09-24)
 
@@ -56,8 +55,8 @@ Demande utilisateur : le groupe **Boissons** (`hasCasePricing || isBeverage`) se
 
 - `boissonsRevenue` → `boissonsSansGbeleRevenue` ; `boissonsCash`/`boissonsMobileMoney` → `boissonsSansGbeleCash`/`boissonsSansGbeleMobileMoney`.
 - Nouveaux : `gbeleRevenue`, `gbeleCash`, `gbeleMobileMoney` — mêmes règles (ligne à ligne, jamais réduit par une remise ; croisement au prorata Espèces/Mobile Money).
-- `lossGroupOf`/`lossRevenueByGroup` (`src/reports/loss-revenue.ts`) suivent : `{ boissonsSansGbele, gbele, plats }` au lieu de `{ boissons, plats }`. Une perte Gbêlê compte donc désormais dans `gbeleMobileMoney`, plus dans `boissonsSansGbeleMobileMoney`.
-- `Plats` (`hasVariablePricing`) et le reste (Espèces/Mobile Money agrégés, `totalRevenue`, `lossesRevenue`) inchangés.
+- `lossGroupOf`/`lossRevenueByGroup` (`src/reports/loss-revenue.ts`) suivent alors : `{ boissonsSansGbele, gbele, plats }` au lieu de `{ boissons, plats }`. Une perte Gbêlê comptait donc dans `gbeleMobileMoney`, plus dans `boissonsSansGbeleMobileMoney` — **section devenue sans objet le 2026-09-27** : ces deux fonctions ont été supprimées, les pertes ne sont plus comptées ici du tout (voir section précédente).
+- `Plats` (`hasVariablePricing`) et le reste (Espèces/Mobile Money agrégés, `totalRevenue`) inchangés.
 
 Côté Accueil (`lib/home/home_dashboard.dart`) : « Recettes boissons aujourd'hui » → **« Recettes boissons sans Gbêlê … »**, nouvelle vignette **« Recettes Gbêlê … »** (icône `assets/gbele.jpg`) dans RECETTES DU JOUR ; « Boissons · Espèces »/« Boissons · Mobile Money » → **« Boissons sans Gbêlê · … »**, nouvelles vignettes **« Gbêlê · Espèces »**/**« Gbêlê · Mobile Money »** (icônes `assets/gbele.jpg` + `assets/home_icon_2.jpg`/`assets/home_icon_3.jpg`) dans DÉTAIL PAR MODE DE PAIEMENT. Toutes visibles au Serveur, comme l'était la carte Boissons dont elles reprennent une partie (voir plus bas, « Accès restreint pour le Serveur »).
 
