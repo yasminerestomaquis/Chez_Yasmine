@@ -33,6 +33,31 @@ bool _isBoissonsCategory(Product p) => p.isBoissonsGroup;
 const _refundRoles = {'Super Administrateur', 'Administrateur', 'Propriétaire', 'Gérant', 'Caissier'};
 bool canRefundSale(String roleName) => _refundRoles.contains(roleName);
 
+/// Rôles portant `pos.correct` par défaut (voir
+/// supabase/seed/001_roles_permissions.sql) — corriger la quantité vendue/le
+/// montant payé d'une ligne, ou son mode de paiement, sans rembourser la
+/// vente entière. Gate les icônes correspondantes de `CategorySoldItemsPage`,
+/// jusqu'ici toujours affichées sans condition (voir docs/api/pos.md,
+/// "tout rôle atteignant cet écran a `pos.sell`, et tous les porteurs de
+/// `pos.sell` ont désormais aussi `pos.correct`") — désormais que `pos.correct`
+/// est accordable/révocable rôle par rôle depuis "Gestion des permissions"
+/// (demande utilisateur du 2026-09-30 — la permission l'était déjà
+/// techniquement, seul le masquage client manquait), un rôle à qui elle est
+/// retirée ne doit plus voir un bouton voué à un 403, même principe que
+/// [canRefundSale]. Comme pour ce dernier, reflète le **défaut** du seed —
+/// une personnalisation faite depuis le tableau de bord ne change pas
+/// l'affichage client tant que `GET /auth/me` n'expose pas les codes de
+/// permission (même limitation déjà acceptée pour `pos.refund`).
+const _correctSaleRoles = {
+  'Super Administrateur',
+  'Administrateur',
+  'Propriétaire',
+  'Gérant',
+  'Caissier',
+  'Serveur',
+};
+bool canCorrectSale(String roleName) => _correctSaleRoles.contains(roleName);
+
 /// Porte `pos.correct_price` (voir supabase/seed/001_roles_permissions.sql) —
 /// modifier le prix de vente d'une ligne déjà enregistrée dans "Boissons
 /// vendues"/"Plats vendus", réservé au seul Super Administrateur, jamais à
@@ -129,6 +154,7 @@ class _CategorySoldItemsPageState extends State<CategorySoldItemsPage> {
   late final PosRepository _repository = PosRepository(ApiClient(), widget.establishmentId);
 
   bool get _canRefund => canRefundSale(widget.roleName);
+  bool get _canCorrect => canCorrectSale(widget.roleName);
   bool get _canCorrectPrice => canCorrectSalePrice(widget.roleName);
 
   DateTime _date = DateTime.now();
@@ -497,13 +523,14 @@ class _CategorySoldItemsPageState extends State<CategorySoldItemsPage> {
                                         icon: const Icon(Icons.sell_outlined, size: 20),
                                         onPressed: () => _editUnitPrice(sale, item),
                                       ),
-                                    IconButton(
-                                      tooltip: item.referenceSalePrice != null
-                                          ? 'Modifier le montant payé'
-                                          : 'Modifier la quantité',
-                                      icon: const Icon(Icons.edit_outlined, size: 20),
-                                      onPressed: () => _editQuantity(sale, item),
-                                    ),
+                                    if (_canCorrect)
+                                      IconButton(
+                                        tooltip: item.referenceSalePrice != null
+                                            ? 'Modifier le montant payé'
+                                            : 'Modifier la quantité',
+                                        icon: const Icon(Icons.edit_outlined, size: 20),
+                                        onPressed: () => _editQuantity(sale, item),
+                                      ),
                                   ],
                                 ),
                               ),
@@ -521,7 +548,7 @@ class _CategorySoldItemsPageState extends State<CategorySoldItemsPage> {
                                       ? '${formatAmount(payment.amount)} FCFA (vente entière)'
                                       : '${formatAmount(payment.amount)} FCFA',
                                 ),
-                                trailing: (payment.method == 'cash' || payment.method == 'mobile_money')
+                                trailing: (_canCorrect && (payment.method == 'cash' || payment.method == 'mobile_money'))
                                     ? IconButton(
                                         tooltip: 'Modifier le mode de paiement',
                                         icon: const Icon(Icons.edit_outlined, size: 20),

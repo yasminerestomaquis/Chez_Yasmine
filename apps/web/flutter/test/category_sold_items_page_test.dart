@@ -48,6 +48,19 @@ void main() {
     });
   });
 
+  group('canCorrectSale (logique pure, sans réseau) — 2026-09-30', () {
+    test('les rôles portant pos.correct par défaut peuvent corriger quantité/montant/mode de paiement', () {
+      for (final role in ['Super Administrateur', 'Administrateur', 'Propriétaire', 'Gérant', 'Caissier', 'Serveur']) {
+        expect(canCorrectSale(role), isTrue, reason: role);
+      }
+    });
+
+    test('un rôle sans pos.correct par défaut (Magasinier, Comptable) ne le peut pas', () {
+      expect(canCorrectSale('Magasinier'), isFalse);
+      expect(canCorrectSale('Comptable'), isFalse);
+    });
+  });
+
   group('canCorrectSalePrice (logique pure, sans réseau) — 2026-09-30', () {
     test('seul le Super Administrateur peut modifier le prix de vente', () {
       expect(canCorrectSalePrice('Super Administrateur'), isTrue);
