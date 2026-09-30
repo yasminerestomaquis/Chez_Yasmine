@@ -33,6 +33,14 @@ bool _isBoissonsCategory(Product p) => p.isBoissonsGroup;
 const _refundRoles = {'Super Administrateur', 'Administrateur', 'Propriétaire', 'Gérant', 'Caissier'};
 bool canRefundSale(String roleName) => _refundRoles.contains(roleName);
 
+/// Porte `pos.correct_price` (voir supabase/seed/001_roles_permissions.sql) —
+/// modifier le prix de vente d'une ligne déjà enregistrée dans "Boissons
+/// vendues"/"Plats vendus", réservé au seul Super Administrateur, jamais à
+/// Administrateur/Propriétaire malgré leur accès par ailleurs complet
+/// (demande utilisateur du 2026-09-30). Fonction pure top-level, même
+/// principe que [canRefundSale], pour être testable sans widget.
+bool canCorrectSalePrice(String roleName) => roleName == 'Super Administrateur';
+
 /// Somme (qté × prix unitaire) d'un sous-ensemble de lignes de vente —
 /// utilisé à la fois pour le total global de la page et pour le sous-total
 /// par carte, qui ne doivent porter que sur les lignes réellement affichées,
@@ -66,7 +74,9 @@ double lineItemsTotal(List<SaleItemResult> items) =>
 /// donné (Plats africains/Poissons/Poulets ou Bières/Vins/Sucreries — même
 /// découpage que les exports Excel de Rapports, voir `reports_page.dart`),
 /// avec le total en gras en tête de liste et une correction possible
-/// (quantité, mode de paiement, remboursement complet) sur chaque ligne.
+/// (quantité, mode de paiement, remboursement complet, et — Super
+/// Administrateur seul — prix de vente, voir [canCorrectSalePrice]) sur
+/// chaque ligne.
 ///
 /// Remplace `SoldItemsPage` en Caisse et dans l'écran Addition (demande
 /// utilisateur du 2026-09-15) : deux boutons dédiés (« Plats vendus » /
@@ -119,6 +129,7 @@ class _CategorySoldItemsPageState extends State<CategorySoldItemsPage> {
   late final PosRepository _repository = PosRepository(ApiClient(), widget.establishmentId);
 
   bool get _canRefund => canRefundSale(widget.roleName);
+  bool get _canCorrectPrice => canCorrectSalePrice(widget.roleName);
 
   DateTime _date = DateTime.now();
   List<Product> _products = [];
@@ -253,6 +264,57 @@ class _CategorySoldItemsPageState extends State<CategorySoldItemsPage> {
       if (!mounted) return;
       ScaffoldMessenger.of(context).showSnackBar(
         const SnackBar(content: Text('Erreur réseau — montant non modifié')),
+      );
+    }
+  }
+
+  /// Modifie directement le prix de vente (unitPrice) d'une ligne — réservé
+  /// au Super Administrateur (`_canCorrectPrice`, `pos.correct_price` côté
+  /// serveur), quelle que soit la ligne (y compris à prix de référence
+  /// variable comme Gbêlê) : c'est une correction distincte de la quantité/du
+  /// montant payé déjà gérée par [_editQuantity] — demande utilisateur du
+  /// 2026-09-30.
+  Future<void> _editUnitPrice(SaleResult sale, SaleItemResult item) async {
+    final controller = TextEditingController(text: formatAmount(item.unitPrice));
+    controller.selection = TextSelection(baseOffset: 0, extentOffset: controller.text.length);
+    final newUnitPrice = await showDialog<double>(
+      context: context,
+      builder: (context) => AlertDialog(
+        title: Text('Modifier le prix de vente — ${item.name}'),
+        content: TextField(
+          controller: controller,
+          autofocus: true,
+          keyboardType: const TextInputType.numberWithOptions(decimal: true),
+          decoration: const InputDecoration(labelText: 'Prix de vente (FCFA)'),
+          onSubmitted: (_) {
+            final value = double.tryParse(controller.text.trim().replaceAll(',', '.').replaceAll(' ', ''));
+            if (value != null && value > 0) Navigator.of(context).pop(value);
+          },
+        ),
+        actions: [
+          TextButton(onPressed: () => Navigator.of(context).pop(), child: const Text('Annuler')),
+          FilledButton(
+            onPressed: () {
+              final value = double.tryParse(controller.text.trim().replaceAll(',', '.').replaceAll(' ', ''));
+              if (value == null || value <= 0) return;
+              Navigator.of(context).pop(value);
+            },
+            child: const Text('Enregistrer'),
+          ),
+        ],
+      ),
+    );
+    if (newUnitPrice == null || newUnitPrice == item.unitPrice) return;
+    try {
+      await _repository.correctItemPrice(sale.id, item.id, newUnitPrice);
+      _reload();
+    } on ApiException catch (e) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text(e.message)));
+    } catch (_) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('Erreur réseau — prix de vente non modifié')),
       );
     }
   }
@@ -426,12 +488,23 @@ class _CategorySoldItemsPageState extends State<CategorySoldItemsPage> {
                                 subtitle: Text(
                                   '${_formatQuantity(item.quantity)} × ${formatAmount(item.unitPrice)} FCFA',
                                 ),
-                                trailing: IconButton(
-                                  tooltip: item.referenceSalePrice != null
-                                      ? 'Modifier le montant payé'
-                                      : 'Modifier la quantité',
-                                  icon: const Icon(Icons.edit_outlined, size: 20),
-                                  onPressed: () => _editQuantity(sale, item),
+                                trailing: Row(
+                                  mainAxisSize: MainAxisSize.min,
+                                  children: [
+                                    if (_canCorrectPrice)
+                                      IconButton(
+                                        tooltip: 'Modifier le prix de vente',
+                                        icon: const Icon(Icons.sell_outlined, size: 20),
+                                        onPressed: () => _editUnitPrice(sale, item),
+                                      ),
+                                    IconButton(
+                                      tooltip: item.referenceSalePrice != null
+                                          ? 'Modifier le montant payé'
+                                          : 'Modifier la quantité',
+                                      icon: const Icon(Icons.edit_outlined, size: 20),
+                                      onPressed: () => _editQuantity(sale, item),
+                                    ),
+                                  ],
                                 ),
                               ),
                             for (final payment in sale.payments)

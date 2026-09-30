@@ -48,6 +48,18 @@ void main() {
     });
   });
 
+  group('canCorrectSalePrice (logique pure, sans réseau) — 2026-09-30', () {
+    test('seul le Super Administrateur peut modifier le prix de vente', () {
+      expect(canCorrectSalePrice('Super Administrateur'), isTrue);
+    });
+
+    test('Administrateur et Propriétaire ne le peuvent pas, malgré leur accès par ailleurs complet', () {
+      for (final role in ['Administrateur', 'Propriétaire', 'Gérant', 'Caissier', 'Serveur']) {
+        expect(canCorrectSalePrice(role), isFalse, reason: role);
+      }
+    });
+  });
+
   group('lineItemsTotal (logique pure, sans réseau) — 2026-09-17', () {
     test('somme qté × prix unitaire des lignes fournies', () {
       final items = [

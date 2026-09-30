@@ -103,12 +103,21 @@ class RankingChart {
     required this.to,
     required this.groupBy,
     required this.items,
+    this.total,
   });
 
   final String from;
   final String to;
   final String groupBy;
   final List<RankingItem> items;
+
+  /// Total de TOUTES les lignes de la période [from, to], pas seulement les
+  /// `items` retenus (classement plafonné à 10) — envoyé uniquement par "Top
+  /// dépenses" pour l'instant (demande utilisateur du 2026-09-30 : le total
+  /// doit suivre le filtre du classement, contrairement à "Top recettes"/"Top
+  /// bénéfices" qui affichent toujours le total de l'année, voir
+  /// `MonthlyChart.total`). `null` pour les classements qui ne l'envoient pas.
+  final double? total;
 
   factory RankingChart.fromJson(Map<String, dynamic> json) => RankingChart(
     from: json['from'] as String,
@@ -117,6 +126,7 @@ class RankingChart {
     items: (json['items'] as List<dynamic>)
         .map((e) => RankingItem.fromJson(e as Map<String, dynamic>))
         .toList(),
+    total: (json['total'] as num?)?.toDouble(),
   );
 }
 

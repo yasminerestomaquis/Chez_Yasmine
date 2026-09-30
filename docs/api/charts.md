@@ -242,6 +242,8 @@ Décision explicite de l'utilisateur (2026-09-08) : plutôt que de forcer les d�
 - `GET /charts/expenses/monthly?year=` : 12 mois de l'année demandée.
 - `GET /charts/expenses/top?from=&to=` : classement des natures de dépenses par montant total, plafonné à 10 comme les autres classements de ce module (`groupBy` toujours `"category"` ici, pas de branche `"product"` possible).
 
+**Montant total en haut à droite, mais qui suit le filtre Mois de "Top" (décision utilisateur du 2026-09-30)** : contrairement au badge de "Top recettes"/"Top bénéfices" (voir plus haut, `MonthlyChart.total` — toujours l'année entière, indépendamment du filtre Mois de leur propre "Top"), l'utilisateur a explicitement demandé ici « le total de toutes les dépenses effectuées **selon le choix effectué dans le filtre** ». `expensesTop` (`ChartsService`) calcule donc désormais un `total` sur **toutes** les lignes de dépense de l'intervalle `[from, to]` reçu (avant le plafond à 10 catégories), et le renvoie en plus de `items` — `RankingChart.total` (Dart, `double?`, `null` pour les classements qui ne l'envoient pas) affiché via `WeekTotalBadge`, comme pour les autres cartes de ce sous-module.
+
 Les réponses reprennent exactement les mêmes formes que Recettes/Bénéfices (`WeeklyChart`/`MonthlyChart`/`RankingChart`) — aucun nouveau modèle Dart n'a donc été nécessaire côté Flutter, seulement 4 nouvelles méthodes sur `ChartsRepository`.
 
 **Suit le filtre Année** de `GraphiquesPage` (contrairement à Stock) : une dépense a une date précise, comme une vente, donc une vue annuelle a un sens métier direct ici.

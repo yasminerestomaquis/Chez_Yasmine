@@ -56,4 +56,31 @@ void main() {
       expect(chart.total, 0);
     });
   });
+
+  group('RankingChart.fromJson (2026-09-30 — badge « Top dépenses »)', () {
+    test('parses total when the backend sends it (Top dépenses)', () {
+      final chart = RankingChart.fromJson({
+        'from': '2026-01-01T00:00:00.000Z',
+        'to': '2026-12-31T23:59:59.000Z',
+        'groupBy': 'category',
+        'items': [
+          {'id': 'Loyer', 'name': 'Loyer', 'value': 50000},
+        ],
+        'total': 123456,
+      });
+
+      expect(chart.total, 123456);
+    });
+
+    test('total is null when absent (Top recettes/Top bénéfices, qui ne l\'envoient pas)', () {
+      final chart = RankingChart.fromJson({
+        'from': '2026-01-01T00:00:00.000Z',
+        'to': '2026-12-31T23:59:59.000Z',
+        'groupBy': 'product',
+        'items': <Map<String, dynamic>>[],
+      });
+
+      expect(chart.total, isNull);
+    });
+  });
 }

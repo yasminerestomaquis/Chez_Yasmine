@@ -12,6 +12,7 @@ insert into permissions (code, description) values
   ('pos.sell',          'Encaisser une vente en caisse ou en salle'),
   ('pos.refund',        'Annuler une vente, rembourser'),
   ('pos.correct',       'Corriger une vente déjà enregistrée (quantité, mode de paiement) sans la rembourser entièrement'),
+  ('pos.correct_price', 'Modifier le prix de vente d''une ligne de vente déjà enregistrée — réservé au Super Administrateur'),
   ('tables.manage',     'Plan de salle, ouverture/transfert/fusion/clôture d''addition'),
   ('customers.manage',  'Fiches client'),
   ('credits.manage',    'Ventes à crédit, remboursements de crédit'),
@@ -68,13 +69,15 @@ on conflict (name) where organization_id is null do nothing;
 -- complet ; décision utilisateur du 2026-09-16 pour la seconde — le tableau
 -- de bord "Gestion des permissions" (lib/users/permissions_dashboard_page.dart)
 -- ne doit être visible que par le Super Administrateur — voir les deux
--- grilles dédiées plus bas).
+-- grilles dédiées plus bas). `pos.correct_price` (2026-09-30) : même
+-- exclusion, modifier le prix de vente d'une ligne déjà enregistrée reste
+-- réservé au seul Super Administrateur, jamais à Administrateur/Propriétaire.
 insert into role_permissions (role_id, permission_id)
 select r.id, p.id
 from roles r
 cross join permissions p
 where r.is_system and r.name in ('Super Administrateur', 'Administrateur', 'Propriétaire')
-  and p.code not in ('notifications.manage', 'roles.manage', 'losses.edit', 'stock.view_value', 'stock.active_listing')
+  and p.code not in ('notifications.manage', 'roles.manage', 'losses.edit', 'stock.view_value', 'stock.active_listing', 'pos.correct_price')
 on conflict do nothing;
 
 -- notifications.manage : Super Administrateur uniquement (bouton "Effacer
@@ -107,6 +110,17 @@ join permissions p on p.code = 'losses.edit'
 where r.is_system and r.name = 'Super Administrateur'
 on conflict do nothing;
 
+-- pos.correct_price : Super Administrateur uniquement (demande utilisateur du
+-- 2026-09-30 — modifier le prix de vente d'un produit déjà vendu, boutons
+-- "Boissons vendues"/"Plats vendus" de la Caisse/Rapports, voir
+-- `CategorySoldItemsPage`/docs/api/pos.md).
+insert into role_permissions (role_id, permission_id)
+select r.id, p.id
+from roles r
+join permissions p on p.code = 'pos.correct_price'
+where r.is_system and r.name = 'Super Administrateur'
+on conflict do nothing;
+
 -- Gérant : tout sauf la gestion des rôles, des utilisateurs et du catalogue
 -- (décision utilisateur du 2026-09-13 pour les deux premiers — le module
 -- Utilisateurs reste réservé à Super Administrateur/Administrateur/
@@ -118,12 +132,13 @@ on conflict do nothing;
 -- retirée, voir docs/api/catalog.md). `stock.view_value` exclue de ce "tout
 -- sauf" : par défaut réservée au seul Super Administrateur (décision
 -- utilisateur du 2026-09-22), accordable au Gérant depuis "Gestion des
--- permissions" si besoin.
+-- permissions" si besoin. `pos.correct_price` (2026-09-30) : même exclusion,
+-- réservée au seul Super Administrateur.
 insert into role_permissions (role_id, permission_id)
 select r.id, p.id
 from roles r
 cross join permissions p
-where r.is_system and r.name = 'Gérant' and p.code not in ('roles.manage', 'users.manage', 'products.manage', 'stock.view_value', 'stock.active_listing')
+where r.is_system and r.name = 'Gérant' and p.code not in ('roles.manage', 'users.manage', 'products.manage', 'stock.view_value', 'stock.active_listing', 'pos.correct_price')
 on conflict do nothing;
 
 -- stock.view_value : Super Administrateur uniquement par défaut (demande

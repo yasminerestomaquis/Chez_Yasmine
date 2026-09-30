@@ -118,6 +118,22 @@ class PosRepository {
     return SaleResult.fromJson(json);
   }
 
+  /// Corrige le prix de vente (unitPrice) d'une ligne déjà enregistrée —
+  /// réservé au Super Administrateur côté serveur (`pos.correct_price`,
+  /// demande utilisateur du 2026-09-30), voir docs/api/pos.md. La quantité
+  /// et le stock ne changent pas, seul le total de la vente est réajusté.
+  Future<SaleResult> correctItemPrice(
+    String saleId,
+    String itemId,
+    double unitPrice,
+  ) async {
+    final json = await _api.patch(
+      '/establishments/$establishmentId/sales/$saleId/items/$itemId/price',
+      body: {'unitPrice': unitPrice},
+    ) as Map<String, dynamic>;
+    return SaleResult.fromJson(json);
+  }
+
   /// Corrige le mode de paiement (Espèces/Mobile Money) d'une ligne déjà
   /// enregistrée — le montant ne change jamais ici.
   Future<SaleResult> updatePaymentMethod(

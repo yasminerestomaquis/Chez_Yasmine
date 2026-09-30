@@ -4,6 +4,7 @@ import { PermissionsGuard } from '../auth/permissions.guard.js';
 import { RequirePermissions } from '../auth/permissions.decorator.js';
 import { SupabaseJwtGuard } from '../auth/supabase-jwt.guard.js';
 import { CorrectReferencePricedItemDto } from './dto/correct-reference-priced-item.dto.js';
+import { CorrectSaleItemPriceDto } from './dto/correct-sale-item-price.dto.js';
 import { CreateSaleDto } from './dto/create-sale.dto.js';
 import { UpdateSaleItemDto } from './dto/update-sale-item.dto.js';
 import { UpdateSalePaymentDto } from './dto/update-sale-payment.dto.js';
@@ -88,6 +89,22 @@ export class SalesController {
     @Body() dto: CorrectReferencePricedItemDto,
   ) {
     return this.sales.correctReferencePricedItem(establishmentId, request.user!.sub, saleId, itemId, dto.amountPaid);
+  }
+
+  /**
+   * Corrige le prix de vente (unitPrice) d'une ligne — réservé au Super
+   * Administrateur (`pos.correct_price`, demande utilisateur du 2026-09-30),
+   * voir SalesService.correctItemPrice.
+   */
+  @Patch(':saleId/items/:itemId/price')
+  @RequirePermissions('pos.correct_price')
+  correctItemPrice(
+    @Param('establishmentId') establishmentId: string,
+    @Param('saleId') saleId: string,
+    @Param('itemId') itemId: string,
+    @Body() dto: CorrectSaleItemPriceDto,
+  ) {
+    return this.sales.correctItemPrice(establishmentId, saleId, itemId, dto.unitPrice);
   }
 
   /** Corrige le mode de paiement (Espèces/Mobile Money) d'une ligne — voir SalesService.updatePaymentMethod. */

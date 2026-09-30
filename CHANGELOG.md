@@ -2,6 +2,15 @@
 
 ## [Unreleased]
 
+### Ajouté (2026-09-30) — Graphiques > Dépenses : total de la période dans « Top dépenses »
+- Badge de total (`WeekTotalBadge`) en haut à droite de la carte « Top dépenses » (module Graphiques, sous-module Dépenses) — porte sur **toutes** les dépenses de l'intervalle sélectionné par le filtre Mois/Toute l'année de la carte, pas seulement les 10 catégories affichées dans le classement.
+- Contrairement aux badges déjà existants de « Top recettes »/« Top bénéfices » (toujours l'année entière du filtre Année de `GraphiquesPage`, indépendamment de leur propre filtre Mois — décision du 2026-09-25), celui-ci **suit** le filtre Mois de "Top dépenses" — demande explicite de l'utilisateur.
+- Nouveau champ `total` sur la réponse `GET /charts/expenses/top` (`ChartsService.expensesTop`), calculé sur toutes les lignes de la période avant le plafond à 10 ; `RankingChart.total` (Dart, `double?`) ajouté en conséquence, `null` pour les classements qui ne l'envoient pas (Top recettes/bénéfices). Voir `docs/api/charts.md`.
+
+### Ajouté (2026-09-30) — Caisse/Rapports : modification du prix de vente, Super Administrateur uniquement
+- Nouvelle icône (« Modifier le prix de vente ») sur chaque ligne de « Boissons vendues »/« Plats vendus », visible uniquement pour le Super Administrateur — corrige directement le prix de vente (`unitPrice`) d'une ligne déjà enregistrée, sans toucher à la quantité ni au stock.
+- Nouvelle route `PATCH .../sales/:saleId/items/:itemId/price` et nouvelle permission `pos.correct_price`, volontairement exclue de la règle « tout sauf » qui accorde par ailleurs toutes les permissions à Administrateur/Propriétaire/Gérant — seul le Super Administrateur la porte. Voir `docs/api/pos.md`.
+
 ### Ajouté (2026-09-25) — Stock : listing « Stock actif » (bouton d'export, haut droite de l'AppBar)
 - Nouveau bouton dans le module Stock (icône PDF, haut à droite) : ouvre un listing — une ligne par produit, agrégée sur ses seuls lots FIFO **actifs** (même critère que Graphiques > Stock > Détail d'un produit > « Lots actifs ») — avec colonnes Produit, Qté reçue, Prix d'achat qté reçue, Recette qté reçue, Consommé, Recette consommé, Perdu, Recette perdue, Restant, Recette stock, Bénéfice (`Recette qté reçue - Prix d'achat qté reçue`), plus une ligne TOTAL. Tableau à quadrillage complet et défilable à l'écran (`griddedTable`, extrait du module Rapports pour être réutilisé), export PDF au même quadrillage (format paysage).
 - Avant l'affichage, un filtre déroulant à sélection multiple propose les catégories (sélection vide = toutes) — catégories à prix variable (Plats africains/Poissons/Poulets) **toujours exclues**, ces produits n'ayant ni prix d'achat ni prix de vente fixes en catalogue.

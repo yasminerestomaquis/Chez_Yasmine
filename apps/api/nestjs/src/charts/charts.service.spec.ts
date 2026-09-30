@@ -721,6 +721,9 @@ describe('ChartsService — sous-module Dépenses', () => {
     expect(result.groupBy).toBe('category');
     expect(result.items).toHaveLength(10);
     expect(result.items[0].name).toBe('Cat11');
+    // 12 dépenses de 100 à 111 FCFA (2026-09-30) : le total porte sur les 12,
+    // pas seulement les 10 premières catégories retenues dans `items`.
+    expect(result.total).toBe(100 + 101 + 102 + 103 + 104 + 105 + 106 + 107 + 108 + 109 + 110 + 111);
   });
 });
 

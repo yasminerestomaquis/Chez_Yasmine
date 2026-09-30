@@ -463,6 +463,42 @@ export class SalesService {
     });
   }
 
+  /**
+   * Corrige le prix de vente (unitPrice) d'une ligne déjà enregistrée — la
+   * quantité et le stock ne bougent pas, seul le total de la vente est
+   * réajusté par la différence. Réservé au Super Administrateur
+   * (`pos.correct_price`, demande utilisateur du 2026-09-30 : permettre la
+   * modification du prix de vente des produits vendus dans "Boissons
+   * vendues"/"Plats vendus", voir SalesController et docs/api/pos.md).
+   */
+  async correctItemPrice(establishmentId: string, saleId: string, itemId: string, unitPrice: number) {
+    const sale = await this.prisma.sale.findFirst({
+      where: { id: saleId, establishmentId },
+      include: { items: true },
+    });
+    if (!sale) {
+      throw new NotFoundException('Vente introuvable pour cet établissement');
+    }
+    if (sale.voidedAt) {
+      throw new ConflictException('Cette vente a déjà été remboursée');
+    }
+    const item = sale.items.find((i) => i.id === itemId);
+    if (!item) {
+      throw new NotFoundException('Article introuvable pour cette vente');
+    }
+
+    const totalDelta = (unitPrice - item.unitPrice.toNumber()) * item.quantity.toNumber();
+
+    return this.prisma.$transaction(async (tx) => {
+      await tx.saleItem.update({ where: { id: itemId }, data: { unitPrice } });
+      return tx.sale.update({
+        where: { id: saleId },
+        data: { subtotal: { increment: totalDelta }, total: { increment: totalDelta } },
+        include: { items: true, payments: true },
+      });
+    });
+  }
+
   /** Corrige le mode de paiement (Espèces/Mobile Money) d'une ligne déjà enregistrée — le montant ne change jamais ici, voir UpdateSalePaymentDto. */
   async updatePaymentMethod(establishmentId: string, saleId: string, paymentId: string, method: 'cash' | 'mobile_money') {
     const sale = await this.prisma.sale.findFirst({ where: { id: saleId, establishmentId } });

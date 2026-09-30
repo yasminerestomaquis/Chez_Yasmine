@@ -1055,11 +1055,19 @@ export class ChartsService {
     return { year, months: MONTH_LABELS.map((month, i) => ({ month, value: values[i] })) };
   }
 
-  /** Classement des natures de dépenses (§ "Top dépenses"), même plafond de 10 lignes que les autres classements de ce service. */
+  /**
+   * Classement des natures de dépenses (§ "Top dépenses"), même plafond de 10
+   * lignes que les autres classements de ce service. `total` porte sur TOUTES
+   * les dépenses de la période [from, to], pas seulement les 10 premières
+   * catégories affichées — demande utilisateur du 2026-09-30 (« le total de
+   * toutes les dépenses effectuées selon le choix effectué dans le filtre »).
+   */
   async expensesTop(establishmentId: string, from: Date, to: Date) {
     const lines = await this.expenseLines(establishmentId, from, to);
     const agg = new Map<string, { id: string | null; name: string; value: number }>();
+    let total = 0;
     for (const line of lines) {
+      total += line.amount;
       const key = line.category ?? '__none__';
       const name = line.category ?? 'Sans catégorie';
       const entry = agg.get(key) ?? { id: line.category, name, value: 0 };
@@ -1067,7 +1075,7 @@ export class ChartsService {
       agg.set(key, entry);
     }
     const items = [...agg.values()].sort((a, b) => b.value - a.value).slice(0, 10);
-    return { from: from.toISOString(), to: to.toISOString(), groupBy: 'category', items };
+    return { from: from.toISOString(), to: to.toISOString(), groupBy: 'category', items, total };
   }
 }
 

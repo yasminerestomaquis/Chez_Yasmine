@@ -821,6 +821,60 @@ describe('SalesService.correctReferencePricedItem', () => {
   });
 });
 
+describe('SalesService.correctItemPrice', () => {
+  let prisma: ReturnType<typeof makePrismaMock>;
+  let service: SalesService;
+
+  beforeEach(() => {
+    prisma = makePrismaMock();
+    service = new SalesService(prisma as unknown as PrismaService, activityNotifierMock);
+  });
+
+  it('throws NotFoundException for a sale outside the establishment', async () => {
+    (prisma.sale as any).findFirst.mockResolvedValue(null);
+    await expect(service.correctItemPrice('est-1', 'sale-x', 'item-1', 1000)).rejects.toBeInstanceOf(
+      NotFoundException,
+    );
+  });
+
+  it('rejects correcting an already-voided sale', async () => {
+    (prisma.sale as any).findFirst.mockResolvedValue({ id: 'sale-1', voidedAt: new Date(), items: [] });
+    await expect(service.correctItemPrice('est-1', 'sale-1', 'item-1', 1000)).rejects.toBeInstanceOf(
+      ConflictException,
+    );
+  });
+
+  it('throws NotFoundException for an item that does not belong to the sale', async () => {
+    (prisma.sale as any).findFirst.mockResolvedValue({ id: 'sale-1', voidedAt: null, items: [] });
+    await expect(service.correctItemPrice('est-1', 'sale-1', 'item-x', 1000)).rejects.toBeInstanceOf(
+      NotFoundException,
+    );
+  });
+
+  it('updates unitPrice and adjusts subtotal/total by (newPrice - oldPrice) * quantity, without touching stock', async () => {
+    (prisma.sale as any).findFirst.mockResolvedValue({
+      id: 'sale-1',
+      voidedAt: null,
+      items: [{ id: 'item-1', productId: 'p1', quantity: new Decimal(3), unitPrice: new Decimal(500) }],
+    });
+    (prisma.sale as any).update.mockResolvedValue({ id: 'sale-1' });
+
+    await service.correctItemPrice('est-1', 'sale-1', 'item-1', 600);
+
+    expect(prisma.saleItem.update).toHaveBeenCalledWith({ where: { id: 'item-1' }, data: { unitPrice: 600 } });
+    // Delta : (600 - 500) * 3 = 300 FCFA de plus.
+    expect(prisma.sale.update).toHaveBeenCalledWith(
+      expect.objectContaining({
+        where: { id: 'sale-1' },
+        data: { subtotal: { increment: 300 }, total: { increment: 300 } },
+      }),
+    );
+    expect(prisma.product.update).not.toHaveBeenCalled();
+    expect(prisma.product.updateMany).not.toHaveBeenCalled();
+    expect(prisma.stockMovement.create).not.toHaveBeenCalled();
+  });
+});
+
 describe('SalesService.updatePaymentMethod', () => {
   let prisma: ReturnType<typeof makePrismaMock>;
   let service: SalesService;

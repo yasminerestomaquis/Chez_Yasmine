@@ -277,9 +277,21 @@ class _ExpenseChartsTabState extends State<ExpenseChartsTab> {
               },
             ),
           ],
+          // Total de TOUTES les dépenses de la période sélectionnée par le
+          // filtre Mois/Toute l'année ci-dessus, pas seulement les 10
+          // catégories affichées — demande utilisateur du 2026-09-30.
           child: _futureChart(
             _topFuture,
-            (chart) => RankingBarChartWidget(items: chart.items, color: _ExpensePalette.top),
+            (chart) => Column(
+              crossAxisAlignment: CrossAxisAlignment.stretch,
+              children: [
+                Padding(
+                  padding: const EdgeInsets.only(bottom: 4),
+                  child: WeekTotalBadge(total: chart.total ?? 0, color: _ExpensePalette.top),
+                ),
+                RankingBarChartWidget(items: chart.items, color: _ExpensePalette.top),
+              ],
+            ),
           ),
         ),
         if (_can('monthly'))
