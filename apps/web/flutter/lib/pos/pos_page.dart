@@ -211,6 +211,7 @@ class _PosPageState extends State<PosPage> {
       total: total,
       showOrderNumberField: hasCasePricingItems,
       showMarketNumberField: hasVariablePricingItems,
+      allowDateEntry: canSetSaleDate(widget.roleName),
       fetchLastOrderNumber: hasCasePricingItems ? _pos.lastOrderNumber : null,
       fetchLastMarketNumber: hasVariablePricingItems
           ? _pos.lastMarketNumber

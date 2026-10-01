@@ -12,6 +12,26 @@ import 'pos_models.dart';
 // dialogue n'est plus possible.
 const _availableMethods = ['cash', 'mobile_money'];
 
+/// Rôles portant `pos.set_date` par défaut (voir
+/// supabase/seed/001_roles_permissions.sql) — choisir la date d'une vente au
+/// moment de l'encaissement, plutôt que la date du jour. Gate le champ Date
+/// du dialogue Paiement, accordable/révocable rôle par rôle depuis "Gestion
+/// des permissions" (demande utilisateur du 2026-10-01). Même limitation que
+/// `canRefundSale`/`canCorrectSale` (`category_sold_items_page.dart`) :
+/// reflète le **défaut** du seed, `GET /auth/me` n'exposant pas les codes de
+/// permission au client — une personnalisation faite depuis le tableau de
+/// bord ne change pas cet affichage en direct. Fonction pure top-level pour
+/// être testable sans widget.
+const _setDateRoles = {
+  'Super Administrateur',
+  'Administrateur',
+  'Propriétaire',
+  'Gérant',
+  'Caissier',
+  'Serveur',
+};
+bool canSetSaleDate(String roleName) => _setDateRoles.contains(roleName);
+
 class PaymentLine {
   PaymentLine(this.method, this.amount);
   final String method;
@@ -40,12 +60,15 @@ class PaymentOutcome {
 /// Sucreries) et N° de marché (panier contenant un produit Poulets/Poissons/
 /// Plats africains) — pré-remplis via [fetchLastOrderNumber]/
 /// [fetchLastMarketNumber] (simple suggestion de convenance, jamais
-/// bloquante), librement éditables.
+/// bloquante), librement éditables. [allowDateEntry] affiche le champ Date
+/// (porte `pos.set_date`, voir [canSetSaleDate]) — `false` par défaut, même
+/// convention que `RecordLossDialog.allowDateEntry`.
 Future<PaymentOutcome?> showPaymentDialog(
   BuildContext context, {
   required double total,
   bool showOrderNumberField = false,
   bool showMarketNumberField = false,
+  bool allowDateEntry = false,
   Future<int?> Function()? fetchLastOrderNumber,
   Future<int?> Function()? fetchLastMarketNumber,
 }) {
@@ -55,6 +78,7 @@ Future<PaymentOutcome?> showPaymentDialog(
       total: total,
       showOrderNumberField: showOrderNumberField,
       showMarketNumberField: showMarketNumberField,
+      allowDateEntry: allowDateEntry,
       fetchLastOrderNumber: fetchLastOrderNumber,
       fetchLastMarketNumber: fetchLastMarketNumber,
     ),
@@ -66,12 +90,14 @@ class _PaymentDialog extends StatefulWidget {
     required this.total,
     required this.showOrderNumberField,
     required this.showMarketNumberField,
+    required this.allowDateEntry,
     this.fetchLastOrderNumber,
     this.fetchLastMarketNumber,
   });
   final double total;
   final bool showOrderNumberField;
   final bool showMarketNumberField;
+  final bool allowDateEntry;
   final Future<int?> Function()? fetchLastOrderNumber;
   final Future<int?> Function()? fetchLastMarketNumber;
 
@@ -90,10 +116,10 @@ class _PaymentDialogState extends State<_PaymentDialog> {
   double get _paid => _lines.fold(0, (sum, l) => sum + l.amount);
   double get _remaining => widget.total - _paid;
 
-  /// Date envoyée au serveur : seulement si différente d'aujourd'hui (sinon
-  /// horodatage serveur habituel, comportement inchangé) — même convention
-  /// que `RecordLossDialog._sentDate`.
-  DateTime? get _sentDate => _isToday ? null : _date;
+  /// Date envoyée au serveur : seulement si le champ est proposé et différent
+  /// d'aujourd'hui (sinon horodatage serveur habituel, comportement
+  /// inchangé) — même convention que `RecordLossDialog._sentDate`.
+  DateTime? get _sentDate => widget.allowDateEntry && !_isToday ? _date : null;
 
   bool get _isToday {
     final now = DateTime.now();
@@ -262,12 +288,14 @@ class _PaymentDialogState extends State<_PaymentDialog> {
                 'Restant : ${formatAmount(_remaining)} FCFA',
                 style: const TextStyle(color: Colors.green),
               ),
-            const SizedBox(height: 12),
-            OutlinedButton.icon(
-              onPressed: _pickDate,
-              icon: const Icon(Icons.calendar_today_outlined, size: 18),
-              label: Text('Date : ${DateFormat('dd/MM/yyyy').format(_date)}'),
-            ),
+            if (widget.allowDateEntry) ...[
+              const SizedBox(height: 12),
+              OutlinedButton.icon(
+                onPressed: _pickDate,
+                icon: const Icon(Icons.calendar_today_outlined, size: 18),
+                label: Text('Date : ${DateFormat('dd/MM/yyyy').format(_date)}'),
+              ),
+            ],
           ],
         ),
       ),

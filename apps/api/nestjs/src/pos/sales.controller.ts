@@ -1,5 +1,6 @@
-import { Body, Controller, Get, Param, Patch, Post, Query, Req, UseGuards } from '@nestjs/common';
+import { Body, Controller, ForbiddenException, Get, Param, Patch, Post, Query, Req, UseGuards } from '@nestjs/common';
 import type { Request } from 'express';
+import { AuthorizationService } from '../auth/authorization.service.js';
 import { PermissionsGuard } from '../auth/permissions.guard.js';
 import { RequirePermissions } from '../auth/permissions.decorator.js';
 import { SupabaseJwtGuard } from '../auth/supabase-jwt.guard.js';
@@ -13,11 +14,24 @@ import { SalesService } from './sales.service.js';
 @Controller('establishments/:establishmentId/sales')
 @UseGuards(SupabaseJwtGuard, PermissionsGuard)
 export class SalesController {
-  constructor(private readonly sales: SalesService) {}
+  constructor(
+    private readonly sales: SalesService,
+    private readonly authorization: AuthorizationService,
+  ) {}
 
   @Post()
   @RequirePermissions('pos.sell')
-  create(@Req() request: Request, @Param('establishmentId') establishmentId: string, @Body() dto: CreateSaleDto) {
+  async create(@Req() request: Request, @Param('establishmentId') establishmentId: string, @Body() dto: CreateSaleDto) {
+    // Choisir la date de la vente (antidatage) exige `pos.set_date` — sinon
+    // horodatage serveur habituel. Même motif que LossesController.create
+    // pour `losses.edit` (demande utilisateur du 2026-10-01, voir
+    // docs/api/pos.md et supabase/seed/001_roles_permissions.sql).
+    if (dto.createdAt) {
+      const allowed = await this.authorization.hasAllPermissions(request.user!.sub, establishmentId, ['pos.set_date']);
+      if (!allowed) {
+        throw new ForbiddenException('Permission(s) manquante(s) : pos.set_date (saisie de la date)');
+      }
+    }
     return this.sales.create(establishmentId, request.user!.sub, dto);
   }
 

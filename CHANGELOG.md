@@ -2,6 +2,10 @@
 
 ## [Unreleased]
 
+### Ajouté (2026-10-01) — Nouvelle permission `pos.set_date`, gérable depuis Utilisateurs > Gestion des permissions
+- Le champ Date du dialogue Paiement (voir entrée ci-dessous) était accessible à tout rôle pouvant encaisser une vente, sans restriction configurable. Nouvelle permission **`pos.set_date`** : le serveur (`SalesController.create`) refuse désormais une date choisie sans cette permission, et le client (`canSetSaleDate`) masque le champ en conséquence.
+- Accordée par défaut aux mêmes rôles qui avaient déjà cette capacité (Super Administrateur, Administrateur, Propriétaire, Gérant, Caissier, Serveur) — aucune régression pour l'existant — puis accordable/révocable rôle par rôle depuis Utilisateurs > « Gestion des permissions », comme n'importe quelle permission. Voir `docs/api/pos.md`.
+
 ### Ajouté (2026-10-01) — Caisse/Tables : champ Date dans le dialogue Paiement
 - Nouveau champ **Date** dans le dialogue Paiement (modules Caisse et Tables/Addition), juste avant « Valider le paiement » — date du jour par défaut, modifiable via un sélecteur (passé au plus tard à aujourd'hui, pas de date future).
 - La date choisie est répercutée à la fois sur la vente (`Sale.createdAt`, utilisée par Rapports/Accueil/Graphiques) et sur ses mouvements de stock (`StockMovement.createdAt`), pour que le classement FIFO des lots (module Stock) reste cohérent avec une vente antidatée — même principe déjà appliqué à la date d'une perte (`losses.edit`). Voir `docs/api/pos.md`.

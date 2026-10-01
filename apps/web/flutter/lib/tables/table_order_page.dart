@@ -377,6 +377,7 @@ class _TableOrderPageState extends State<TableOrderPage> {
       total: order.total,
       showOrderNumberField: hasCasePricingItems,
       showMarketNumberField: hasVariablePricingItems,
+      allowDateEntry: canSetSaleDate(widget.roleName),
       fetchLastOrderNumber: hasCasePricingItems ? _pos.lastOrderNumber : null,
       fetchLastMarketNumber: hasVariablePricingItems
           ? _pos.lastMarketNumber

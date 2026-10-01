@@ -13,6 +13,7 @@ insert into permissions (code, description) values
   ('pos.refund',        'Annuler une vente, rembourser'),
   ('pos.correct',       'Corriger une vente déjà enregistrée (quantité, mode de paiement) sans la rembourser entièrement'),
   ('pos.correct_price', 'Modifier le prix de vente d''une ligne de vente déjà enregistrée — réservé au Super Administrateur'),
+  ('pos.set_date',      'Choisir la date d''une vente au moment de l''encaissement (Caisse/Tables), plutôt que la date du jour'),
   ('tables.manage',     'Plan de salle, ouverture/transfert/fusion/clôture d''addition'),
   ('customers.manage',  'Fiches client'),
   ('credits.manage',    'Ventes à crédit, remboursements de crédit'),
@@ -171,10 +172,14 @@ on conflict do nothing;
 -- — depuis la séparation des deux permissions, plus rien ne l'accorderait
 -- automatiquement au Caissier, qui devait déjà pouvoir corriger une vente
 -- (la possédait via `pos.refund` avant la séparation).
+-- `pos.set_date` (2026-10-01, demande utilisateur) : le Caissier pouvait déjà
+-- choisir la date d'une vente dans le dialogue Paiement avant que cette
+-- capacité ne devienne une permission dédiée — accordée ici explicitement
+-- pour ne rien lui retirer.
 insert into role_permissions (role_id, permission_id)
 select r.id, p.id
 from roles r
-join permissions p on p.code in ('pos.sell', 'pos.refund', 'pos.correct', 'customers.manage', 'cash.manage', 'reports.view', 'products.view')
+join permissions p on p.code in ('pos.sell', 'pos.refund', 'pos.correct', 'pos.set_date', 'customers.manage', 'cash.manage', 'reports.view', 'products.view')
 where r.is_system and r.name = 'Caissier'
 on conflict do nothing;
 
@@ -200,10 +205,11 @@ on conflict do nothing;
 -- (boutons de `CategorySoldItemsPage`, Caisse et Addition) — délibérément
 -- SANS `pos.refund` : il ne peut toujours pas annuler une vente entière,
 -- seule la correction lui est accordée (voir `SalesController`).
+-- `pos.set_date` (2026-10-01) : même raison que pour Caissier ci-dessus.
 insert into role_permissions (role_id, permission_id)
 select r.id, p.id
 from roles r
-join permissions p on p.code in ('pos.sell', 'tables.manage', 'products.view', 'reports.view', 'purchases.view', 'stock.view', 'losses.manage', 'losses.edit', 'pos.correct')
+join permissions p on p.code in ('pos.sell', 'tables.manage', 'products.view', 'reports.view', 'purchases.view', 'stock.view', 'losses.manage', 'losses.edit', 'pos.correct', 'pos.set_date')
 where r.is_system and r.name = 'Serveur'
 on conflict do nothing;
 

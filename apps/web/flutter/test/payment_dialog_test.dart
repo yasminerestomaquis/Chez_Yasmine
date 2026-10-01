@@ -5,6 +5,19 @@ import 'package:intl/intl.dart';
 import 'package:chez_yasmine/pos/payment_dialog.dart';
 
 void main() {
+  group('canSetSaleDate (logique pure, sans réseau) — 2026-10-01', () {
+    test('les rôles portant pos.set_date par défaut peuvent choisir la date d\'une vente', () {
+      for (final role in ['Super Administrateur', 'Administrateur', 'Propriétaire', 'Gérant', 'Caissier', 'Serveur']) {
+        expect(canSetSaleDate(role), isTrue, reason: role);
+      }
+    });
+
+    test('un rôle sans pos.set_date par défaut (Magasinier, Comptable) ne le peut pas', () {
+      expect(canSetSaleDate('Magasinier'), isFalse);
+      expect(canSetSaleDate('Comptable'), isFalse);
+    });
+  });
+
   Future<PaymentOutcome?> openAndCapture(
     WidgetTester tester, {
     required double total,
@@ -150,20 +163,19 @@ void main() {
     },
   );
 
-  group('champ Date (2026-10-01, demande utilisateur — modules Caisse/Tables)', () {
-    testWidgets('affiche la date du jour par défaut, avant le bouton Valider le paiement', (tester) async {
+  group('champ Date (2026-10-01, demande utilisateur — modules Caisse/Tables, porte pos.set_date)', () {
+    testWidgets('masqué par défaut (allowDateEntry non précisé — rôle sans pos.set_date)', (tester) async {
       await openAndCapture(tester, total: 5000);
 
-      expect(find.text('Date : ${DateFormat('dd/MM/yyyy').format(DateTime.now())}'), findsOneWidget);
+      expect(find.textContaining('Date : '), findsNothing);
     });
 
-    testWidgets('un paiement validé sans toucher à la date envoie outcome.date == null (horodatage serveur habituel)', (tester) async {
-      PaymentOutcome? outcome;
+    testWidgets('allowDateEntry: true affiche la date du jour par défaut, avant le bouton Valider le paiement', (tester) async {
       await tester.pumpWidget(
         MaterialApp(
           home: Builder(
             builder: (context) => ElevatedButton(
-              onPressed: () async => outcome = await showPaymentDialog(context, total: 1000),
+              onPressed: () => showPaymentDialog(context, total: 5000, allowDateEntry: true),
               child: const Text('open'),
             ),
           ),
@@ -172,12 +184,33 @@ void main() {
       await tester.tap(find.text('open'));
       await tester.pumpAndSettle();
 
-      await tester.tap(find.text('Valider le paiement'));
-      await tester.pumpAndSettle();
-
-      expect(outcome, isNotNull);
-      expect(outcome!.date, isNull);
+      expect(find.text('Date : ${DateFormat('dd/MM/yyyy').format(DateTime.now())}'), findsOneWidget);
     });
+
+    testWidgets(
+      'allowDateEntry: true, paiement validé sans toucher à la date -> outcome.date == null (horodatage serveur habituel)',
+      (tester) async {
+        PaymentOutcome? outcome;
+        await tester.pumpWidget(
+          MaterialApp(
+            home: Builder(
+              builder: (context) => ElevatedButton(
+                onPressed: () async => outcome = await showPaymentDialog(context, total: 1000, allowDateEntry: true),
+                child: const Text('open'),
+              ),
+            ),
+          ),
+        );
+        await tester.tap(find.text('open'));
+        await tester.pumpAndSettle();
+
+        await tester.tap(find.text('Valider le paiement'));
+        await tester.pumpAndSettle();
+
+        expect(outcome, isNotNull);
+        expect(outcome!.date, isNull);
+      },
+    );
   });
 
   testWidgets(
