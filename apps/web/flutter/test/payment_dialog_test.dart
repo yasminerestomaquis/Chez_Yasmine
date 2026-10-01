@@ -7,12 +7,13 @@ import 'package:chez_yasmine/pos/payment_dialog.dart';
 void main() {
   group('canSetSaleDate (logique pure, sans réseau) — 2026-10-01', () {
     test('les rôles portant pos.set_date par défaut peuvent choisir la date d\'une vente', () {
-      for (final role in ['Super Administrateur', 'Administrateur', 'Propriétaire', 'Gérant', 'Caissier', 'Serveur']) {
+      for (final role in ['Super Administrateur', 'Administrateur', 'Propriétaire', 'Gérant', 'Caissier']) {
         expect(canSetSaleDate(role), isTrue, reason: role);
       }
     });
 
-    test('un rôle sans pos.set_date par défaut (Magasinier, Comptable) ne le peut pas', () {
+    test('un rôle sans pos.set_date par défaut (Serveur, Magasinier, Comptable) ne le peut pas', () {
+      expect(canSetSaleDate('Serveur'), isFalse);
       expect(canSetSaleDate('Magasinier'), isFalse);
       expect(canSetSaleDate('Comptable'), isFalse);
     });

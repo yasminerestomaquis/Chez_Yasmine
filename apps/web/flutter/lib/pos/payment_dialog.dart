@@ -28,7 +28,6 @@ const _setDateRoles = {
   'Propriétaire',
   'Gérant',
   'Caissier',
-  'Serveur',
 };
 bool canSetSaleDate(String roleName) => _setDateRoles.contains(roleName);
 

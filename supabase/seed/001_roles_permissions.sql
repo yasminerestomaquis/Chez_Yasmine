@@ -205,11 +205,13 @@ on conflict do nothing;
 -- (boutons de `CategorySoldItemsPage`, Caisse et Addition) — délibérément
 -- SANS `pos.refund` : il ne peut toujours pas annuler une vente entière,
 -- seule la correction lui est accordée (voir `SalesController`).
--- `pos.set_date` (2026-10-01) : même raison que pour Caissier ci-dessus.
+-- Pas de `pos.set_date` pour le Serveur (2026-10-01, demande utilisateur) :
+-- contrairement au Caissier, le Serveur ne doit pas pouvoir choisir la date
+-- d'une vente au moment de l'encaissement — reste sur la date du jour.
 insert into role_permissions (role_id, permission_id)
 select r.id, p.id
 from roles r
-join permissions p on p.code in ('pos.sell', 'tables.manage', 'products.view', 'reports.view', 'purchases.view', 'stock.view', 'losses.manage', 'losses.edit', 'pos.correct', 'pos.set_date')
+join permissions p on p.code in ('pos.sell', 'tables.manage', 'products.view', 'reports.view', 'purchases.view', 'stock.view', 'losses.manage', 'losses.edit', 'pos.correct')
 where r.is_system and r.name = 'Serveur'
 on conflict do nothing;
 
