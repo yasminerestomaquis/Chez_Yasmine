@@ -2,6 +2,10 @@
 
 ## [Unreleased]
 
+### Ajouté (2026-10-01) — Caisse/Tables : champ Date dans le dialogue Paiement
+- Nouveau champ **Date** dans le dialogue Paiement (modules Caisse et Tables/Addition), juste avant « Valider le paiement » — date du jour par défaut, modifiable via un sélecteur (passé au plus tard à aujourd'hui, pas de date future).
+- La date choisie est répercutée à la fois sur la vente (`Sale.createdAt`, utilisée par Rapports/Accueil/Graphiques) et sur ses mouvements de stock (`StockMovement.createdAt`), pour que le classement FIFO des lots (module Stock) reste cohérent avec une vente antidatée — même principe déjà appliqué à la date d'une perte (`losses.edit`). Voir `docs/api/pos.md`.
+
 ### Corrigé (2026-09-30) — Caisse/Rapports : icônes de correction (quantité, mode de paiement) désormais masquées selon le rôle
 - `pos.correct` était déjà, comme n'importe quelle permission du catalogue, accordable/révocable rôle par rôle depuis Utilisateurs > « Gestion des permissions » — aucun changement backend nécessaire. Mais côté Flutter, les icônes « Modifier la quantité »/« Modifier le montant payé »/« Modifier le mode de paiement » de `CategorySoldItemsPage` restaient toujours affichées sans condition, sur l'hypothèse (devenue fausse) que tout rôle atteignant l'écran avait aussi `pos.correct`.
 - Nouvelle fonction `canCorrectSale` (même principe que `canRefundSale`) : ces icônes ne s'affichent plus que pour les rôles portant `pos.correct` par défaut (Super Administrateur, Administrateur, Propriétaire, Gérant, Caissier, Serveur) — un rôle à qui la permission est retirée depuis le tableau de bord ne voit plus un bouton voué à un 403. Voir `docs/api/pos.md`.

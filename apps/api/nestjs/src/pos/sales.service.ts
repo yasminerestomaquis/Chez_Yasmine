@@ -9,6 +9,9 @@ import { resolveReferencePriceLine } from './reference-price.js';
 
 type Tx = Prisma.TransactionClient;
 
+/** Tolérance sur une date de vente saisie (fuseaux horaires) : au plus 24h dans le futur — même constante que `LossesService`. */
+const MAX_FUTURE_MS = 24 * 60 * 60 * 1000;
+
 @Injectable()
 export class SalesService {
   constructor(
@@ -26,6 +29,16 @@ export class SalesService {
         include: { items: true, payments: true },
       });
       if (existing) return existing;
+    }
+
+    // Date de vente saisie dans le dialogue Paiement (Caisse/Tables) —
+    // `undefined` pour la quasi-totalité des ventes (horodatage serveur
+    // habituel, `Sale.createdAt`/`StockMovement.createdAt` prennent alors
+    // leur défaut Prisma `now()`). Même tolérance future que `LossesService`
+    // (fuseaux horaires), demande utilisateur du 2026-10-01.
+    const createdAt = dto.createdAt ? new Date(dto.createdAt) : undefined;
+    if (createdAt && createdAt.getTime() > Date.now() + MAX_FUTURE_MS) {
+      throw new BadRequestException('La date de la vente ne peut pas être dans le futur');
     }
 
     const productIds = [...new Set(dto.items.map((i) => i.productId))];
@@ -167,7 +180,13 @@ export class SalesService {
       }
       for (const item of resolvedItems) {
         await tx.stockMovement.create({
-          data: { productId: item.productId, type: 'sale', quantity: item.quantity, createdBy: userId },
+          // `createdAt` répercuté ici (pas seulement sur `Sale` ci-dessous) :
+          // `computeFifoLots` trie exclusivement par `StockMovement.createdAt`
+          // (aucun lien direct vers la vente qui l'a causé) — une vente
+          // antidatée dont le mouvement de stock resterait horodaté "now"
+          // consommerait les lots FIFO dans un ordre chronologiquement
+          // incohérent avec sa date réelle (même raison que `LossesService`).
+          data: { productId: item.productId, type: 'sale', quantity: item.quantity, createdBy: userId, createdAt },
         });
       }
 
@@ -185,6 +204,7 @@ export class SalesService {
           createdBy: userId,
           orderNumber: dto.orderNumber,
           marketNumber: dto.marketNumber,
+          createdAt,
           items: {
             create: resolvedItems.map((item) => ({
               productId: item.productId,

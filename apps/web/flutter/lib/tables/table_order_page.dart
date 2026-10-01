@@ -414,6 +414,7 @@ class _TableOrderPageState extends State<TableOrderPage> {
         source: 'table',
         orderNumber: outcome.orderNumber,
         marketNumber: outcome.marketNumber,
+        createdAt: outcome.date,
       );
       if (!mounted) return;
       await Navigator.of(context).pushReplacement(
@@ -447,6 +448,7 @@ class _TableOrderPageState extends State<TableOrderPage> {
             'source': 'table',
             'orderNumber': ?outcome.orderNumber,
             'marketNumber': ?outcome.marketNumber,
+            'createdAt': ?outcome.date?.toUtc().toIso8601String(),
           },
           createdAt: DateTime.now(),
         ),

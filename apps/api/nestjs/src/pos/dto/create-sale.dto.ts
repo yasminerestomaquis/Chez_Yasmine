@@ -1,5 +1,5 @@
 import { Type } from 'class-transformer';
-import { ArrayMinSize, IsArray, IsBoolean, IsIn, IsInt, IsNumber, IsOptional, IsString, IsUUID, Min, ValidateNested } from 'class-validator';
+import { ArrayMinSize, IsArray, IsBoolean, IsDateString, IsIn, IsInt, IsNumber, IsOptional, IsString, IsUUID, Min, ValidateNested } from 'class-validator';
 
 export class SaleItemDto {
   @IsUUID()
@@ -127,4 +127,17 @@ export class CreateSaleDto {
   @IsInt()
   @Min(1)
   marketNumber?: number;
+
+  /**
+   * Date de la vente, saisie dans le dialogue Paiement (modules Caisse et
+   * Tables) — absente/`undefined` pour la quasi-totalité des ventes
+   * (horodatage serveur habituel), fournie seulement quand l'utilisateur a
+   * changé la date proposée par défaut (aujourd'hui) — demande utilisateur
+   * du 2026-10-01, même principe que `CreateLossDto.createdAt`. Voir
+   * `SalesService.create` pour la tolérance sur une date future et la
+   * répercussion sur les mouvements de stock (cohérence FIFO).
+   */
+  @IsOptional()
+  @IsDateString()
+  createdAt?: string;
 }

@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
+import 'package:intl/intl.dart';
 
 import 'package:chez_yasmine/pos/payment_dialog.dart';
 
@@ -148,6 +149,36 @@ void main() {
       expect(button.onPressed, isNotNull);
     },
   );
+
+  group('champ Date (2026-10-01, demande utilisateur — modules Caisse/Tables)', () {
+    testWidgets('affiche la date du jour par défaut, avant le bouton Valider le paiement', (tester) async {
+      await openAndCapture(tester, total: 5000);
+
+      expect(find.text('Date : ${DateFormat('dd/MM/yyyy').format(DateTime.now())}'), findsOneWidget);
+    });
+
+    testWidgets('un paiement validé sans toucher à la date envoie outcome.date == null (horodatage serveur habituel)', (tester) async {
+      PaymentOutcome? outcome;
+      await tester.pumpWidget(
+        MaterialApp(
+          home: Builder(
+            builder: (context) => ElevatedButton(
+              onPressed: () async => outcome = await showPaymentDialog(context, total: 1000),
+              child: const Text('open'),
+            ),
+          ),
+        ),
+      );
+      await tester.tap(find.text('open'));
+      await tester.pumpAndSettle();
+
+      await tester.tap(find.text('Valider le paiement'));
+      await tester.pumpAndSettle();
+
+      expect(outcome, isNotNull);
+      expect(outcome!.date, isNull);
+    });
+  });
 
   testWidgets(
     'only Espèces and Mobile Money are offered — Carte/Crédit removed (2026-09-10)',

@@ -246,6 +246,7 @@ class _PosPageState extends State<PosPage> {
         payments: payments,
         orderNumber: outcome.orderNumber,
         marketNumber: outcome.marketNumber,
+        createdAt: outcome.date,
       );
       if (!mounted) return;
       setState(() {
@@ -274,6 +275,7 @@ class _PosPageState extends State<PosPage> {
             'payments': payments,
             'orderNumber': ?outcome.orderNumber,
             'marketNumber': ?outcome.marketNumber,
+            'createdAt': ?outcome.date?.toUtc().toIso8601String(),
           },
           createdAt: DateTime.now(),
         ),

@@ -19,6 +19,7 @@ class PosRepository {
     String? id,
     int? orderNumber,
     int? marketNumber,
+    DateTime? createdAt,
   }) async {
     final json = await _api.post(
       '/establishments/$establishmentId/sales',
@@ -33,6 +34,7 @@ class PosRepository {
         'source': ?source,
         'orderNumber': ?orderNumber,
         'marketNumber': ?marketNumber,
+        'createdAt': ?createdAt?.toUtc().toIso8601String(),
       },
     ) as Map<String, dynamic>;
     return SaleResult.fromJson(json);

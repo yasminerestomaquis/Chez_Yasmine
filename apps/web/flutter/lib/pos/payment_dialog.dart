@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'package:intl/intl.dart';
 
 import '../common/formatting.dart';
 import 'pos_models.dart';
@@ -19,12 +20,17 @@ class PaymentLine {
 
 /// Un paiement validé (une ou plusieurs lignes couvrant le total), avec le
 /// N° de commande/N° de marché éventuellement rattachés à cette vente — voir
-/// `docs/api/pos.md`.
+/// `docs/api/pos.md`. [date] est la date de la vente choisie dans le
+/// dialogue : `null` si elle n'a pas été changée par rapport à aujourd'hui
+/// (le serveur applique alors son horodatage habituel, comportement
+/// inchangé), sinon la date saisie — demande utilisateur du 2026-10-01
+/// (modules Caisse et Tables).
 class PaymentOutcome {
-  PaymentOutcome(this.lines, {this.orderNumber, this.marketNumber});
+  PaymentOutcome(this.lines, {this.orderNumber, this.marketNumber, this.date});
   final List<PaymentLine> lines;
   final int? orderNumber;
   final int? marketNumber;
+  final DateTime? date;
 }
 
 /// Retourne le résultat du paiement, ou `null` si annulé.
@@ -79,9 +85,34 @@ class _PaymentDialogState extends State<_PaymentDialog> {
   final _amountController = TextEditingController();
   final _orderNumberController = TextEditingController();
   final _marketNumberController = TextEditingController();
+  DateTime _date = DateTime.now();
 
   double get _paid => _lines.fold(0, (sum, l) => sum + l.amount);
   double get _remaining => widget.total - _paid;
+
+  /// Date envoyée au serveur : seulement si différente d'aujourd'hui (sinon
+  /// horodatage serveur habituel, comportement inchangé) — même convention
+  /// que `RecordLossDialog._sentDate`.
+  DateTime? get _sentDate => _isToday ? null : _date;
+
+  bool get _isToday {
+    final now = DateTime.now();
+    return _date.year == now.year && _date.month == now.month && _date.day == now.day;
+  }
+
+  Future<void> _pickDate() async {
+    final picked = await showDatePicker(
+      context: context,
+      initialDate: _date,
+      firstDate: DateTime(2020),
+      lastDate: DateTime.now(),
+      helpText: 'Date de la vente',
+    );
+    if (picked == null) return;
+    // Heure courante conservée : seule la date change.
+    final now = DateTime.now();
+    setState(() => _date = DateTime(picked.year, picked.month, picked.day, now.hour, now.minute, now.second));
+  }
 
   @override
   void initState() {
@@ -146,6 +177,7 @@ class _PaymentDialogState extends State<_PaymentDialog> {
         _lines,
         orderNumber: int.tryParse(_orderNumberController.text.trim()),
         marketNumber: int.tryParse(_marketNumberController.text.trim()),
+        date: _sentDate,
       ),
     );
   }
@@ -230,6 +262,12 @@ class _PaymentDialogState extends State<_PaymentDialog> {
                 'Restant : ${formatAmount(_remaining)} FCFA',
                 style: const TextStyle(color: Colors.green),
               ),
+            const SizedBox(height: 12),
+            OutlinedButton.icon(
+              onPressed: _pickDate,
+              icon: const Icon(Icons.calendar_today_outlined, size: 18),
+              label: Text('Date : ${DateFormat('dd/MM/yyyy').format(_date)}'),
+            ),
           ],
         ),
       ),

@@ -123,6 +123,39 @@ describe('SalesService.create', () => {
     ).rejects.toBeInstanceOf(BadRequestException);
   });
 
+  it('rejects a sale date more than 24h in the future, before starting a transaction (2026-10-01)', async () => {
+    (prisma.product as any).findMany.mockResolvedValue([product()]);
+    const tooFarFuture = new Date(Date.now() + 25 * 60 * 60 * 1000).toISOString();
+
+    await expect(
+      service.create('est-1', 'user-1', {
+        items: [{ productId: 'p1', quantity: 1 }],
+        payments: [{ method: 'cash', amount: 1000 }],
+        createdAt: tooFarFuture,
+      } as any),
+    ).rejects.toBeInstanceOf(BadRequestException);
+    expect(prisma.$transaction).not.toHaveBeenCalled();
+  });
+
+  it('forwards a custom sale date to BOTH the sale row and its stock movement, for FIFO consistency (2026-10-01)', async () => {
+    (prisma.product as any).findMany.mockResolvedValue([product({ stockQuantity: 20 })]);
+    (prisma.sale as any).create.mockResolvedValue({ id: 'sale-1', items: [], payments: [] });
+    const chosenDate = '2026-09-20T10:00:00.000Z';
+
+    await service.create('est-1', 'user-1', {
+      items: [{ productId: 'p1', quantity: 3 }],
+      payments: [{ method: 'cash', amount: 3000 }],
+      createdAt: chosenDate,
+    } as any);
+
+    expect(prisma.stockMovement.create).toHaveBeenCalledWith({
+      data: { productId: 'p1', type: 'sale', quantity: 3, createdBy: 'user-1', createdAt: new Date(chosenDate) },
+    });
+    expect(prisma.sale.create).toHaveBeenCalledWith(
+      expect.objectContaining({ data: expect.objectContaining({ createdAt: new Date(chosenDate) }) }),
+    );
+  });
+
   it('completes a valid cash sale: decrements stock, creates the sale, records a "sale" stock movement', async () => {
     (prisma.product as any).findMany.mockResolvedValue([product({ stockQuantity: 20 })]);
     (prisma.sale as any).create.mockResolvedValue({ id: 'sale-1', items: [], payments: [] });
