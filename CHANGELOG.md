@@ -2,6 +2,10 @@
 
 ## [Unreleased]
 
+### Corrigé (2026-10-01) — `pos.correct_price` et `pos.set_date` absentes du catalogue en production
+- `supabase/seed/001_roles_permissions.sql` n'est rejoué qu'à la main (il n'est pas exécuté automatiquement au déploiement, contrairement aux migrations) — les deux permissions ajoutées au seed dans cette série de commits n'existaient donc pas encore en base de production, les rendant inutilisables par **tous les rôles y compris le Super Administrateur** (toute vérification de permission échoue si la permission elle-même n'existe pas) et invisibles dans « Gestion des permissions ».
+- Rattrapage appliqué directement en production (voir `supabase/fixes/2026-10-01_apply_missing_pos_permissions.sql`) : catalogue et attributions désormais strictement alignés sur le seed (`pos.correct_price` → Super Administrateur seul ; `pos.set_date` → Super Administrateur/Administrateur/Propriétaire/Gérant/Caissier, pas le Serveur).
+
 ### Ajouté (2026-10-01) — Nouvelle permission `pos.set_date`, gérable depuis Utilisateurs > Gestion des permissions
 - Le champ Date du dialogue Paiement (voir entrée ci-dessous) était accessible à tout rôle pouvant encaisser une vente, sans restriction configurable. Nouvelle permission **`pos.set_date`** : le serveur (`SalesController.create`) refuse désormais une date choisie sans cette permission, et le client (`canSetSaleDate`) masque le champ en conséquence.
 - Accordée par défaut à Super Administrateur, Administrateur, Propriétaire, Gérant et Caissier, qui avaient déjà cette capacité — puis accordable/révocable rôle par rôle depuis Utilisateurs > « Gestion des permissions », comme n'importe quelle permission. **Exception volontaire : le Serveur, qui avait aussi déjà cette capacité, ne l'hérite pas par défaut** (demande explicite de l'utilisateur), mais peut toujours se la voir accorder manuellement. Voir `docs/api/pos.md`.
