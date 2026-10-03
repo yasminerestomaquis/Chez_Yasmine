@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 
 import '../catalog/catalog_repository.dart';
 import '../catalog/models.dart';
+import '../catalog/product_photo.dart';
 import '../common/formatting.dart';
 import '../theme/app_theme.dart';
 
@@ -177,6 +178,11 @@ class PosProductTile extends StatelessWidget {
   final int quantityInCart;
   final VoidCallback onTap;
 
+  static const _placeholder = ColoredBox(
+    color: AppColors.greenLight,
+    child: Icon(Icons.local_drink_outlined, size: 26, color: AppColors.green),
+  );
+
   @override
   Widget build(BuildContext context) {
     final primaryImage =
@@ -205,34 +211,14 @@ class PosProductTile extends StatelessWidget {
               children: [
                 Expanded(
                   child: primaryImage == null
-                      ? const ColoredBox(
-                          color: AppColors.greenLight,
-                          child: Icon(
-                            Icons.local_drink_outlined,
-                            size: 26,
-                            color: AppColors.green,
-                          ),
-                        )
-                      : FutureBuilder<String>(
-                          future: repository.getImageUrl(
-                            product.id,
-                            primaryImage.id,
-                            variant: 'thumbnail',
-                          ),
-                          builder: (context, snapshot) {
-                            if (!snapshot.hasData) {
-                              return const ColoredBox(
-                                color: AppColors.greenLight,
-                              );
-                            }
-                            return ColoredBox(
-                              color: AppColors.greenLight,
-                              child: Image.network(
-                                snapshot.data!,
-                                fit: BoxFit.contain,
-                              ),
-                            );
-                          },
+                      ? _placeholder
+                      : ProductPhoto(
+                          repository: repository,
+                          productId: product.id,
+                          imageId: primaryImage.id,
+                          backgroundColor: AppColors.greenLight,
+                          fallback: _placeholder,
+                          cacheWidth: 240,
                         ),
                 ),
                 Padding(

@@ -6,6 +6,7 @@ import 'auth/auth_gate.dart';
 import 'auth/link_confirmation_gate.dart';
 import 'auth/me_repository.dart';
 import 'auth/profile_cache.dart';
+import 'catalog/product_photo_service.dart';
 import 'config/supabase_config.dart';
 import 'home/home_dashboard.dart';
 import 'sync/global_sync_context.dart';
@@ -19,6 +20,13 @@ Future<void> main() async {
     url: SupabaseConfig.url,
     publishableKey: SupabaseConfig.publishableKey,
   );
+  // Les photos produits sont privées et stockées sur l'appareil pour la
+  // lecture hors ligne : on les efface à la déconnexion (appareil partagé).
+  Supabase.instance.client.auth.onAuthStateChange.listen((state) {
+    if (state.event == AuthChangeEvent.signedOut) {
+      ProductPhotoService.instance.clearAll();
+    }
+  });
   runApp(const ChezYasmineApp());
 }
 

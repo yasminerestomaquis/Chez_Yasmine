@@ -5,6 +5,7 @@ import 'package:uuid/uuid.dart';
 import '../api/api_client.dart';
 import '../catalog/catalog_repository.dart';
 import '../catalog/models.dart';
+import '../catalog/product_photo.dart';
 import '../common/formatting.dart';
 import '../sync/device_id.dart';
 import '../sync/pending_operation.dart';
@@ -415,31 +416,24 @@ class _PurchasesPageState extends State<PurchasesPage>
     final primaryImage =
         product.images.where((i) => i.isPrimary).firstOrNull ??
         product.images.firstOrNull;
+    final placeholder = ColoredBox(
+      color: const Color(0x11000000),
+      child: Icon(Icons.local_drink_outlined, size: size * 0.4),
+    );
     return ClipRRect(
       borderRadius: BorderRadius.circular(8),
       child: SizedBox(
         width: size,
         height: size,
         child: primaryImage == null
-            ? ColoredBox(
-                color: const Color(0x11000000),
-                child: Icon(Icons.local_drink_outlined, size: size * 0.4),
-              )
-            : FutureBuilder<String>(
-                future: _catalog.getImageUrl(
-                  product.id,
-                  primaryImage.id,
-                  variant: 'thumbnail',
-                ),
-                builder: (context, snapshot) {
-                  if (!snapshot.hasData) {
-                    return const ColoredBox(color: Color(0x11000000));
-                  }
-                  return ColoredBox(
-                    color: const Color(0x11000000),
-                    child: Image.network(snapshot.data!, fit: BoxFit.contain),
-                  );
-                },
+            ? placeholder
+            : ProductPhoto(
+                repository: _catalog,
+                productId: product.id,
+                imageId: primaryImage.id,
+                backgroundColor: const Color(0x11000000),
+                fallback: placeholder,
+                cacheWidth: (size * 2).round(),
               ),
       ),
     );

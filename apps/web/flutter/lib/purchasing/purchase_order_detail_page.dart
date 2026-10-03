@@ -4,6 +4,7 @@ import 'package:intl/intl.dart';
 import '../api/api_client.dart';
 import '../catalog/catalog_repository.dart';
 import '../catalog/models.dart';
+import '../catalog/product_photo.dart';
 import '../common/formatting.dart';
 import 'purchasing_models.dart';
 import 'purchasing_repository.dart';
@@ -86,31 +87,24 @@ class _PurchaseOrderDetailPageState extends State<PurchaseOrderDetailPage> {
     final primaryImage =
         product?.images.where((i) => i.isPrimary).firstOrNull ??
         product?.images.firstOrNull;
+    const placeholder = ColoredBox(
+      color: Color(0x11000000),
+      child: Icon(Icons.local_drink_outlined, size: 20),
+    );
     return ClipRRect(
       borderRadius: BorderRadius.circular(8),
       child: SizedBox(
         width: 44,
         height: 44,
         child: primaryImage == null
-            ? const ColoredBox(
-                color: Color(0x11000000),
-                child: Icon(Icons.local_drink_outlined, size: 20),
-              )
-            : FutureBuilder<String>(
-                future: widget.catalog.getImageUrl(
-                  product!.id,
-                  primaryImage.id,
-                  variant: 'thumbnail',
-                ),
-                builder: (context, snapshot) {
-                  if (!snapshot.hasData) {
-                    return const ColoredBox(color: Color(0x11000000));
-                  }
-                  return ColoredBox(
-                    color: const Color(0x11000000),
-                    child: Image.network(snapshot.data!, fit: BoxFit.contain),
-                  );
-                },
+            ? placeholder
+            : ProductPhoto(
+                repository: widget.catalog,
+                productId: product!.id,
+                imageId: primaryImage.id,
+                backgroundColor: const Color(0x11000000),
+                fallback: placeholder,
+                cacheWidth: 88,
               ),
       ),
     );

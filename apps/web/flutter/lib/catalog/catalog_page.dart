@@ -5,6 +5,7 @@ import '../common/formatting.dart';
 import 'catalog_repository.dart';
 import 'models.dart';
 import 'product_form_page.dart';
+import 'product_photo.dart';
 
 class CatalogPage extends StatefulWidget {
   const CatalogPage({super.key, required this.establishmentId, required this.roleName});
@@ -458,6 +459,8 @@ class _ProductCard extends StatelessWidget {
   final VoidCallback onTap;
   final VoidCallback? onDelete;
 
+  static const _placeholder = ColoredBox(color: Color(0x11000000), child: Icon(Icons.local_drink_outlined, size: 40));
+
   @override
   Widget build(BuildContext context) {
     final primaryImage = product.images.where((i) => i.isPrimary).firstOrNull ?? product.images.firstOrNull;
@@ -474,16 +477,13 @@ class _ProductCard extends StatelessWidget {
                 fit: StackFit.expand,
                 children: [
                   primaryImage == null
-                      ? const ColoredBox(color: Color(0x11000000), child: Icon(Icons.local_drink_outlined, size: 40))
-                      : FutureBuilder<String>(
-                          future: repository.getImageUrl(product.id, primaryImage.id, variant: 'small'),
-                          builder: (context, snapshot) {
-                            if (!snapshot.hasData) return const ColoredBox(color: Color(0x11000000));
-                            return ColoredBox(
-                              color: const Color(0x11000000),
-                              child: Image.network(snapshot.data!, fit: BoxFit.contain),
-                            );
-                          },
+                      ? _placeholder
+                      : ProductPhoto(
+                          repository: repository,
+                          productId: product.id,
+                          imageId: primaryImage.id,
+                          backgroundColor: const Color(0x11000000),
+                          fallback: _placeholder,
                         ),
                   if (onDelete != null)
                     Positioned(

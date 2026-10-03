@@ -6,8 +6,11 @@ import 'models.dart';
 
 /// Lets the catalog stay browsable offline (prompt maître §25) : the last
 /// successful load is cached locally and served back if a later fetch fails.
-/// Photos themselves are cached by the service worker / browser HTTP cache
-/// when their signed URLs are fetched — not duplicated here.
+/// Photo bytes are NOT stored here (localStorage is capped at ~5 MB): this
+/// cache only keeps each product's image ids, so offline the app still knows
+/// which photo to look up in `PhotoCache` (IndexedDB, see
+/// `product_photo_service.dart`). The service worker never caches photos —
+/// it ignores cross-origin requests, and signed URLs change every hour.
 class CatalogCache {
   CatalogCache(this.establishmentId);
 
@@ -27,6 +30,7 @@ class CatalogCache {
                 'salePrice': p.salePrice,
                 'stockQuantity': p.stockQuantity,
                 'status': p.status,
+                'images': p.images.map((i) => {'id': i.id, 'isPrimary': i.isPrimary, 'position': i.position}).toList(),
               })
           .toList(),
     }));

@@ -4,6 +4,7 @@ import '../api/api_client.dart';
 import '../catalog/catalog_cache.dart';
 import '../catalog/catalog_repository.dart';
 import '../catalog/models.dart';
+import '../catalog/product_photo.dart';
 import '../charts/charts_repository.dart';
 import '../common/browser_download.dart';
 import '../common/formatting.dart';
@@ -956,6 +957,11 @@ class _StockProductRow extends StatelessWidget {
   final VoidCallback onHistory;
   final VoidCallback onMovement;
 
+  static const _placeholder = ColoredBox(
+    color: AppColors.greenLight,
+    child: Icon(Icons.local_drink_outlined, color: AppColors.green),
+  );
+
   Color get _statusColor {
     if (product.stockQuantity <= 0) return AppColors.alert;
     if (alert != null) return AppColors.orange;
@@ -991,33 +997,14 @@ class _StockProductRow extends StatelessWidget {
                 width: 48,
                 height: 48,
                 child: primaryImage == null
-                    ? const ColoredBox(
-                        color: AppColors.greenLight,
-                        child: Icon(
-                          Icons.local_drink_outlined,
-                          color: AppColors.green,
-                        ),
-                      )
-                    : FutureBuilder<String>(
-                        future: repository.getImageUrl(
-                          product.id,
-                          primaryImage.id,
-                          variant: 'thumbnail',
-                        ),
-                        builder: (context, snapshot) {
-                          if (!snapshot.hasData) {
-                            return const ColoredBox(
-                              color: AppColors.greenLight,
-                            );
-                          }
-                          return ColoredBox(
-                            color: AppColors.greenLight,
-                            child: Image.network(
-                              snapshot.data!,
-                              fit: BoxFit.contain,
-                            ),
-                          );
-                        },
+                    ? _placeholder
+                    : ProductPhoto(
+                        repository: repository,
+                        productId: product.id,
+                        imageId: primaryImage.id,
+                        backgroundColor: AppColors.greenLight,
+                        fallback: _placeholder,
+                        cacheWidth: 120,
                       ),
               ),
             ),

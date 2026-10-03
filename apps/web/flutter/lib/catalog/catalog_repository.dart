@@ -1,5 +1,6 @@
 import '../api/api_client.dart';
 import 'models.dart';
+import 'product_photo_service.dart';
 
 /// Traduit les endpoints REST de apps/api/nestjs/src/catalog/ en appels typés.
 /// Toutes les routes sont scoped par établissement (convention `:establishmentId`
@@ -52,7 +53,11 @@ class CatalogRepository {
 
   Future<List<Product>> listProducts() async {
     final json = await _api.get('$_base/products') as List<dynamic>;
-    return json.map((e) => Product.fromJson(e as Map<String, dynamic>)).toList();
+    final products = json.map((e) => Product.fromJson(e as Map<String, dynamic>)).toList();
+    // Catalogue complet reçu en ligne : purge/préchargement des photos
+    // en arrière-plan (lecture hors ligne), sans jamais bloquer l'appelant.
+    ProductPhotoService.instance.onCatalogLoaded(this, products);
+    return products;
   }
 
   Future<Product> getProduct(String productId) async {

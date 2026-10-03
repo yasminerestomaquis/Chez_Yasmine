@@ -2,6 +2,12 @@
 
 ## [Unreleased]
 
+### Ajouté (2026-10-03) — Photos produits lisibles hors ligne
+- Les photos des produits (Caisse, Tables, Stock, Catalogue, Achats) restent affichées sans réseau : copie locale de la variante `small` (400 px) dans IndexedDB (nouvelle dépendance `idb_shim`), téléchargée en arrière-plan après chaque chargement réussi du catalogue (3 en parallèle), plafonnée à 30 Mo, purgée des images qui ne sont plus au catalogue et vidée à la déconnexion. Un produit dont la photo n'a jamais été téléchargée affiche l'icône habituelle, sans attente ni appel réseau hors ligne. Aucun changement backend ni base de données. Voir `docs/api/sync.md`.
+- `CatalogCache` conserve désormais les identifiants d'images de chaque produit (indispensable pour retrouver la photo hors ligne).
+- Correction de documentation : les photos ne passent pas par le service worker (requêtes d'une autre origine ignorées) ni de façon fiable par le cache HTTP.
+- Point résiduel non vérifié : le moteur CanvasKit est servi depuis un domaine externe (en-têtes de cache d'un an), donc un rechargement à froid hors ligne dépend du cache HTTP du navigateur ; à tester sur un vrai appareil.
+
 ### Corrigé (2026-10-01) — `pos.correct_price` et `pos.set_date` absentes du catalogue en production
 - `supabase/seed/001_roles_permissions.sql` n'est rejoué qu'à la main (il n'est pas exécuté automatiquement au déploiement, contrairement aux migrations) — les deux permissions ajoutées au seed dans cette série de commits n'existaient donc pas encore en base de production, les rendant inutilisables par **tous les rôles y compris le Super Administrateur** (toute vérification de permission échoue si la permission elle-même n'existe pas) et invisibles dans « Gestion des permissions ».
 - Rattrapage appliqué directement en production (voir `supabase/fixes/2026-10-01_apply_missing_pos_permissions.sql`) : catalogue et attributions désormais strictement alignés sur le seed (`pos.correct_price` → Super Administrateur seul ; `pos.set_date` → Super Administrateur/Administrateur/Propriétaire/Gérant/Caissier, pas le Serveur).
