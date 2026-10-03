@@ -2,6 +2,14 @@
 
 ## [Unreleased]
 
+### Ajouté (2026-10-03) — Ouvrir une table et prendre une commande hors ligne
+- Sans réseau, on peut maintenant **ouvrir une table** (libre ou réservée), **créer une nouvelle addition**, **ajouter, retirer ou changer la quantité d'un article**, puis **encaisser** : tout est gardé sur l'appareil et rejoué dans l'ordre à la reconnexion, la table et son total se mettent à jour localement. Les articles se calculent au prix du serveur (y compris le Gbêlê, quantité déduite du montant payé).
+- **Conflits entre appareils, jamais silencieux** : les changements de quantité envoient la quantité vue ; si un autre appareil l'a modifiée entre-temps, l'opération est refusée et apparaît dans « à corriger » avec son motif. Deux appareils qui ouvrent la même table hors ligne obtiennent deux additions sur la table, sans rien perdre. Une addition encaissée ailleurs refuse les ajouts et va dans « à corriger ».
+- **Pas de saisie en double** : tant que des saisies de tables attendent leur envoi, les écrans affichent la copie de l'appareil (qui les contient) au lieu de l'état du serveur, après avoir tenté de les envoyer d'abord ; une seule synchronisation à la fois ; les écrans se rechargent d'eux-mêmes une fois les saisies parties.
+- Quatre nouveaux types d'opération de synchronisation (`order_open`, `order_item_add`, `order_item_set`, `order_item_remove`, permission `tables.manage`), idempotents. Aucune migration de base ni nouvelle permission.
+- Le cache du catalogue conserve désormais les prix de référence, prix à l'unité et drapeaux de catégorie : **corrige aussi la Caisse hors ligne**, où un produit à prix de référence variable (Gbêlê) était traité comme un produit à prix libre et refusé par le serveur à la synchronisation.
+- Libérer, transférer, fusionner, scinder une addition, réserver et gérer les tables exigent toujours une connexion. Voir `docs/api/sync.md`.
+
 ### Ajouté (2026-10-03) — Tables, additions et clients consultables hors ligne
 - Le **plan de salle**, les **additions ouvertes** et la **liste des clients** s'affichent sans réseau, à partir de la dernière copie locale, sous un bandeau « Hors ligne — données du JJ/MM HH:mm » avec bouton **Actualiser** (rechargement automatique au retour de la connexion). Les additions de toutes les tables occupées sont préchargées en arrière-plan à chaque ouverture du plan de salle en ligne.
 - Hors ligne, on peut **consulter et encaisser une addition déjà ouverte** ; la table passe alors localement à « libre » (ou son total diminue) pour ne pas proposer de l'encaisser deux fois. Ouvrir/créer/libérer une table, réserver ou modifier une addition exige toujours une connexion (message explicite). Créer un client hors ligne affiche un message d'erreur au lieu d'échouer silencieusement.

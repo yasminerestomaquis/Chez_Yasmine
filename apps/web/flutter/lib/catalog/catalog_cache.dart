@@ -18,21 +18,43 @@ class CatalogCache {
 
   String get _key => 'chez_yasmine_catalog_cache_$establishmentId';
 
+  static Map<String, dynamic> _categoryJson(Category c) => {
+        'id': c.id,
+        'name': c.name,
+        'hasVariablePricing': c.hasVariablePricing,
+        'hasCasePricing': c.hasCasePricing,
+        'isBeverage': c.isBeverage,
+      };
+
+  /// Tout ce dont la saisie hors ligne dépend pour reproduire les règles de
+  /// prix du serveur : prix à l'unité, prix de référence variable (Gbêlê),
+  /// drapeaux de catégorie. Sans eux, un produit à prix de référence serait
+  /// pris pour un produit à prix libre et enverrait un `unitPrice` que le
+  /// serveur refuserait à la synchronisation.
   Future<void> save(List<Category> categories, List<Product> products) async {
     final prefs = await SharedPreferences.getInstance();
+    final categoryById = {for (final c in categories) c.id: c};
     await prefs.setString(_key, jsonEncode({
-      'categories': categories.map((c) => {'id': c.id, 'name': c.name}).toList(),
-      'products': products
-          .map((p) => {
-                'id': p.id,
-                'name': p.name,
-                'categoryId': p.categoryId,
-                'salePrice': p.salePrice,
-                'stockQuantity': p.stockQuantity,
-                'status': p.status,
-                'images': p.images.map((i) => {'id': i.id, 'isPrimary': i.isPrimary, 'position': i.position}).toList(),
-              })
-          .toList(),
+      'categories': categories.map(_categoryJson).toList(),
+      'products': products.map((p) {
+        final category = p.category ?? categoryById[p.categoryId];
+        return {
+          'id': p.id,
+          'name': p.name,
+          'categoryId': p.categoryId,
+          'category': category == null ? null : _categoryJson(category),
+          'salePrice': p.salePrice,
+          'unitSalePrice': p.unitSalePrice,
+          'requiresPriceAtSale': p.requiresPriceAtSale,
+          'referenceSalePrice': p.referenceSalePrice,
+          'unit': p.unit,
+          'minStock': p.minStock,
+          'bottlesPerCase': p.bottlesPerCase,
+          'stockQuantity': p.stockQuantity,
+          'status': p.status,
+          'images': p.images.map((i) => {'id': i.id, 'isPrimary': i.isPrimary, 'position': i.position}).toList(),
+        };
+      }).toList(),
     }));
   }
 

@@ -35,6 +35,16 @@ String describeOperation(PendingOperation operation) {
       return 'Perte — quantité ${_quantity(p['quantity'])}';
     case 'purchase':
       return 'Commande d\'achat n°${p['orderNumber'] ?? '?'}';
+    case 'order_open':
+      final guests = p['guestCount'] is num ? ' (${_quantity(p['guestCount'])} couverts)' : '';
+      return 'Ouverture de table$guests';
+    case 'order_item_add':
+      return 'Ajout à une addition — ${p['productName'] ?? 'article'}';
+    case 'order_item_set':
+      return 'Quantité modifiée sur une addition — ${p['productName'] ?? 'article'} '
+          '(${_quantity(p['expectedQuantity'])} → ${_quantity(p['quantity'])})';
+    case 'order_item_remove':
+      return 'Retrait d\'une addition — ${p['productName'] ?? 'article'}';
     case 'cash_closing':
       final counted = p['countedAmount'] is num ? ' — compté ${formatAmount(p['countedAmount'] as num)} FCFA' : '';
       return 'Clôture de caisse$counted';

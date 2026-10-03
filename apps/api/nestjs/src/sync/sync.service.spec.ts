@@ -7,6 +7,7 @@ import type { LossesService } from '../losses/losses.service.js';
 import type { SalesService } from '../pos/sales.service.js';
 import type { PurchasesService } from '../purchasing/purchases.service.js';
 import type { StockMovementsService } from '../stock/stock-movements.service.js';
+import type { OrdersService } from '../tables/orders.service.js';
 import { resolveCapturedAt, SyncService } from './sync.service.js';
 
 function makePrismaMock() {
@@ -24,6 +25,12 @@ describe('SyncService.processBatch', () => {
   let losses: { create: ReturnType<typeof vi.fn> };
   let purchases: { create: ReturnType<typeof vi.fn> };
   let cash: { close: ReturnType<typeof vi.fn> };
+  let orders: {
+    openOfflineOrder: ReturnType<typeof vi.fn>;
+    addItemWithId: ReturnType<typeof vi.fn>;
+    setItemQuantityIfExpected: ReturnType<typeof vi.fn>;
+    removeItemIfExpected: ReturnType<typeof vi.fn>;
+  };
   let service: SyncService;
 
   beforeEach(() => {
@@ -35,6 +42,12 @@ describe('SyncService.processBatch', () => {
     losses = { create: vi.fn() };
     purchases = { create: vi.fn() };
     cash = { close: vi.fn() };
+    orders = {
+      openOfflineOrder: vi.fn(),
+      addItemWithId: vi.fn(),
+      setItemQuantityIfExpected: vi.fn(),
+      removeItemIfExpected: vi.fn(),
+    };
     service = new SyncService(
       prisma as unknown as PrismaService,
       authorization as unknown as AuthorizationService,
@@ -44,6 +57,7 @@ describe('SyncService.processBatch', () => {
       losses as unknown as LossesService,
       purchases as unknown as PurchasesService,
       cash as unknown as CashService,
+      orders as unknown as OrdersService,
     );
   });
 
@@ -202,6 +216,142 @@ describe('SyncService.processBatch', () => {
     ]);
 
     expect(results.map((r) => r.status)).toEqual(['CONFLICT', 'SYNCED']);
+  });
+
+  describe('opérations sur les additions saisies hors ligne (phase 4, 2026-10-03)', () => {
+    const ORDER = '11111111-1111-4111-8111-111111111111';
+    const ITEM = '22222222-2222-4222-8222-222222222222';
+    const TABLE = '33333333-3333-4333-8333-333333333333';
+    const PRODUCT = '44444444-4444-4444-8444-444444444444';
+
+    beforeEach(() => prisma.syncOperation.findUnique.mockResolvedValue(null));
+
+    it("order_open : l'identifiant de l'opération devient celui de l'addition, avec l'heure de saisie comme ouverture", async () => {
+      orders.openOfflineOrder.mockResolvedValue({ id: ORDER });
+      const capturedAt = new Date(Date.now() - 3600_000).toISOString();
+
+      const [result] = await service.processBatch('est-1', 'user-1', [
+        { id: ORDER, entityType: 'order_open', deviceId: 'd', payload: { tableId: TABLE, guestCount: 3 }, capturedAt },
+      ]);
+
+      expect(orders.openOfflineOrder).toHaveBeenCalledWith(
+        'est-1',
+        'user-1',
+        { id: ORDER, tableId: TABLE, guestCount: 3 },
+        new Date(capturedAt),
+      );
+      expect(result.status).toBe('SYNCED');
+    });
+
+    it("order_item_add : relaie la ligne avec son identifiant et les champs de prix, sans le nom d'affichage", async () => {
+      orders.addItemWithId.mockResolvedValue({ id: ITEM });
+
+      await service.processBatch('est-1', 'user-1', [
+        {
+          id: 'op-1',
+          entityType: 'order_item_add',
+          deviceId: 'd',
+          payload: {
+            orderId: ORDER,
+            itemId: ITEM,
+            productId: PRODUCT,
+            quantity: 2,
+            sellAsUnit: true,
+            productName: 'Celtia',
+          },
+        },
+      ]);
+
+      expect(orders.addItemWithId).toHaveBeenCalledWith('est-1', ORDER, ITEM, {
+        productId: PRODUCT,
+        quantity: 2,
+        unitPrice: undefined,
+        amountPaid: undefined,
+        sellAsUnit: true,
+      });
+    });
+
+    it('order_item_set et order_item_remove : relaient la quantité vue et la quantité visée', async () => {
+      orders.setItemQuantityIfExpected.mockResolvedValue({});
+      orders.removeItemIfExpected.mockResolvedValue({ removed: true });
+
+      const results = await service.processBatch('est-1', 'user-1', [
+        {
+          id: 'op-1',
+          entityType: 'order_item_set',
+          deviceId: 'd',
+          payload: { orderId: ORDER, itemId: ITEM, expectedQuantity: 2, quantity: 3 },
+        },
+        {
+          id: 'op-2',
+          entityType: 'order_item_remove',
+          deviceId: 'd',
+          payload: { orderId: ORDER, itemId: ITEM, expectedQuantity: 3 },
+        },
+      ]);
+
+      expect(orders.setItemQuantityIfExpected).toHaveBeenCalledWith('est-1', ORDER, ITEM, 2, 3);
+      expect(orders.removeItemIfExpected).toHaveBeenCalledWith('est-1', ORDER, ITEM, 3);
+      expect(results.map((r) => r.status)).toEqual(['SYNCED', 'SYNCED']);
+    });
+
+    it('exige tables.manage, comme les routes HTTP des additions', async () => {
+      authorization.hasAllPermissions.mockResolvedValue(false);
+
+      const [result] = await service.processBatch('est-1', 'user-1', [
+        { id: ORDER, entityType: 'order_open', deviceId: 'd', payload: { tableId: TABLE } },
+      ]);
+
+      expect(authorization.hasAllPermissions).toHaveBeenCalledWith('user-1', 'est-1', ['tables.manage']);
+      expect(result.status).toBe('FAILED');
+      expect(orders.openOfflineOrder).not.toHaveBeenCalled();
+    });
+
+    it('un conflit de quantité détecté par le serveur marque l’opération CONFLICT avec son motif (jamais écrasé)', async () => {
+      orders.setItemQuantityIfExpected.mockRejectedValue(new Error('La quantité de cet article a été modifiée entre-temps'));
+
+      const [result] = await service.processBatch('est-1', 'user-1', [
+        {
+          id: 'op-1',
+          entityType: 'order_item_set',
+          deviceId: 'd',
+          payload: { orderId: ORDER, itemId: ITEM, expectedQuantity: 2, quantity: 3 },
+        },
+      ]);
+
+      expect(result.status).toBe('CONFLICT');
+      expect(result.error).toContain('modifiée entre-temps');
+    });
+
+    it('une charge utile invalide (identifiant absent ou mal formé) est rejetée avant tout appel au service', async () => {
+      const results = await service.processBatch('est-1', 'user-1', [
+        { id: 'op-1', entityType: 'order_open', deviceId: 'd', payload: {} },
+        { id: 'op-2', entityType: 'order_item_set', deviceId: 'd', payload: { orderId: 'pas-un-uuid', itemId: ITEM, expectedQuantity: 1, quantity: 2 } },
+        { id: 'op-3', entityType: 'order_item_set', deviceId: 'd', payload: { orderId: ORDER, itemId: ITEM, expectedQuantity: 'x', quantity: 2 } },
+      ]);
+
+      expect(results.map((r) => r.status)).toEqual(['CONFLICT', 'CONFLICT', 'CONFLICT']);
+      expect(results[0].error).toContain('tableId');
+      expect(orders.openOfflineOrder).not.toHaveBeenCalled();
+      expect(orders.setItemQuantityIfExpected).not.toHaveBeenCalled();
+    });
+
+    it('les opérations arrivent dans l’ordre de la file : ouverture, ajout, quantité, puis encaissement de la même addition', async () => {
+      const calls: string[] = [];
+      orders.openOfflineOrder.mockImplementation(async () => calls.push('open'));
+      orders.addItemWithId.mockImplementation(async () => calls.push('add'));
+      orders.setItemQuantityIfExpected.mockImplementation(async () => calls.push('set'));
+      sales.create.mockImplementation(async () => calls.push('sale'));
+
+      await service.processBatch('est-1', 'user-1', [
+        { id: ORDER, entityType: 'order_open', deviceId: 'd', payload: { tableId: TABLE } },
+        { id: 'op-2', entityType: 'order_item_add', deviceId: 'd', payload: { orderId: ORDER, itemId: ITEM, productId: PRODUCT, quantity: 1 } },
+        { id: 'op-3', entityType: 'order_item_set', deviceId: 'd', payload: { orderId: ORDER, itemId: ITEM, expectedQuantity: 1, quantity: 2 } },
+        { id: 'op-4', entityType: 'sale', deviceId: 'd', payload: { orderId: ORDER, items: [], payments: [] } },
+      ]);
+
+      expect(calls).toEqual(['open', 'add', 'set', 'sale']);
+    });
   });
 
   describe("capturedAt (heure de saisie sur l'appareil, 2026-10-03)", () => {

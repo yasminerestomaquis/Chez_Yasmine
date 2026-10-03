@@ -9,6 +9,7 @@ import 'package:supabase_flutter/supabase_flutter.dart';
 
 import 'package:chez_yasmine/api/api_client.dart';
 import 'package:chez_yasmine/customers/customers_page.dart';
+import 'package:chez_yasmine/sync/sync_queue_service.dart';
 import 'package:chez_yasmine/tables/floor_plan_page.dart';
 import 'package:chez_yasmine/tables/table_order_page.dart';
 import 'package:chez_yasmine/tables/tables_repository.dart';
@@ -77,17 +78,38 @@ void main() {
       });
     });
 
-    testWidgets('une table libre ne peut pas être ouverte hors ligne : message clair, aucune fenêtre', (tester) async {
+    testWidgets('une table libre s\'ouvre hors ligne sur l\'appareil, puis des articles s\'y ajoutent (phase 4)', (tester) async {
       await withNoServer(() async {
         await tester.pumpWidget(const MaterialApp(home: FloorPlanPage(establishmentId: 'est-1', roleName: 'Gérant')));
         await tester.pumpAndSettle();
 
         await tester.tap(find.text('Terrasse libre'));
         await tester.pumpAndSettle();
+        expect(find.text('Ouvrir la table'), findsOneWidget);
+        await tester.enterText(find.byType(TextField).last, '4');
+        await tester.tap(find.widgetWithText(FilledButton, 'Ouvrir'));
+        await tester.pumpAndSettle();
 
-        expect(find.textContaining('exige une connexion'), findsOneWidget);
-        expect(find.byType(AlertDialog), findsNothing);
-        expect(find.byType(BottomSheet), findsNothing);
+        // Arrive sur l'addition créée localement, vide, sous le bandeau hors ligne.
+        expect(find.text('Addition'), findsOneWidget);
+        expect(find.textContaining('Hors ligne — données du'), findsOneWidget);
+
+        var queue = await SyncQueueService(ApiClient(), 'est-1').listPending();
+        expect(queue.map((o) => o.entityType), ['order_open']);
+        expect(queue.single.payload, {'tableId': 't1', 'guestCount': 4});
+
+        // Un article du catalogue en copie locale s'ajoute à cette addition.
+        await tester.tap(find.text('Celtia').first);
+        await tester.pumpAndSettle();
+        await tester.tap(find.text('Celtia').first);
+        await tester.pumpAndSettle();
+
+        queue = await SyncQueueService(ApiClient(), 'est-1').listPending();
+        expect(queue.map((o) => o.entityType), ['order_open', 'order_item_add', 'order_item_set']);
+        expect(queue[1].payload['orderId'], queue[0].id, reason: 'l\'article vise l\'addition créée hors ligne');
+        expect(queue[2].payload['expectedQuantity'], 1);
+        expect(queue[2].payload['quantity'], 2);
+        expect(find.textContaining('1 000'), findsWidgets, reason: '2 x 500 FCFA');
       });
     });
 

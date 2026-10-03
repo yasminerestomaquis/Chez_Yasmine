@@ -1,4 +1,4 @@
-import { Injectable, Logger } from '@nestjs/common';
+import { BadRequestException, Injectable, Logger } from '@nestjs/common';
 import { AuthorizationService } from '../auth/authorization.service.js';
 import { PrismaService } from '../prisma/prisma.service.js';
 import { CashService } from '../cash/cash.service.js';
@@ -7,6 +7,7 @@ import { LossesService } from '../losses/losses.service.js';
 import { SalesService } from '../pos/sales.service.js';
 import { PurchasesService } from '../purchasing/purchases.service.js';
 import { StockMovementsService } from '../stock/stock-movements.service.js';
+import { OrdersService } from '../tables/orders.service.js';
 import type { SyncEntityType, SyncOperationDto } from './dto/sync-batch.dto.js';
 
 /** Permission required to accept an operation of a given entity type — checked per-operation, not once for the whole batch, since a single sync request can legitimately mix a sale and a stock correction. */
@@ -17,6 +18,11 @@ const REQUIRED_PERMISSION: Record<SyncEntityType, string> = {
   loss: 'losses.manage',
   purchase: 'purchases.manage',
   cash_closing: 'cash.manage',
+  // Les routes d'additions (OrdersController) exigent `tables.manage`.
+  order_open: 'tables.manage',
+  order_item_add: 'tables.manage',
+  order_item_set: 'tables.manage',
+  order_item_remove: 'tables.manage',
 };
 
 /**
@@ -36,6 +42,28 @@ export function resolveCapturedAt(raw: string | undefined, now: number = Date.no
   if (Number.isNaN(time)) return undefined;
   if (time > now + MAX_CAPTURED_FUTURE_MS || time < now - MAX_CAPTURED_AGE_MS) return undefined;
   return date;
+}
+
+const UUID_PATTERN = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+
+function requireUuid(payload: Record<string, unknown>, key: string): string {
+  const value = payload[key];
+  if (typeof value !== 'string' || !UUID_PATTERN.test(value)) {
+    throw new BadRequestException(`Champ « ${key} » invalide dans l'opération`);
+  }
+  return value;
+}
+
+function requireNumber(payload: Record<string, unknown>, key: string): number {
+  const value = payload[key];
+  if (typeof value !== 'number' || !Number.isFinite(value)) {
+    throw new BadRequestException(`Champ « ${key} » invalide dans l'opération`);
+  }
+  return value;
+}
+
+function optionalNumber(payload: Record<string, unknown>, key: string): number | undefined {
+  return payload[key] === undefined || payload[key] === null ? undefined : requireNumber(payload, key);
 }
 
 export interface SyncOperationResult {
@@ -58,6 +86,7 @@ export class SyncService {
     private readonly losses: LossesService,
     private readonly purchases: PurchasesService,
     private readonly cash: CashService,
+    private readonly orders: OrdersService,
   ) {}
 
   async processBatch(establishmentId: string, userId: string, operations: SyncOperationDto[]): Promise<SyncOperationResult[]> {
@@ -154,6 +183,54 @@ export class SyncService {
         return this.dispatchLoss(establishmentId, userId, operation, capturedAt);
       case 'purchase':
         return this.purchases.create(establishmentId, userId, { ...(operation.payload as object), id: operation.id } as any);
+      case 'order_open': {
+        const payload = operation.payload;
+        const guestCount = payload.guestCount;
+        return this.orders.openOfflineOrder(
+          establishmentId,
+          userId,
+          {
+            id: operation.id,
+            tableId: requireUuid(payload, 'tableId'),
+            guestCount: typeof guestCount === 'number' ? guestCount : undefined,
+          },
+          capturedAt,
+        );
+      }
+      case 'order_item_add': {
+        const payload = operation.payload;
+        return this.orders.addItemWithId(
+          establishmentId,
+          requireUuid(payload, 'orderId'),
+          requireUuid(payload, 'itemId'),
+          {
+            productId: requireUuid(payload, 'productId'),
+            quantity: optionalNumber(payload, 'quantity'),
+            unitPrice: optionalNumber(payload, 'unitPrice'),
+            amountPaid: optionalNumber(payload, 'amountPaid'),
+            sellAsUnit: payload.sellAsUnit === true,
+          },
+        );
+      }
+      case 'order_item_set': {
+        const payload = operation.payload;
+        return this.orders.setItemQuantityIfExpected(
+          establishmentId,
+          requireUuid(payload, 'orderId'),
+          requireUuid(payload, 'itemId'),
+          requireNumber(payload, 'expectedQuantity'),
+          requireNumber(payload, 'quantity'),
+        );
+      }
+      case 'order_item_remove': {
+        const payload = operation.payload;
+        return this.orders.removeItemIfExpected(
+          establishmentId,
+          requireUuid(payload, 'orderId'),
+          requireUuid(payload, 'itemId'),
+          requireNumber(payload, 'expectedQuantity'),
+        );
+      }
       case 'cash_closing':
         return this.cash.close(
           establishmentId,

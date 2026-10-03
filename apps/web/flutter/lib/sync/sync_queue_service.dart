@@ -1,5 +1,7 @@
+import 'dart:async';
 import 'dart:convert';
 
+import 'package:flutter/foundation.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 
@@ -157,7 +159,52 @@ class SyncQueueService {
   ///
   /// Une opération refusée par le serveur (FAILED/CONFLICT) quitte la file
   /// mais est conservée dans la liste « à corriger » ([listFailed]).
-  Future<SyncResult> syncAll() async {
+  Future<SyncResult> syncAll() {
+    // Une seule synchronisation à la fois par établissement : la barre de
+    // statut (toutes les 15 s, au retour du réseau) et la lecture d'un écran
+    // qui veut des données à jour d'abord (`TablesRepository`) peuvent la
+    // déclencher en même temps — deux envois simultanés de la même file
+    // risqueraient de rejouer une opération pendant qu'elle est en cours.
+    final previous = _locks[establishmentId] ?? Future<void>.value();
+    final result = Completer<SyncResult>();
+    final turn = previous.then((_) async {
+      try {
+        final outcome = await _syncAllUnlocked();
+        if (outcome.synced > 0 || outcome.failed.isNotEmpty) syncCompleted.value++;
+        result.complete(outcome);
+      } catch (error, stack) {
+        result.completeError(error, stack);
+      }
+    });
+    _locks[establishmentId] = turn;
+    turn.whenComplete(() {
+      if (identical(_locks[establishmentId], turn)) _locks.remove(establishmentId);
+    });
+    return result.future;
+  }
+
+  static final Map<String, Future<void>> _locks = {};
+
+  /// Incrémenté à chaque synchronisation qui a envoyé quelque chose : les
+  /// écrans qui affichent une copie locale (tables, additions, clients)
+  /// l'écoutent pour se recharger d'eux-mêmes dès que leurs saisies sont parties.
+  static final ValueNotifier<int> syncCompleted = ValueNotifier(0);
+
+  /// Types d'opération qui modifient une table ou une addition (voir
+  /// `TablesRepository`) : tant qu'il en reste en file, une lecture du serveur
+  /// ne reflète pas encore ce que l'appareil a saisi.
+  static const tableOperationTypes = {'order_open', 'order_item_add', 'order_item_set', 'order_item_remove'};
+
+  /// Vrai si la file contient une opération qui change l'état d'une table ou
+  /// d'une addition : saisie hors ligne, ou encaissement d'une addition.
+  Future<bool> hasPendingTableOperations() async {
+    final pending = await listPending();
+    return pending.any(
+      (o) => tableOperationTypes.contains(o.entityType) || (o.entityType == 'sale' && o.payload['orderId'] != null),
+    );
+  }
+
+  Future<SyncResult> _syncAllUnlocked() async {
     var pending = await listPending();
     if (pending.isEmpty) return SyncResult(synced: 0, failed: []);
 

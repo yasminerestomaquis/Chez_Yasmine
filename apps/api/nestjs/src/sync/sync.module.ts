@@ -6,11 +6,12 @@ import { LossesModule } from '../losses/losses.module.js';
 import { PosModule } from '../pos/pos.module.js';
 import { PurchasingModule } from '../purchasing/purchasing.module.js';
 import { StockModule } from '../stock/stock.module.js';
+import { TablesModule } from '../tables/tables.module.js';
 import { SyncController } from './sync.controller.js';
 import { SyncService } from './sync.service.js';
 
 @Module({
-  imports: [AuthModule, PosModule, StockModule, ExpensesModule, LossesModule, PurchasingModule, CashModule],
+  imports: [AuthModule, PosModule, StockModule, ExpensesModule, LossesModule, PurchasingModule, CashModule, TablesModule],
   controllers: [SyncController],
   providers: [SyncService],
 })

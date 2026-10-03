@@ -22,6 +22,7 @@ import '../sync/offline_sale.dart';
 import '../sync/pending_operation.dart';
 import '../sync/sync_queue_service.dart';
 import '../theme/app_theme.dart';
+import 'offline_orders.dart';
 import 'tables_models.dart';
 import 'tables_repository.dart';
 
@@ -92,6 +93,7 @@ class _TableOrderPageState extends State<TableOrderPage> {
     // voir stock_lots_tab.dart pour le même motif).
     _catalogFuture = _loadCatalog()..ignore();
     _reloadOrders();
+    SyncQueueService.syncCompleted.addListener(_onSyncCompleted);
     _reconnectSubscription = ConnectivityStatus.onReconnect(() {
       if (mounted && _ordersCachedAt != null) {
         _reloadOrders();
@@ -105,7 +107,14 @@ class _TableOrderPageState extends State<TableOrderPage> {
   @override
   void dispose() {
     _reconnectSubscription?.cancel();
+    SyncQueueService.syncCompleted.removeListener(_onSyncCompleted);
     super.dispose();
+  }
+
+  // Les saisies faites hors ligne viennent de partir : l'addition affichée
+  // redevient celle du serveur (mêmes identifiants, aucune ligne perdue).
+  void _onSyncCompleted() {
+    if (mounted && _ordersCachedAt != null) _reloadOrders();
   }
 
   Future<(List<Category>, List<Product>)> _loadCatalog() async {
@@ -152,16 +161,32 @@ class _TableOrderPageState extends State<TableOrderPage> {
   Future<void> _addNewAddition() async {
     setState(() => _isBusy = true);
     try {
-      await widget.repository.openAdditionalOrder(widget.tableId);
-      final orders = await widget.repository.listOpenOrdersForTable(
-        widget.tableId,
-      );
+      try {
+        await widget.repository.openAdditionalOrder(widget.tableId);
+        final orders = await widget.repository.listOpenOrdersForTable(
+          widget.tableId,
+        );
+        if (!mounted) return;
+        setState(() {
+          _ordersCachedAt = null;
+          _ordersFuture = Future.value(Cached(orders));
+          _selectedOrderId = orders.last.id;
+        });
+        return;
+      } catch (error) {
+        if (!_shouldQueue(error)) rethrow;
+      }
+      // Hors ligne : nouvelle addition créée sur l'appareil, envoyée à la
+      // reconnexion (`order_open` sur une table déjà occupée).
+      final order = await _offline.openOrder(widget.tableId);
       if (!mounted) return;
-      setState(() {
-        _ordersCachedAt = null;
-        _ordersFuture = Future.value(Cached(orders));
-        _selectedOrderId = orders.last.id;
-      });
+      _selectedOrderId = order.id;
+      _reloadOrders();
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text('Hors ligne : nouvelle addition créée localement, elle sera enregistrée à la reconnexion.'),
+        ),
+      );
     } on ApiException catch (e) {
       if (!mounted) return;
       ScaffoldMessenger.of(context)
@@ -170,8 +195,56 @@ class _TableOrderPageState extends State<TableOrderPage> {
       if (!mounted) return;
       ScaffoldMessenger.of(context).showSnackBar(
         const SnackBar(
-          content: Text("Erreur réseau — nouvelle addition non créée"),
+          content: Text("Erreur — nouvelle addition non créée"),
         ),
+      );
+    } finally {
+      if (mounted) setState(() => _isBusy = false);
+    }
+  }
+
+  /// Vrai quand l'échec indique un serveur injoignable (aucune réponse, ou
+  /// passerelle indisponible) : la saisie est alors gardée sur l'appareil et
+  /// mise en file plutôt que refusée. Un vrai rejet du serveur reste une erreur.
+  bool _shouldQueue(Object error) => isNetworkFailure(error);
+
+  late final OfflineOrders _offline = OfflineOrders(
+    repository: widget.repository,
+    queue: _syncQueue,
+  );
+
+  /// Applique une modification d'addition : directement sur le serveur si
+  /// l'addition y existe et que le réseau répond, sinon sur l'appareil
+  /// ([offline]). Une addition qui porte des saisies pas encore synchronisées
+  /// ([OrderDetail.pendingSync]) passe TOUJOURS par la file : le serveur ne
+  /// connaît pas encore ses changements, ni peut-être l'addition elle-même.
+  Future<void> _mutate({
+    required OrderDetail order,
+    required Future<void> Function() online,
+    required Future<void> Function() offline,
+    required String failureMessage,
+  }) async {
+    setState(() => _isBusy = true);
+    try {
+      if (order.pendingSync) {
+        await offline();
+      } else {
+        try {
+          await online();
+        } catch (error) {
+          if (!_shouldQueue(error)) rethrow;
+          await offline();
+        }
+      }
+      _reloadOrders();
+    } on ApiException catch (e) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(context)
+          .showSnackBar(SnackBar(content: Text(e.message)));
+    } catch (_) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text(failureMessage)),
       );
     } finally {
       if (mounted) setState(() => _isBusy = false);
@@ -288,29 +361,26 @@ class _TableOrderPageState extends State<TableOrderPage> {
       if (choice == null) return;
       sellAsUnit = choice;
     }
-    setState(() => _isBusy = true);
-    try {
-      await widget.repository.addItem(
+    await _mutate(
+      order: order,
+      online: () => widget.repository.addItem(
         order.id,
         productId: product.id,
         quantity: 1,
         unitPrice: unitPrice,
         amountPaid: amountPaid,
         sellAsUnit: sellAsUnit,
-      );
-      _reloadOrders();
-    } on ApiException catch (e) {
-      if (!mounted) return;
-      ScaffoldMessenger.of(context)
-          .showSnackBar(SnackBar(content: Text(e.message)));
-    } catch (_) {
-      if (!mounted) return;
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('Erreur réseau — article non ajouté')),
-      );
-    } finally {
-      if (mounted) setState(() => _isBusy = false);
-    }
+      ),
+      offline: () => _offline.addItem(
+        widget.tableId,
+        order,
+        product,
+        unitPrice: unitPrice,
+        amountPaid: amountPaid,
+        sellAsUnit: sellAsUnit,
+      ),
+      failureMessage: 'Erreur — article non ajouté',
+    );
   }
 
   Future<void> _changeQuantity(
@@ -339,73 +409,37 @@ class _TableOrderPageState extends State<TableOrderPage> {
           initialAmount: item.quantity * item.unitPrice,
         );
         if (amount == null) return;
-        setState(() => _isBusy = true);
-        try {
-          await widget.repository.addItem(
+        await _mutate(
+          order: order,
+          online: () => widget.repository.addItem(
             order.id,
             productId: item.productId,
             quantity: 1,
             amountPaid: amount,
-          );
-          _reloadOrders();
-        } on ApiException catch (e) {
-          if (!mounted) return;
-          ScaffoldMessenger.of(context)
-              .showSnackBar(SnackBar(content: Text(e.message)));
-        } catch (_) {
-          if (!mounted) return;
-          ScaffoldMessenger.of(context).showSnackBar(
-            const SnackBar(content: Text('Erreur réseau — article non ajouté')),
-          );
-        } finally {
-          if (mounted) setState(() => _isBusy = false);
-        }
+          ),
+          offline: () => _offline.addItem(widget.tableId, order, product, amountPaid: amount),
+          failureMessage: 'Erreur — article non ajouté',
+        );
         return;
       }
-      setState(() => _isBusy = true);
-      try {
-        await widget.repository.removeItem(order.id, item.id);
-        _reloadOrders();
-      } on ApiException catch (e) {
-        if (!mounted) return;
-        ScaffoldMessenger.of(context)
-            .showSnackBar(SnackBar(content: Text(e.message)));
-      } catch (_) {
-        if (!mounted) return;
-        ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(content: Text('Erreur réseau — article non retiré')),
-        );
-      } finally {
-        if (mounted) setState(() => _isBusy = false);
-      }
+      await _mutate(
+        order: order,
+        online: () => widget.repository.removeItem(order.id, item.id),
+        offline: () => _offline.removeItem(widget.tableId, order, item),
+        failureMessage: 'Erreur — article non retiré',
+      );
       return;
     }
 
     final nextQuantity = item.quantity + delta;
-    setState(() => _isBusy = true);
-    try {
-      if (nextQuantity <= 0) {
-        await widget.repository.removeItem(order.id, item.id);
-      } else {
-        await widget.repository.updateItemQuantity(
-          order.id,
-          item.id,
-          nextQuantity,
-        );
-      }
-      _reloadOrders();
-    } on ApiException catch (e) {
-      if (!mounted) return;
-      ScaffoldMessenger.of(context)
-          .showSnackBar(SnackBar(content: Text(e.message)));
-    } catch (_) {
-      if (!mounted) return;
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('Erreur réseau — quantité non modifiée')),
-      );
-    } finally {
-      if (mounted) setState(() => _isBusy = false);
-    }
+    await _mutate(
+      order: order,
+      online: () => nextQuantity <= 0
+          ? widget.repository.removeItem(order.id, item.id)
+          : widget.repository.updateItemQuantity(order.id, item.id, nextQuantity),
+      offline: () => _offline.setQuantity(widget.tableId, order, item, nextQuantity),
+      failureMessage: 'Erreur — quantité non modifiée',
+    );
   }
 
   Future<void> _checkout(OrderDetail order) async {
@@ -449,6 +483,18 @@ class _TableOrderPageState extends State<TableOrderPage> {
         .map((p) => {'method': p.method, 'amount': p.amount})
         .toList();
 
+    // Addition qui n'existe pas (ou pas entièrement) côté serveur : encaissement
+    // directement mis en file, il partira APRÈS son ouverture et ses articles.
+    if (order.pendingSync) {
+      setState(() => _isBusy = true);
+      try {
+        await _checkoutOffline(order, saleId, items, payments, outcome);
+      } finally {
+        if (mounted) setState(() => _isBusy = false);
+      }
+      return;
+    }
+
     setState(() => _isBusy = true);
     try {
       final sale = await _pos.createSale(
@@ -467,83 +513,98 @@ class _TableOrderPageState extends State<TableOrderPage> {
         MaterialPageRoute(builder: (_) => ReceiptPage(sale: sale)),
       );
     } on ApiException catch (e) {
+      if (!mounted) return;
+      if (isNetworkFailure(e)) {
+        // Passerelle indisponible (502/503/504) : pas de réponse du serveur.
+        await _checkoutOffline(order, saleId, items, payments, outcome);
+        return;
+      }
       // Rejet métier réel (ex. addition déjà clôturée, paiement invalide) —
       // rejouer ne changerait rien, jamais mis en file.
-      if (!mounted) return;
       ScaffoldMessenger.of(context)
           .showSnackBar(SnackBar(content: Text(e.message)));
     } catch (_) {
-      // Aucune réponse HTTP reçue — coupure réseau. Même traitement que
-      // PosPage._checkout : mise en file avec saleId comme clé d'idempotence,
-      // rejouée plus tard via SyncService (`entityType: 'sale'`, qui gère
-      // déjà orderId/tableId/source — voir docs/api/sync.md). L'addition
-      // reste ouverte côté serveur jusqu'à la synchronisation ; on quitte
-      // l'écran pour éviter un second encaissement accidentel sur la même
-      // addition avant que la file n'ait pu être vidée.
+      // Aucune réponse HTTP reçue — coupure réseau.
       if (!mounted) return;
-      await _syncQueue.enqueue(
-        PendingOperation(
-          id: saleId,
-          entityType: 'sale',
-          deviceId: await getDeviceId(),
-          payload: {
-            'items': items,
-            'payments': payments,
-            'orderId': order.id,
-            'tableId': widget.tableId,
-            'source': 'table',
-            'orderNumber': ?outcome.orderNumber,
-            'marketNumber': ?outcome.marketNumber,
-            'createdAt': ?outcome.date?.toUtc().toIso8601String(),
-          },
-          createdAt: DateTime.now(),
-        ),
-      );
-      // Stock local décrémenté dans le cache du catalogue (pas
-      // d'avertissement ici : cet écran ne charge pas le stock des produits)
-      // et reçu établi sur l'appareil, à titre provisoire.
-      await CatalogCache(widget.repository.establishmentId).applyStockDecrements(
-        stockNeeded(
-          order.items.map((i) => (productId: i.productId, quantity: i.quantity)),
-        ),
-      );
-      // Addition retirée de la copie locale (et table mise à jour) : sinon
-      // l'écran proposerait d'encaisser une seconde fois la même addition.
-      await widget.repository.markOrderCheckedOutLocally(widget.tableId, order);
-      final receipt = provisionalSale(
-        id: saleId,
-        createdAt: outcome.date ?? DateTime.now(),
-        lines: [
-          for (final i in order.items)
-            ProvisionalLine(
-              productId: i.productId,
-              name: i.productName,
-              quantity: i.quantity,
-              unitPrice: i.unitPrice,
-            ),
-        ],
-        payments: outcome.lines
-            .map((p) => (method: p.method, amount: p.amount))
-            .toList(),
-        orderNumber: outcome.orderNumber,
-        marketNumber: outcome.marketNumber,
-      );
-      if (!mounted) return;
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(
-          content: Text(
-            'Hors ligne : encaissement enregistré localement, il sera synchronisé automatiquement.',
-          ),
-        ),
-      );
-      await Navigator.of(context).pushReplacement(
-        MaterialPageRoute(
-          builder: (_) => ReceiptPage(sale: receipt, provisional: true),
-        ),
-      );
+      await _checkoutOffline(order, saleId, items, payments, outcome);
     } finally {
       if (mounted) setState(() => _isBusy = false);
     }
+  }
+
+  /// Même traitement que `PosPage._checkout` hors ligne : mise en file avec
+  /// `saleId` comme clé d'idempotence, rejouée plus tard via SyncService
+  /// (`entityType: 'sale'`, qui gère déjà orderId/tableId/source — voir
+  /// docs/api/sync.md). L'addition reste ouverte côté serveur jusqu'à la
+  /// synchronisation ; on quitte l'écran pour éviter un second encaissement
+  /// accidentel sur la même addition avant que la file n'ait pu être vidée.
+  Future<void> _checkoutOffline(
+    OrderDetail order,
+    String saleId,
+    List<Map<String, dynamic>> items,
+    List<Map<String, dynamic>> payments,
+    PaymentOutcome outcome,
+  ) async {
+    await _syncQueue.enqueue(
+      PendingOperation(
+        id: saleId,
+        entityType: 'sale',
+        deviceId: await getDeviceId(),
+        payload: {
+          'items': items,
+          'payments': payments,
+          'orderId': order.id,
+          'tableId': widget.tableId,
+          'source': 'table',
+          'orderNumber': ?outcome.orderNumber,
+          'marketNumber': ?outcome.marketNumber,
+          'createdAt': ?outcome.date?.toUtc().toIso8601String(),
+        },
+        createdAt: DateTime.now(),
+      ),
+    );
+    // Stock local décrémenté dans le cache du catalogue (pas d'avertissement
+    // ici : cet écran ne charge pas le stock des produits) et reçu établi sur
+    // l'appareil, à titre provisoire.
+    await CatalogCache(widget.repository.establishmentId).applyStockDecrements(
+      stockNeeded(
+        order.items.map((i) => (productId: i.productId, quantity: i.quantity)),
+      ),
+    );
+    // Addition retirée de la copie locale (et table mise à jour) : sinon
+    // l'écran proposerait d'encaisser une seconde fois la même addition.
+    await widget.repository.markOrderCheckedOutLocally(widget.tableId, order);
+    final receipt = provisionalSale(
+      id: saleId,
+      createdAt: outcome.date ?? DateTime.now(),
+      lines: [
+        for (final i in order.items)
+          ProvisionalLine(
+            productId: i.productId,
+            name: i.productName,
+            quantity: i.quantity,
+            unitPrice: i.unitPrice,
+          ),
+      ],
+      payments: outcome.lines
+          .map((p) => (method: p.method, amount: p.amount))
+          .toList(),
+      orderNumber: outcome.orderNumber,
+      marketNumber: outcome.marketNumber,
+    );
+    if (!mounted) return;
+    ScaffoldMessenger.of(context).showSnackBar(
+      const SnackBar(
+        content: Text(
+          'Hors ligne : encaissement enregistré localement, il sera synchronisé automatiquement.',
+        ),
+      ),
+    );
+    await Navigator.of(context).pushReplacement(
+      MaterialPageRoute(
+        builder: (_) => ReceiptPage(sale: receipt, provisional: true),
+      ),
+    );
   }
 
   @override

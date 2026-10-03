@@ -17,7 +17,15 @@ function makePrismaMock() {
     restaurantTable: { findFirst: vi.fn(), update: vi.fn() },
     reservation: { updateMany: vi.fn() },
     product: { findFirst: vi.fn() },
-    orderItem: { create: vi.fn(), deleteMany: vi.fn(), findMany: vi.fn(), updateMany: vi.fn(), findFirst: vi.fn(), update: vi.fn() },
+    orderItem: {
+      create: vi.fn(),
+      delete: vi.fn(),
+      deleteMany: vi.fn(),
+      findMany: vi.fn(),
+      updateMany: vi.fn(),
+      findFirst: vi.fn(),
+      update: vi.fn(),
+    },
     $transaction: vi.fn(async (callback: (tx: unknown) => unknown) => callback(prisma)),
   };
   return prisma;

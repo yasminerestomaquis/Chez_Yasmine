@@ -8,14 +8,42 @@ import { ArrayMinSize, ArrayMaxSize, IsArray, IsDateString, IsIn, IsObject, IsOp
  * 'loss'/'purchase'/'cash_closing' extend coverage to Pertes, Achats et
  * Clôture de caisse (décision actée 2026-09-13, voir docs/api/sync.md).
  */
-export type SyncEntityType = 'sale' | 'stock_movement' | 'expense' | 'loss' | 'purchase' | 'cash_closing';
+export type SyncEntityType =
+  | 'sale'
+  | 'stock_movement'
+  | 'expense'
+  | 'loss'
+  | 'purchase'
+  | 'cash_closing'
+  | 'order_open'
+  | 'order_item_add'
+  | 'order_item_set'
+  | 'order_item_remove';
+
+/**
+ * 'order_*' : ouverture de table et modification d'une addition saisies hors
+ * ligne (phase 4, 2026-10-03, voir docs/api/sync.md) — toutes idempotentes,
+ * les écritures de quantité refusant explicitement un conflit.
+ */
+export const SYNC_ENTITY_TYPES: SyncEntityType[] = [
+  'sale',
+  'stock_movement',
+  'expense',
+  'loss',
+  'purchase',
+  'cash_closing',
+  'order_open',
+  'order_item_add',
+  'order_item_set',
+  'order_item_remove',
+];
 
 export class SyncOperationDto {
   /** Client-generated UUID, reused as both the SyncOperation id and the created entity's id — see docs/api/sync.md. */
   @IsUUID()
   id!: string;
 
-  @IsIn(['sale', 'stock_movement', 'expense', 'loss', 'purchase', 'cash_closing'])
+  @IsIn(SYNC_ENTITY_TYPES)
   entityType!: SyncEntityType;
 
   @IsString()

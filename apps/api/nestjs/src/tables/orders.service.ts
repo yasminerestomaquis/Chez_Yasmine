@@ -1,8 +1,13 @@
 import { BadRequestException, ConflictException, Injectable, NotFoundException } from '@nestjs/common';
-import type { Prisma } from '@prisma/client';
+import type { Prisma, Product } from '@prisma/client';
 import { PrismaService } from '../prisma/prisma.service.js';
 import type { AddOrderItemDto, SplitOrderDto, TransferOrderDto } from './dto/order-operations.dto.js';
 import { resolveReferencePriceLine } from '../pos/reference-price.js';
+
+/** Les quantités sont en Decimal(12,2) : comparaison à la précision de la base. */
+function sameQuantity(a: number, b: number): boolean {
+  return Math.abs(a - b) < 0.005;
+}
 
 @Injectable()
 export class OrdersService {
@@ -118,6 +123,48 @@ export class OrdersService {
   }
 
   /**
+   * Prix et quantité d'une ligne d'addition à partir du produit et de la
+   * demande — règles détaillées sur `addItem`, partagées avec
+   * `addItemWithId` (saisie hors ligne).
+   *
+   * Reste en Decimal pour un produit à prix fixe (comme le faisait le code
+   * original) ; converti en number pour tout autre cas — évite de casser
+   * l'égalité stricte attendue par les tests existants sur le type exact
+   * écrit en base.
+   */
+  private resolveLine(
+    product: Product,
+    dto: AddOrderItemDto,
+  ): { unitPrice: number | Prisma.Decimal; quantity: number; sellAsUnit: boolean } {
+    if (product.salePrice != null) {
+      let unitPrice: number | Prisma.Decimal = product.salePrice;
+      let sellAsUnit = false;
+      if (dto.sellAsUnit && product.unitSalePrice != null) {
+        unitPrice = product.unitSalePrice;
+        sellAsUnit = true;
+      }
+      if (dto.quantity == null) {
+        throw new BadRequestException(`Quantité requise pour ${product.name}`);
+      }
+      return { unitPrice, quantity: dto.quantity, sellAsUnit };
+    }
+    if (product.referenceSalePrice != null) {
+      // Prix de référence variable (ex. Gbêlê) : le serveur déduit quantité
+      // et prix unitaire du montant payé — même principe que
+      // `SalesService.create` en Caisse (décision utilisateur du 2026-09-24).
+      if (dto.amountPaid == null) {
+        throw new BadRequestException(`Montant payé requis pour ${product.name} (prix de référence variable)`);
+      }
+      const resolved = resolveReferencePriceLine(product.referenceSalePrice.toNumber(), dto.amountPaid, product.name);
+      return { unitPrice: resolved.unitPrice, quantity: resolved.quantity, sellAsUnit: false };
+    }
+    if (dto.unitPrice == null || dto.quantity == null) {
+      throw new BadRequestException(`Prix de vente et quantité requis pour ${product.name} (catégorie à prix variable)`);
+    }
+    return { unitPrice: dto.unitPrice, quantity: dto.quantity, sellAsUnit: false };
+  }
+
+  /**
    * Un produit à prix fixe ignore tout `unitPrice` envoyé par le client (le
    * prix catalogue prévaut toujours, relu à chaque ajout). Un produit à prix
    * variable (Poulets, Poissons, Plats africains — `product.salePrice` nul)
@@ -142,41 +189,7 @@ export class OrdersService {
       throw new BadRequestException("Le produit indiqué n'appartient pas à cet établissement");
     }
 
-    // Reste en Decimal pour un produit à prix fixe (comme le faisait le code
-    // original) ; converti en number pour tout autre cas — évite de casser
-    // l'égalité stricte attendue par les tests existants sur le type exact
-    // écrit en base.
-    let unitPrice: number | Prisma.Decimal;
-    let quantity: number;
-    let sellAsUnit = false;
-    if (product.salePrice != null) {
-      if (dto.sellAsUnit && product.unitSalePrice != null) {
-        unitPrice = product.unitSalePrice;
-        sellAsUnit = true;
-      } else {
-        unitPrice = product.salePrice;
-      }
-      if (dto.quantity == null) {
-        throw new BadRequestException(`Quantité requise pour ${product.name}`);
-      }
-      quantity = dto.quantity;
-    } else if (product.referenceSalePrice != null) {
-      // Prix de référence variable (ex. Gbêlê) : le serveur déduit quantité
-      // et prix unitaire du montant payé — même principe que
-      // `SalesService.create` en Caisse (décision utilisateur du 2026-09-24).
-      if (dto.amountPaid == null) {
-        throw new BadRequestException(`Montant payé requis pour ${product.name} (prix de référence variable)`);
-      }
-      const resolved = resolveReferencePriceLine(product.referenceSalePrice.toNumber(), dto.amountPaid, product.name);
-      unitPrice = resolved.unitPrice;
-      quantity = resolved.quantity;
-    } else {
-      if (dto.unitPrice == null || dto.quantity == null) {
-        throw new BadRequestException(`Prix de vente et quantité requis pour ${product.name} (catégorie à prix variable)`);
-      }
-      unitPrice = dto.unitPrice;
-      quantity = dto.quantity;
-    }
+    const { unitPrice, quantity, sellAsUnit } = this.resolveLine(product, dto);
 
     const existing = await this.prisma.orderItem.findFirst({
       where: { orderId: order.id, productId: product.id, unitPrice },
@@ -210,6 +223,130 @@ export class OrdersService {
     if (count === 0) {
       throw new NotFoundException('Article introuvable sur cette addition');
     }
+  }
+
+  // ── Saisie hors ligne (phase 4, voir docs/api/sync.md) ───────────────────
+  //
+  // Les opérations ci-dessous sont rejouées par `SyncService` depuis la file
+  // d'attente d'un appareil qui a ouvert une table ou modifié une addition
+  // sans réseau. Chacune est IDEMPOTENTE (un rejeu ne double jamais l'effet)
+  // et les écritures de quantité refusent explicitement un conflit plutôt que
+  // de laisser « le dernier écrit gagner » (prompt maître §28).
+
+  /**
+   * Ouvre une addition dont l'identifiant a été choisi par l'appareil.
+   * Contrairement à `openTable`, ne refuse jamais une table déjà occupée : un
+   * autre appareil a pu l'ouvrir entre-temps, et l'addition saisie hors ligne
+   * devient alors simplement une addition supplémentaire (comme « Nouvelle
+   * addition »), sans perdre ce qui a été saisi. Une table libre ou réservée
+   * passe à `occupied`.
+   */
+  async openOfflineOrder(
+    establishmentId: string,
+    serverId: string,
+    input: { id: string; tableId: string; guestCount?: number },
+    openedAt?: Date,
+  ) {
+    const existing = await this.prisma.order.findFirst({
+      where: { id: input.id, establishmentId },
+      include: { items: true },
+    });
+    if (existing) return existing;
+
+    const table = await this.prisma.restaurantTable.findFirst({ where: { id: input.tableId, establishmentId } });
+    if (!table) {
+      throw new NotFoundException('Table introuvable pour cet établissement');
+    }
+    return this.prisma.$transaction(async (tx) => {
+      const order = await tx.order.create({
+        data: {
+          id: input.id,
+          establishmentId,
+          tableId: input.tableId,
+          serverId,
+          status: 'open',
+          guestCount: input.guestCount,
+          openedAt,
+        },
+        include: { items: true },
+      });
+      if (table.status === 'free' || table.status === 'reserved') {
+        await tx.restaurantTable.update({ where: { id: input.tableId }, data: { status: 'occupied' } });
+        if (table.status === 'reserved') {
+          await tx.reservation.updateMany({ where: { tableId: input.tableId, status: 'pending' }, data: { status: 'seated' } });
+        }
+      }
+      return order;
+    });
+  }
+
+  /**
+   * Comme `addItem`, avec l'identifiant de ligne choisi par l'appareil, et SANS
+   * fusion avec une ligne existante (la fusion est faite côté appareil, par
+   * une écriture de quantité) : c'est ce qui rend l'ajout idempotent — une
+   * ligne dont l'identifiant existe déjà est simplement renvoyée.
+   */
+  async addItemWithId(establishmentId: string, orderId: string, itemId: string, dto: AddOrderItemDto) {
+    const already = await this.prisma.orderItem.findFirst({ where: { id: itemId, orderId } });
+    if (already) return already;
+
+    const order = await this.getOpenOrderOrThrow(establishmentId, orderId);
+    const product = await this.prisma.product.findFirst({ where: { id: dto.productId, establishmentId } });
+    if (!product) {
+      throw new BadRequestException("Le produit indiqué n'appartient pas à cet établissement");
+    }
+    const { unitPrice, quantity, sellAsUnit } = this.resolveLine(product, dto);
+    return this.prisma.orderItem.create({
+      data: { id: itemId, orderId: order.id, productId: product.id, quantity, unitPrice, sellAsUnit },
+    });
+  }
+
+  /**
+   * Fixe la quantité d'une ligne à `quantity`, sachant que l'appareil l'a vue à
+   * `expectedQuantity`. Déjà à la valeur visée : rien à faire (rejeu). À une
+   * autre valeur que celle vue par l'appareil : un autre appareil l'a modifiée
+   * entre-temps — conflit explicite, jamais écrasé en silence.
+   */
+  async setItemQuantityIfExpected(
+    establishmentId: string,
+    orderId: string,
+    itemId: string,
+    expectedQuantity: number,
+    quantity: number,
+  ) {
+    await this.getOpenOrderOrThrow(establishmentId, orderId);
+    const item = await this.prisma.orderItem.findFirst({ where: { id: itemId, orderId } });
+    if (!item) {
+      throw new NotFoundException('Article introuvable sur cette addition');
+    }
+    const current = item.quantity.toNumber();
+    if (sameQuantity(current, quantity)) return item;
+    if (!sameQuantity(current, expectedQuantity)) {
+      throw new ConflictException(
+        `La quantité de cet article a été modifiée entre-temps (${current} au lieu de ${expectedQuantity})`,
+      );
+    }
+    return this.prisma.orderItem.update({ where: { id: item.id }, data: { quantity } });
+  }
+
+  /**
+   * Retire une ligne vue à `expectedQuantity` par l'appareil. Ligne déjà
+   * absente : rien à faire (rejeu, ou retrait fait depuis un autre appareil).
+   * Quantité différente de celle vue : conflit explicite — quelqu'un en a
+   * ajouté depuis, on ne supprime pas ce que l'appareil n'a pas vu.
+   */
+  async removeItemIfExpected(establishmentId: string, orderId: string, itemId: string, expectedQuantity: number) {
+    await this.getOpenOrderOrThrow(establishmentId, orderId);
+    const item = await this.prisma.orderItem.findFirst({ where: { id: itemId, orderId } });
+    if (!item) return { removed: false };
+    const current = item.quantity.toNumber();
+    if (!sameQuantity(current, expectedQuantity)) {
+      throw new ConflictException(
+        `La quantité de cet article a été modifiée entre-temps (${current} au lieu de ${expectedQuantity}) : retrait refusé`,
+      );
+    }
+    await this.prisma.orderItem.delete({ where: { id: item.id } });
+    return { removed: true };
   }
 
   async transfer(establishmentId: string, orderId: string, dto: TransferOrderDto) {

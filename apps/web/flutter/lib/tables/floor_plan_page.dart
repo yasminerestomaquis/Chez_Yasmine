@@ -7,7 +7,9 @@ import '../common/formatting.dart';
 import '../common/offline_banner.dart';
 import '../common/read_cache.dart';
 import '../sync/connectivity_status.dart';
+import '../sync/sync_queue_service.dart';
 import '../theme/app_theme.dart';
+import 'offline_orders.dart';
 import 'table_order_page.dart';
 import 'tables_models.dart';
 import 'tables_repository.dart';
@@ -44,12 +46,20 @@ class _FloorPlanPageState extends State<FloorPlanPage> {
     _reconnectSubscription = ConnectivityStatus.onReconnect(() {
       if (mounted && _cachedAt != null) _reload();
     });
+    SyncQueueService.syncCompleted.addListener(_onSyncCompleted);
   }
 
   @override
   void dispose() {
     _reconnectSubscription?.cancel();
+    SyncQueueService.syncCompleted.removeListener(_onSyncCompleted);
     super.dispose();
+  }
+
+  // Les saisies faites hors ligne viennent de partir : le plan de salle
+  // affiche alors l'état réel du serveur au lieu de la copie locale.
+  void _onSyncCompleted() {
+    if (mounted && _cachedAt != null) _reload();
   }
 
   Future<Cached<List<RestaurantTable>>> _loadTables() async {
@@ -99,11 +109,12 @@ class _FloorPlanPageState extends State<FloorPlanPage> {
 
   Future<void> _onTableTap(RestaurantTable table) async {
     if (_cachedAt != null) {
-      // Hors ligne : une table occupée s'ouvre directement sur son addition
-      // (consultation, encaissement) ; le menu d'actions et l'ouverture d'une
-      // table libre exigent le serveur.
+      // Hors ligne : une table libre ou réservée s'ouvre sur l'appareil
+      // (envoyée à la reconnexion) ; une table occupée s'ouvre directement sur
+      // son addition. Le menu d'actions (libérer, transférer, réserver…) exige
+      // le serveur.
       if (table.status == 'free' || table.status == 'reserved') {
-        _requireOnline();
+        await _openTableWithGuestCount(table);
         return;
       }
       await _goToOrder(table);
@@ -144,14 +155,45 @@ class _FloorPlanPageState extends State<FloorPlanPage> {
 
   Future<void> _openTableWithGuestCount(RestaurantTable table) async {
     final guestCount = await _promptGuestCount();
+    var openedOnServer = false;
     try {
-      await _repository.openTable(table.id, guestCount: guestCount);
-      await _goToOrder(table);
+      // Pas d'appel direct tant que le plan de salle vient de la copie locale :
+      // on sait déjà que le serveur est injoignable (ou en retard sur nos saisies).
+      if (_cachedAt == null) {
+        await _repository.openTable(table.id, guestCount: guestCount);
+        openedOnServer = true;
+      }
     } on ApiException catch (e) {
-      if (!mounted) return;
-      ScaffoldMessenger.of(context)
-          .showSnackBar(SnackBar(content: Text(e.message)));
+      if (!isNetworkFailure(e)) {
+        if (!mounted) return;
+        ScaffoldMessenger.of(context)
+            .showSnackBar(SnackBar(content: Text(e.message)));
+        return;
+      }
+    } catch (_) {
+      // Aucune réponse du serveur : on ouvre la table sur l'appareil.
     }
+    if (!openedOnServer) {
+      try {
+        await OfflineOrders(
+          repository: _repository,
+          queue: SyncQueueService(ApiClient(), widget.establishmentId),
+        ).openOrder(table.id, guestCount: guestCount);
+      } catch (_) {
+        if (!mounted) return;
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(content: Text('Erreur — la table n\'a pas pu être ouverte')),
+        );
+        return;
+      }
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text('Hors ligne : table ouverte localement, elle sera enregistrée à la reconnexion.'),
+        ),
+      );
+    }
+    await _goToOrder(table);
   }
 
   Future<int?> _promptGuestCount() async {

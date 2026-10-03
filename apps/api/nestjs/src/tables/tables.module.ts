@@ -11,5 +11,6 @@ import { TablesService } from './tables.service.js';
   imports: [AuthModule],
   controllers: [TablesController, OrdersController, ReservationsController],
   providers: [TablesService, OrdersService, ReservationsService],
+  exports: [OrdersService],
 })
 export class TablesModule {}
