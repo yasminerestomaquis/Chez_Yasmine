@@ -36,6 +36,7 @@ class ChezYasmineApp extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return MaterialApp(
+      navigatorKey: GlobalSyncContext.navigatorKey,
       title: 'Chez Yasmine',
       theme: buildAppTheme(),
       home: LinkConfirmationGate(

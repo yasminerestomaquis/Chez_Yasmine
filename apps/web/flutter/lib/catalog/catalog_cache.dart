@@ -36,6 +36,27 @@ class CatalogCache {
     }));
   }
 
+  /// Retire du stock mis en cache les quantités d'une vente enregistrée hors
+  /// ligne, pour que la Caisse ne montre pas un stock périmé en attendant la
+  /// synchronisation. Le prochain chargement réussi du catalogue (stock réel
+  /// du serveur) remplace ces valeurs. Le stock peut devenir négatif : la
+  /// vente a déjà eu lieu, c'est le serveur qui tranchera.
+  Future<void> applyStockDecrements(Map<String, double> quantityByProductId) async {
+    if (quantityByProductId.isEmpty) return;
+    final prefs = await SharedPreferences.getInstance();
+    final raw = prefs.getString(_key);
+    if (raw == null) return;
+    final decoded = jsonDecode(raw) as Map<String, dynamic>;
+    for (final product in decoded['products'] as List<dynamic>) {
+      final map = product as Map<String, dynamic>;
+      final used = quantityByProductId[map['id']];
+      if (used != null) {
+        map['stockQuantity'] = (((map['stockQuantity'] as num).toDouble() - used) * 100).round() / 100;
+      }
+    }
+    await prefs.setString(_key, jsonEncode(decoded));
+  }
+
   Future<(List<Category>, List<Product>)?> load() async {
     final prefs = await SharedPreferences.getInstance();
     final raw = prefs.getString(_key);

@@ -1,5 +1,5 @@
 import { Type } from 'class-transformer';
-import { ArrayMinSize, ArrayMaxSize, IsArray, IsIn, IsObject, IsString, IsUUID, ValidateNested } from 'class-validator';
+import { ArrayMinSize, ArrayMaxSize, IsArray, IsDateString, IsIn, IsObject, IsOptional, IsString, IsUUID, ValidateNested } from 'class-validator';
 
 /**
  * entityType names match the domains that support offline capture (prompt
@@ -23,6 +23,16 @@ export class SyncOperationDto {
 
   @IsObject()
   payload!: Record<string, unknown>;
+
+  /**
+   * Moment où l'opération a été saisie sur l'appareil (hors ligne). Sans lui,
+   * une vente/un mouvement/une perte/une clôture saisi hors ligne prenait la
+   * date de la synchronisation — voir `SyncService.resolveCapturedAt` pour
+   * les bornes de plausibilité appliquées côté serveur.
+   */
+  @IsOptional()
+  @IsDateString()
+  capturedAt?: string;
 }
 
 export class SyncBatchDto {

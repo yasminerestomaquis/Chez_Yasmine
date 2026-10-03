@@ -2,6 +2,13 @@
 
 ## [Unreleased]
 
+### Ajouté (2026-10-03) — Synchronisation hors ligne fiabilisée
+- **Opérations refusées conservées** : une vente (ou autre opération) que le serveur refuse à la synchronisation — par exemple « Stock insuffisant » — n'est plus perdue. Elle reste dans une liste « N à corriger » (barre de synchronisation) avec son motif ; l'utilisateur peut la **réessayer** ou la **supprimer** après confirmation.
+- **Heure de saisie respectée** : ventes, mouvements de stock, pertes et clôtures de caisse saisis hors ligne gardent leur heure réelle de saisie au lieu de prendre celle de la synchronisation (rapports, graphiques et ordre FIFO des lots restent justes). Le serveur borne cette heure (24 h dans le futur, 30 jours dans le passé au maximum). La date choisie dans le dialogue Paiement n'est désormais conservée par la synchronisation que si l'auteur porte `pos.set_date` (comme déjà sur la route normale).
+- **Jeton renouvelé avant la synchronisation** ; si la session est perdue, message « Session expirée — reconnectez-vous » et file conservée.
+- **Stock local à jour** après une vente hors ligne, avec avertissement non bloquant en cas de stock local insuffisant ; **reçu provisoire** affiché au lieu d'un simple message (Caisse et encaissement d'une addition de Table).
+- Correction d'un test photo de la session précédente qui reposait sur une image PNG invalide. Voir `docs/api/sync.md`.
+
 ### Ajouté (2026-10-03) — Photos produits lisibles hors ligne
 - Les photos des produits (Caisse, Tables, Stock, Catalogue, Achats) restent affichées sans réseau : copie locale de la variante `small` (400 px) dans IndexedDB (nouvelle dépendance `idb_shim`), téléchargée en arrière-plan après chaque chargement réussi du catalogue (3 en parallèle), plafonnée à 30 Mo, purgée des images qui ne sont plus au catalogue et vidée à la déconnexion. Un produit dont la photo n'a jamais été téléchargée affiche l'icône habituelle, sans attente ni appel réseau hors ligne. Aucun changement backend ni base de données. Voir `docs/api/sync.md`.
 - `CatalogCache` conserve désormais les identifiants d'images de chaque produit (indispensable pour retrouver la photo hors ligne).

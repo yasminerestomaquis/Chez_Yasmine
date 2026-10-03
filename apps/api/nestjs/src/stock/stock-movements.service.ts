@@ -47,7 +47,20 @@ export class StockMovementsService {
     return `Marché n°${dto.marketNumber}${dto.reason ? ` — ${dto.reason}` : ''}`;
   }
 
-  async create(establishmentId: string, productId: string, userId: string, dto: CreateStockMovementDto) {
+  /**
+   * `options.createdAt` : horodatage réel d'un mouvement saisi hors ligne
+   * (jamais exposé dans le DTO HTTP — seul `SyncService` le renseigne, après
+   * validation). `computeFifoLots` trie exclusivement par
+   * `StockMovement.createdAt` : sans lui, un mouvement synchronisé en retard
+   * s'insérerait à la date de synchronisation dans l'ordre FIFO des lots.
+   */
+  async create(
+    establishmentId: string,
+    productId: string,
+    userId: string,
+    dto: CreateStockMovementDto,
+    options: { createdAt?: Date } = {},
+  ) {
     // Idempotent replay — see SalesService.create for the same pattern.
     if (dto.id) {
       const existing = await this.prisma.stockMovement.findFirst({ where: { id: dto.id, productId } });
@@ -80,7 +93,7 @@ export class StockMovementsService {
     const [, movement] = await this.prisma.$transaction([
       this.prisma.product.update({ where: { id: productId }, data: { stockQuantity: nextQuantity } }),
       this.prisma.stockMovement.create({
-        data: { id: dto.id, productId, type: dto.type, quantity: dto.quantity, reason, createdBy: userId },
+        data: { id: dto.id, productId, type: dto.type, quantity: dto.quantity, reason, createdBy: userId, createdAt: options.createdAt },
       }),
     ]);
     await this.activityNotifier.notify(

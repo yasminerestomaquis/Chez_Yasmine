@@ -5,9 +5,13 @@ import '../common/formatting.dart';
 import 'pos_models.dart';
 
 class ReceiptPage extends StatelessWidget {
-  const ReceiptPage({super.key, required this.sale});
+  const ReceiptPage({super.key, required this.sale, this.provisional = false});
 
   final SaleResult sale;
+
+  /// Vente enregistrée hors ligne, pas encore synchronisée : reçu établi sur
+  /// l'appareil, à titre provisoire.
+  final bool provisional;
 
   @override
   Widget build(BuildContext context) {
@@ -41,6 +45,17 @@ class ReceiptPage extends StatelessWidget {
                       'Reçu n° ${sale.id.substring(0, 8)}',
                       textAlign: TextAlign.center,
                     ),
+                    if (provisional)
+                      Container(
+                        margin: const EdgeInsets.only(top: 8),
+                        padding: const EdgeInsets.all(8),
+                        color: Colors.orange.shade50,
+                        child: Text(
+                          'REÇU PROVISOIRE — vente enregistrée hors ligne, pas encore synchronisée',
+                          textAlign: TextAlign.center,
+                          style: TextStyle(color: Colors.orange.shade900, fontWeight: FontWeight.bold, fontSize: 12),
+                        ),
+                      ),
                     if (sale.voidedAt != null)
                       const Padding(
                         padding: EdgeInsets.only(top: 8),

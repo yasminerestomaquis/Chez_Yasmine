@@ -7,6 +7,7 @@ import '../catalog/catalog_repository.dart';
 import '../catalog/models.dart';
 import '../common/formatting.dart';
 import '../sync/device_id.dart';
+import '../sync/offline_sale.dart';
 import '../sync/pending_operation.dart';
 import '../sync/sync_queue_service.dart';
 import 'cart_panel.dart';
@@ -281,13 +282,76 @@ class _PosPageState extends State<PosPage> {
           createdAt: DateTime.now(),
         ),
       );
+      // Stock local : avertissement (non bloquant — la vente a déjà eu lieu au
+      // comptoir, le serveur tranchera) puis décrément du stock en cache, pour
+      // que la grille et la prochaine vente hors ligne voient un stock à jour.
+      final lines = _cart
+          .map(
+            (l) => (
+              product: l.product,
+              quantity: stockUsedByLine(
+                l.product,
+                quantity: l.quantity.toDouble(),
+                manualAmount: l.manualUnitPrice,
+              ),
+            ),
+          )
+          .toList();
+      final needed = stockNeeded(
+        lines.map((l) => (productId: l.product.id, quantity: l.quantity)),
+      );
+      final shortages = stockShortages(needed, {
+        for (final l in lines) l.product.id: l.product,
+      });
+      await _cache.applyStockDecrements(needed);
+      final receipt = provisionalSale(
+        id: saleId,
+        createdAt: outcome.date ?? DateTime.now(),
+        lines: [
+          for (final l in _cart)
+            () {
+              final isByAmount =
+                  l.manualUnitPrice != null && l.product.referenceSalePrice != null;
+              final quantity = isByAmount
+                  ? stockUsedByLine(
+                      l.product,
+                      quantity: l.quantity.toDouble(),
+                      manualAmount: l.manualUnitPrice,
+                    )
+                  : l.quantity.toDouble();
+              return ProvisionalLine(
+                productId: l.product.id,
+                name: l.product.name,
+                quantity: quantity,
+                unitPrice: isByAmount && quantity > 0
+                    ? l.manualUnitPrice! / quantity
+                    : l.unitPrice,
+              );
+            }(),
+        ],
+        payments: outcome.lines
+            .map((p) => (method: p.method, amount: p.amount))
+            .toList(),
+        orderNumber: outcome.orderNumber,
+        marketNumber: outcome.marketNumber,
+      );
       if (!mounted) return;
-      setState(() => _cart.clear());
+      setState(() {
+        _cart.clear();
+        _future = _load();
+      });
       ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(
+        SnackBar(
+          duration: Duration(seconds: shortages.isEmpty ? 4 : 8),
           content: Text(
-            'Hors ligne : vente enregistrée localement, elle sera synchronisée automatiquement.',
+            'Hors ligne : vente enregistrée localement, elle sera synchronisée automatiquement.'
+            '${shortages.isEmpty ? '' : '\nAttention, stock local insuffisant pour : ${shortages.join(', ')} — le serveur vérifiera à la synchronisation.'}',
           ),
+        ),
+      );
+      await Navigator.of(context).push(
+        MaterialPageRoute(
+          builder: (_) => ReceiptPage(sale: receipt, provisional: true),
         ),
       );
     } finally {

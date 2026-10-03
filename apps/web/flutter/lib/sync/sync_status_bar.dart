@@ -2,7 +2,10 @@ import 'dart:async';
 
 import 'package:flutter/material.dart';
 
+import '../api/api_client.dart';
 import 'connectivity_status.dart';
+import 'failed_operations_dialog.dart';
+import 'global_sync_context.dart';
 import 'sync_queue_service.dart';
 
 /// Mounted once, globally, above every screen (see `main.dart`'s
@@ -23,6 +26,8 @@ class SyncStatusBar extends StatefulWidget {
 class _SyncStatusBarState extends State<SyncStatusBar> {
   bool _isOnline = true;
   int _pendingCount = 0;
+  int _failedCount = 0;
+  bool _sessionExpired = false;
   bool _isSyncing = false;
   Timer? _pollTimer;
 
@@ -55,10 +60,12 @@ class _SyncStatusBarState extends State<SyncStatusBar> {
   Future<void> _refresh() async {
     final online = await ConnectivityStatus.isOnline();
     final pending = await widget.syncQueue.listPending();
+    final failed = await widget.syncQueue.listFailed();
     if (!mounted) return;
     setState(() {
       _isOnline = online;
       _pendingCount = pending.length;
+      _failedCount = failed.length;
     });
     if (online && pending.isNotEmpty) _trySync();
   }
@@ -69,20 +76,35 @@ class _SyncStatusBarState extends State<SyncStatusBar> {
     try {
       final result = await widget.syncQueue.syncAll();
       if (!mounted) return;
+      setState(() => _sessionExpired = false);
       if (result.synced > 0 || result.failed.isNotEmpty) {
         ScaffoldMessenger.of(context).showSnackBar(SnackBar(
           content: Text(
             '${result.synced} opération(s) synchronisée(s)'
-            '${result.failed.isEmpty ? '' : ', ${result.failed.length} en échec'}',
+            '${result.failed.isEmpty ? '' : ', ${result.failed.length} refusée(s) par le serveur — à corriger'}',
           ),
+          action: result.failed.isEmpty ? null : SnackBarAction(label: 'Voir', onPressed: _openFailed),
         ));
       }
+    } on ApiException catch (e) {
+      // 401 après un renouvellement forcé du jeton : la session est perdue, la
+      // file reste intacte mais ne pourra partir qu'après une nouvelle connexion.
+      if (e.statusCode == 401 && mounted) setState(() => _sessionExpired = true);
     } catch (_) {
       // Still offline or the server is unreachable — queue stays intact, retried later.
     } finally {
       if (mounted) setState(() => _isSyncing = false);
       _refresh();
     }
+  }
+
+  Future<void> _openFailed() async {
+    final navigatorContext = GlobalSyncContext.navigatorKey.currentContext;
+    if (navigatorContext == null) return;
+    await showFailedOperationsDialog(navigatorContext, widget.syncQueue, onRetry: () {
+      _refresh();
+    });
+    _refresh();
   }
 
   @override
@@ -99,18 +121,37 @@ class _SyncStatusBarState extends State<SyncStatusBar> {
               _isOnline ? 'En ligne' : 'Hors ligne',
               style: TextStyle(fontSize: 12, color: _isOnline ? null : Colors.red.shade900, fontWeight: _isOnline ? null : FontWeight.bold),
             ),
-            if (_pendingCount > 0) ...[
-              const SizedBox(width: 12),
-              Text('$_pendingCount en attente de synchronisation', style: const TextStyle(fontSize: 12)),
-              const Spacer(),
-              TextButton(
-                onPressed: _isSyncing ? null : _trySync,
-                child: _isSyncing
-                    ? const SizedBox(height: 14, width: 14, child: CircularProgressIndicator(strokeWidth: 2))
-                    : const Text('Synchroniser'),
+            const SizedBox(width: 8),
+            Expanded(
+              child: Wrap(
+                alignment: WrapAlignment.end,
+                crossAxisAlignment: WrapCrossAlignment.center,
+                spacing: 8,
+                children: [
+                  if (_sessionExpired)
+                    Text(
+                      'Session expirée — reconnectez-vous pour synchroniser',
+                      style: TextStyle(fontSize: 12, color: Colors.red.shade900, fontWeight: FontWeight.bold),
+                    ),
+                  if (_pendingCount > 0) ...[
+                    Text('$_pendingCount en attente de synchronisation', style: const TextStyle(fontSize: 12)),
+                    TextButton(
+                      onPressed: _isSyncing ? null : _trySync,
+                      child: _isSyncing
+                          ? const SizedBox(height: 14, width: 14, child: CircularProgressIndicator(strokeWidth: 2))
+                          : const Text('Synchroniser'),
+                    ),
+                  ],
+                  if (_failedCount > 0)
+                    TextButton.icon(
+                      onPressed: _openFailed,
+                      style: TextButton.styleFrom(foregroundColor: Colors.red.shade900),
+                      icon: const Icon(Icons.error_outline, size: 16),
+                      label: Text('$_failedCount à corriger'),
+                    ),
+                ],
               ),
-            ] else
-              const Spacer(),
+            ),
           ],
         ),
       ),

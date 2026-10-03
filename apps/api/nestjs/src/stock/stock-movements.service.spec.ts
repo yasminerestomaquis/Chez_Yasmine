@@ -60,6 +60,19 @@ describe('StockMovementsService', () => {
     );
   });
 
+  it("horodate le mouvement à options.createdAt (saisie hors ligne) — l'ordre FIFO des lots en dépend", async () => {
+    prisma.product.findFirst.mockResolvedValue({ id: 'prod-1', name: 'Bière Flag', stockQuantity: new Decimal(10) });
+    prisma.product.update.mockResolvedValue({});
+    prisma.stockMovement.create.mockResolvedValue({ id: 'mvt-1' });
+    const createdAt = new Date('2026-10-02T18:30:00.000Z');
+
+    await service.create('est-1', 'prod-1', 'user-1', { type: 'in', quantity: 5 }, { createdAt });
+
+    expect(prisma.stockMovement.create).toHaveBeenCalledWith({
+      data: expect.objectContaining({ productId: 'prod-1', createdAt }),
+    });
+  });
+
   it('replays an already-recorded movement idempotently, never touching the product again', async () => {
     const alreadyRecorded = { id: 'mvt-1', productId: 'prod-1', type: 'in', quantity: new Decimal(5) };
     prisma.stockMovement.findFirst.mockResolvedValue(alreadyRecorded);

@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:uuid/uuid.dart';
 
 import '../api/api_client.dart';
+import '../catalog/catalog_cache.dart';
 import '../catalog/catalog_repository.dart';
 import '../catalog/models.dart';
 import '../common/formatting.dart';
@@ -12,6 +13,7 @@ import '../pos/pos_repository.dart';
 import '../pos/product_grid.dart';
 import '../pos/receipt_page.dart';
 import '../sync/device_id.dart';
+import '../sync/offline_sale.dart';
 import '../sync/pending_operation.dart';
 import '../sync/sync_queue_service.dart';
 import '../theme/app_theme.dart';
@@ -454,6 +456,32 @@ class _TableOrderPageState extends State<TableOrderPage> {
           createdAt: DateTime.now(),
         ),
       );
+      // Stock local décrémenté dans le cache du catalogue (pas
+      // d'avertissement ici : cet écran ne charge pas le stock des produits)
+      // et reçu établi sur l'appareil, à titre provisoire.
+      await CatalogCache(widget.repository.establishmentId).applyStockDecrements(
+        stockNeeded(
+          order.items.map((i) => (productId: i.productId, quantity: i.quantity)),
+        ),
+      );
+      final receipt = provisionalSale(
+        id: saleId,
+        createdAt: outcome.date ?? DateTime.now(),
+        lines: [
+          for (final i in order.items)
+            ProvisionalLine(
+              productId: i.productId,
+              name: i.productName,
+              quantity: i.quantity,
+              unitPrice: i.unitPrice,
+            ),
+        ],
+        payments: outcome.lines
+            .map((p) => (method: p.method, amount: p.amount))
+            .toList(),
+        orderNumber: outcome.orderNumber,
+        marketNumber: outcome.marketNumber,
+      );
       if (!mounted) return;
       ScaffoldMessenger.of(context).showSnackBar(
         const SnackBar(
@@ -462,7 +490,11 @@ class _TableOrderPageState extends State<TableOrderPage> {
           ),
         ),
       );
-      Navigator.of(context).pop();
+      await Navigator.of(context).pushReplacement(
+        MaterialPageRoute(
+          builder: (_) => ReceiptPage(sale: receipt, provisional: true),
+        ),
+      );
     } finally {
       if (mounted) setState(() => _isBusy = false);
     }

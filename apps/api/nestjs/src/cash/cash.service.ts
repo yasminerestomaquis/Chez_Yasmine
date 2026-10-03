@@ -36,7 +36,7 @@ export class CashService {
    * app has no payment-method field on Expense, and for a maquis-bar that
    * assumption holds in practice; revisit if that stops being true.
    */
-  async close(establishmentId: string, userId: string, dto: CreateCashClosingDto) {
+  async close(establishmentId: string, userId: string, dto: CreateCashClosingDto, options: { closedAt?: Date } = {}) {
     // Idempotent replay: a client-supplied id lets the same offline closing
     // be resubmitted safely (network retry, sync queue) without creating a
     // second closing for the same period — see docs/api/sync.md.
@@ -51,7 +51,11 @@ export class CashService {
 
     const register = await this.getOrCreateDefaultRegister(establishmentId);
     const openedAt = new Date(dto.openedAt);
-    const closedAt = new Date();
+    // Clôture saisie hors ligne : le total attendu couvre la période jusqu'au
+    // moment réel de la saisie (`options.closedAt`, fourni par `SyncService`),
+    // pas jusqu'à la synchronisation — sinon les ventes encaissées entre-temps
+    // gonfleraient l'écart. Ignoré s'il précède l'ouverture (horloge fausse).
+    const closedAt = options.closedAt && options.closedAt.getTime() >= openedAt.getTime() ? options.closedAt : new Date();
 
     const [cashPayments, cashExpenses] = await Promise.all([
       this.prisma.payment.aggregate({

@@ -108,6 +108,43 @@ describe('CashService.close', () => {
       expect.objectContaining({ data: expect.objectContaining({ expectedAmount: 17000 }) }),
     );
   });
+
+  describe('closedAt (clôture saisie hors ligne, 2026-10-03)', () => {
+    const openedAt = '2026-09-05T06:00:00.000Z';
+
+    beforeEach(() => {
+      (prisma.pointOfSale as any).findFirst.mockResolvedValue({ id: 'pos-1', cashRegisters: [{ id: 'reg-1' }] });
+      (prisma.payment as any).aggregate.mockResolvedValue({ _sum: { amount: new Decimal(0) } });
+      (prisma.expense as any).aggregate.mockResolvedValue({ _sum: { amount: new Decimal(0) } });
+      (prisma.cashClosing as any).create.mockResolvedValue({ id: 'c', expectedAmount: new Decimal(0), countedAmount: new Decimal(0) });
+    });
+
+    it("arrête la période et date la clôture à l'heure de saisie fournie, pas à la synchronisation", async () => {
+      const closedAt = new Date('2026-09-05T20:00:00.000Z');
+
+      await service.close('est-1', 'user-1', { openedAt, countedAmount: 0 }, { closedAt });
+
+      expect(prisma.payment.aggregate).toHaveBeenCalledWith(
+        expect.objectContaining({
+          where: expect.objectContaining({
+            sale: expect.objectContaining({ createdAt: { gte: new Date(openedAt), lte: closedAt } }),
+          }),
+        }),
+      );
+      expect(prisma.cashClosing.create).toHaveBeenCalledWith(
+        expect.objectContaining({ data: expect.objectContaining({ closedAt }) }),
+      );
+    });
+
+    it("ignore une heure de saisie antérieure à l'ouverture (horloge fausse) : retombe sur maintenant", async () => {
+      const before = Date.now();
+
+      await service.close('est-1', 'user-1', { openedAt, countedAmount: 0 }, { closedAt: new Date('2026-09-05T05:00:00.000Z') });
+
+      const data = (prisma.cashClosing.create as any).mock.calls[0][0].data;
+      expect(data.closedAt.getTime()).toBeGreaterThanOrEqual(before);
+    });
+  });
 });
 
 describe('CashService.list', () => {

@@ -19,6 +19,25 @@ const REQUIRED_PERMISSION: Record<SyncEntityType, string> = {
   cash_closing: 'cash.manage',
 };
 
+/**
+ * Bornes de plausibilité de `SyncOperationDto.capturedAt` (heure de l'appareil,
+ * donc non fiable) : au plus 24h dans le futur (fuseaux horaires, même
+ * tolérance que `SalesService`/`LossesService`) et au plus 30 jours dans le
+ * passé. Hors bornes, l'heure est ignorée et l'horodatage serveur s'applique
+ * — une horloge d'appareil déréglée ne doit pas réécrire l'historique.
+ */
+const MAX_CAPTURED_FUTURE_MS = 24 * 60 * 60 * 1000;
+const MAX_CAPTURED_AGE_MS = 30 * 24 * 60 * 60 * 1000;
+
+export function resolveCapturedAt(raw: string | undefined, now: number = Date.now()): Date | undefined {
+  if (!raw) return undefined;
+  const date = new Date(raw);
+  const time = date.getTime();
+  if (Number.isNaN(time)) return undefined;
+  if (time > now + MAX_CAPTURED_FUTURE_MS || time < now - MAX_CAPTURED_AGE_MS) return undefined;
+  return date;
+}
+
 export interface SyncOperationResult {
   id: string;
   status: 'SYNCED' | 'FAILED' | 'CONFLICT';
@@ -115,33 +134,75 @@ export class SyncService {
   }
 
   private dispatch(establishmentId: string, userId: string, operation: SyncOperationDto): Promise<unknown> {
+    const capturedAt = resolveCapturedAt(operation.capturedAt);
     switch (operation.entityType) {
       case 'sale':
-        return this.sales.create(establishmentId, userId, { ...(operation.payload as object), id: operation.id } as any);
+        return this.dispatchSale(establishmentId, userId, operation, capturedAt);
       case 'stock_movement': {
         const { productId, ...rest } = operation.payload as { productId: string };
-        return this.stockMovements.create(establishmentId, productId, userId, { ...rest, id: operation.id } as any);
+        return this.stockMovements.create(
+          establishmentId,
+          productId,
+          userId,
+          { ...rest, id: operation.id } as any,
+          { createdAt: capturedAt },
+        );
       }
       case 'expense':
         return this.expenses.create(establishmentId, userId, { ...(operation.payload as object), id: operation.id } as any);
       case 'loss':
-        return this.dispatchLoss(establishmentId, userId, operation);
+        return this.dispatchLoss(establishmentId, userId, operation, capturedAt);
       case 'purchase':
         return this.purchases.create(establishmentId, userId, { ...(operation.payload as object), id: operation.id } as any);
       case 'cash_closing':
-        return this.cash.close(establishmentId, userId, { ...(operation.payload as object), id: operation.id } as any);
+        return this.cash.close(
+          establishmentId,
+          userId,
+          { ...(operation.payload as object), id: operation.id } as any,
+          { closedAt: capturedAt },
+        );
     }
   }
 
+  /**
+   * La date de vente CHOISIE par le caissier (champ Date du dialogue Paiement)
+   * n'est conservée que si l'auteur porte `pos.set_date`, comme sur la route
+   * HTTP (`SalesController.create`) ; sinon elle est ignorée. À défaut de date
+   * choisie, la vente reçoit l'heure réelle de saisie sur l'appareil.
+   */
+  private async dispatchSale(
+    establishmentId: string,
+    userId: string,
+    operation: SyncOperationDto,
+    capturedAt: Date | undefined,
+  ): Promise<unknown> {
+    const { createdAt: chosen, ...rest } = operation.payload as { createdAt?: string };
+    const maySetDate = chosen
+      ? await this.authorization.hasAllPermissions(userId, establishmentId, ['pos.set_date'])
+      : false;
+    const createdAt = maySetDate ? chosen : capturedAt?.toISOString();
+    return this.sales.create(establishmentId, userId, {
+      ...rest,
+      ...(createdAt ? { createdAt } : {}),
+      id: operation.id,
+    } as any);
+  }
+
   /** La date saisie d'une perte (antidatage) n'est conservée que si l'auteur porte `losses.edit`, comme sur la route HTTP ; sinon elle est ignorée (horodatage serveur). */
-  private async dispatchLoss(establishmentId: string, userId: string, operation: SyncOperationDto): Promise<unknown> {
-    const { createdAt, ...rest } = operation.payload as { createdAt?: string };
-    const mayBackdate = createdAt
+  private async dispatchLoss(
+    establishmentId: string,
+    userId: string,
+    operation: SyncOperationDto,
+    capturedAt: Date | undefined,
+  ): Promise<unknown> {
+    const { createdAt: chosen, ...rest } = operation.payload as { createdAt?: string };
+    const mayBackdate = chosen
       ? await this.authorization.hasAllPermissions(userId, establishmentId, ['losses.edit'])
       : false;
+    const createdAt = mayBackdate ? chosen : capturedAt?.toISOString();
     return this.losses.create(establishmentId, userId, {
       ...rest,
-      ...(mayBackdate ? { createdAt } : {}),
+      ...(createdAt ? { createdAt } : {}),
       id: operation.id,
     } as any);
   }
