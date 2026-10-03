@@ -2,6 +2,11 @@
 
 ## [Unreleased]
 
+### Ajouté (2026-10-03) — Tables, additions et clients consultables hors ligne
+- Le **plan de salle**, les **additions ouvertes** et la **liste des clients** s'affichent sans réseau, à partir de la dernière copie locale, sous un bandeau « Hors ligne — données du JJ/MM HH:mm » avec bouton **Actualiser** (rechargement automatique au retour de la connexion). Les additions de toutes les tables occupées sont préchargées en arrière-plan à chaque ouverture du plan de salle en ligne.
+- Hors ligne, on peut **consulter et encaisser une addition déjà ouverte** ; la table passe alors localement à « libre » (ou son total diminue) pour ne pas proposer de l'encaisser deux fois. Ouvrir/créer/libérer une table, réserver ou modifier une addition exige toujours une connexion (message explicite). Créer un client hors ligne affiche un message d'erreur au lieu d'échouer silencieusement.
+- Un refus du serveur (permission, validation) n'est jamais remplacé par une copie périmée : seuls un serveur injoignable ou une passerelle indisponible (502/503/504) déclenchent le repli. Copies effacées à la déconnexion (données clients). Rapports et graphiques restent en ligne. Voir `docs/api/sync.md`.
+
 ### Ajouté (2026-10-03) — Synchronisation hors ligne fiabilisée
 - **Opérations refusées conservées** : une vente (ou autre opération) que le serveur refuse à la synchronisation — par exemple « Stock insuffisant » — n'est plus perdue. Elle reste dans une liste « N à corriger » (barre de synchronisation) avec son motif ; l'utilisateur peut la **réessayer** ou la **supprimer** après confirmation.
 - **Heure de saisie respectée** : ventes, mouvements de stock, pertes et clôtures de caisse saisis hors ligne gardent leur heure réelle de saisie au lieu de prendre celle de la synchronisation (rapports, graphiques et ordre FIFO des lots restent justes). Le serveur borne cette heure (24 h dans le futur, 30 jours dans le passé au maximum). La date choisie dans le dialogue Paiement n'est désormais conservée par la synchronisation que si l'auteur porte `pos.set_date` (comme déjà sur la route normale).

@@ -1,3 +1,5 @@
+import 'dart:async';
+
 import 'package:flutter/material.dart';
 import 'package:uuid/uuid.dart';
 
@@ -6,12 +8,15 @@ import '../catalog/catalog_cache.dart';
 import '../catalog/catalog_repository.dart';
 import '../catalog/models.dart';
 import '../common/formatting.dart';
+import '../common/offline_banner.dart';
+import '../common/read_cache.dart';
 import '../pos/cart_panel.dart';
 import '../pos/category_sold_items_page.dart';
 import '../pos/payment_dialog.dart';
 import '../pos/pos_repository.dart';
 import '../pos/product_grid.dart';
 import '../pos/receipt_page.dart';
+import '../sync/connectivity_status.dart';
 import '../sync/device_id.dart';
 import '../sync/offline_sale.dart';
 import '../sync/pending_operation.dart';
@@ -58,7 +63,11 @@ class _TableOrderPageState extends State<TableOrderPage> {
     widget.establishmentId,
   );
 
-  Future<List<OrderDetail>>? _ordersFuture;
+  Future<Cached<List<OrderDetail>>>? _ordersFuture;
+  // Date de la copie locale servie à la place du serveur injoignable (nul :
+  // données fraîches) — voir `TablesRepository.loadOpenOrders`.
+  DateTime? _ordersCachedAt;
+  StreamSubscription<bool>? _reconnectSubscription;
   Future<(List<Category>, List<Product>)>? _catalogFuture;
   // Copie synchrone du catalogue chargé par `_catalogFuture`, pour que
   // `_changeQuantity` retrouve le `Product` d'une ligne (prix de référence,
@@ -83,20 +92,53 @@ class _TableOrderPageState extends State<TableOrderPage> {
     // voir stock_lots_tab.dart pour le même motif).
     _catalogFuture = _loadCatalog()..ignore();
     _reloadOrders();
+    _reconnectSubscription = ConnectivityStatus.onReconnect(() {
+      if (mounted && _ordersCachedAt != null) {
+        _reloadOrders();
+        setState(() {
+          _catalogFuture = _loadCatalog()..ignore();
+        });
+      }
+    });
+  }
+
+  @override
+  void dispose() {
+    _reconnectSubscription?.cancel();
+    super.dispose();
   }
 
   Future<(List<Category>, List<Product>)> _loadCatalog() async {
-    final categories = await _catalog.listCategories();
-    final products = await _catalog.listProducts();
-    _allProducts = products;
-    return (categories, products);
+    final cache = CatalogCache(widget.establishmentId);
+    try {
+      final categories = await _catalog.listCategories();
+      final products = await _catalog.listProducts();
+      _allProducts = products;
+      try {
+        await cache.save(categories, products);
+      } catch (_) {
+        // Stockage indisponible : le catalogue en ligne reste valable.
+      }
+      return (categories, products);
+    } catch (error) {
+      // Serveur injoignable : dernier catalogue connu (même copie que la
+      // Caisse), jamais pour un rejet métier du serveur.
+      if (!isNetworkFailure(error)) rethrow;
+      final cached = await cache.load();
+      if (cached == null) rethrow;
+      _allProducts = cached.$2;
+      return cached;
+    }
   }
 
   void _reloadOrders() {
     // Ne pas réinitialiser _selectedOrderId ici : un ajout/retrait sur
     // l'addition 2 ne doit pas ramener l'écran sur l'addition 1 — build()
     // retombe déjà sur l'index 0 si l'addition sélectionnée a disparu.
-    final future = widget.repository.listOpenOrdersForTable(widget.tableId);
+    final future = widget.repository.loadOpenOrders(widget.tableId).then((result) {
+      _ordersCachedAt = result.cachedAt;
+      return result;
+    });
     future.ignore();
     // Corps bloc (pas `=>`) : une closure fléchée affectant un champ `Future`
     // renvoie la valeur de l'affectation, donc le `Future` lui-même — setState
@@ -116,7 +158,8 @@ class _TableOrderPageState extends State<TableOrderPage> {
       );
       if (!mounted) return;
       setState(() {
-        _ordersFuture = Future.value(orders);
+        _ordersCachedAt = null;
+        _ordersFuture = Future.value(Cached(orders));
         _selectedOrderId = orders.last.id;
       });
     } on ApiException catch (e) {
@@ -464,6 +507,9 @@ class _TableOrderPageState extends State<TableOrderPage> {
           order.items.map((i) => (productId: i.productId, quantity: i.quantity)),
         ),
       );
+      // Addition retirée de la copie locale (et table mise à jour) : sinon
+      // l'écran proposerait d'encaisser une seconde fois la même addition.
+      await widget.repository.markOrderCheckedOutLocally(widget.tableId, order);
       final receipt = provisionalSale(
         id: saleId,
         createdAt: outcome.date ?? DateTime.now(),
@@ -537,7 +583,7 @@ class _TableOrderPageState extends State<TableOrderPage> {
           ),
         ],
       ),
-      body: FutureBuilder<List<OrderDetail>>(
+      body: FutureBuilder<Cached<List<OrderDetail>>>(
         future: _ordersFuture,
         builder: (context, ordersSnapshot) {
           if (ordersSnapshot.connectionState != ConnectionState.done) {
@@ -549,13 +595,25 @@ class _TableOrderPageState extends State<TableOrderPage> {
                 : '${ordersSnapshot.error}';
             return Center(child: Text(message));
           }
-          final orders = ordersSnapshot.data!;
+          final cachedAt = ordersSnapshot.data!.cachedAt;
+          final orders = ordersSnapshot.data!.value;
+          if (orders.isEmpty) {
+            // Possible depuis la copie locale : la dernière addition de la table
+            // vient d'être encaissée hors ligne.
+            return Column(
+              children: [
+                if (cachedAt != null) OfflineBanner(cachedAt: cachedAt, onRefresh: _reloadOrders),
+                const Expanded(child: Center(child: Text('Aucune addition ouverte sur cette table.'))),
+              ],
+            );
+          }
           final matchIndex = orders.indexWhere((o) => o.id == _selectedOrderId);
           final selectedIndex = matchIndex >= 0 ? matchIndex : 0;
           final order = orders[selectedIndex];
 
           return Column(
             children: [
+              if (cachedAt != null) OfflineBanner(cachedAt: cachedAt, onRefresh: _reloadOrders),
               if (orders.length > 1)
                 SizedBox(
                   height: 44,

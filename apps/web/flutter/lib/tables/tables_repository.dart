@@ -1,12 +1,16 @@
+import 'package:flutter/foundation.dart';
+
 import '../api/api_client.dart';
+import '../common/read_cache.dart';
 import 'tables_models.dart';
 
 /// Correspond à apps/api/nestjs/src/tables/{tables,orders}.controller.ts.
 class TablesRepository {
-  TablesRepository(this._api, this.establishmentId);
+  TablesRepository(this._api, this.establishmentId, {ReadCache? cache}) : _cache = cache ?? ReadCache(establishmentId);
 
   final ApiClient _api;
   final String establishmentId;
+  final ReadCache _cache;
 
   String get _base => '/establishments/$establishmentId';
 
@@ -15,6 +19,21 @@ class TablesRepository {
     return json
         .map((e) => RestaurantTable.fromJson(e as Map<String, dynamic>))
         .toList();
+  }
+
+  static const _tablesCacheName = 'tables';
+  String _ordersCacheName(String tableId) => 'orders_$tableId';
+
+  /// Plan de salle, avec repli sur la dernière copie locale quand le serveur
+  /// est injoignable (consultation hors ligne, voir docs/api/sync.md).
+  Future<Cached<List<RestaurantTable>>> loadTables() {
+    return _cache.read(
+      name: _tablesCacheName,
+      fetch: () async => await _api.get('$_base/tables') as Object,
+      parse: (json) => (json as List<dynamic>)
+          .map((e) => RestaurantTable.fromJson(e as Map<String, dynamic>))
+          .toList(),
+    );
   }
 
   Future<void> createTable(String name, {String? zone}) {
@@ -85,10 +104,90 @@ class TablesRepository {
   Future<List<OrderDetail>> listOpenOrdersForTable(String tableId) async {
     final json =
         await _api.get('$_base/tables/$tableId/orders') as List<dynamic>;
+    try {
+      await _cache.save(_ordersCacheName(tableId), json);
+    } catch (_) {
+      // Stockage indisponible : la lecture en ligne reste valable.
+    }
     return json
         .map((e) => OrderDetail.fromJson(e as Map<String, dynamic>))
         .toList();
   }
+
+  /// Comme [listOpenOrdersForTable], avec repli sur la dernière copie locale
+  /// de cette table quand le serveur est injoignable.
+  Future<Cached<List<OrderDetail>>> loadOpenOrders(String tableId) {
+    return _cache.read(
+      name: _ordersCacheName(tableId),
+      fetch: () async => await _api.get('$_base/tables/$tableId/orders') as Object,
+      parse: (json) => (json as List<dynamic>)
+          .map((e) => OrderDetail.fromJson(e as Map<String, dynamic>))
+          .toList(),
+    );
+  }
+
+  static final Map<String, DateTime> _lastPrefetch = {};
+
+  @visibleForTesting
+  static void resetPrefetchThrottle() => _lastPrefetch.clear();
+
+  /// Télécharge en arrière-plan les additions ouvertes de toutes les tables
+  /// occupées, pour qu'elles soient consultables (et encaissables) hors ligne
+  /// même sans avoir été ouvertes à l'écran. 3 requêtes en parallèle, arrêt à la
+  /// première coupure, au plus une fois par minute et par établissement.
+  Future<void> prefetchOpenOrders(List<RestaurantTable> tables) async {
+    final now = DateTime.now();
+    final last = _lastPrefetch[establishmentId];
+    if (last != null && now.difference(last) < const Duration(seconds: 60)) return;
+    _lastPrefetch[establishmentId] = now;
+
+    final targets = tables.where((t) => t.openOrderCount > 0).toList();
+    var next = 0;
+    var unreachable = false;
+    Future<void> worker() async {
+      while (!unreachable && next < targets.length) {
+        final table = targets[next++];
+        try {
+          await listOpenOrdersForTable(table.id);
+        } catch (error) {
+          if (isNetworkFailure(error)) unreachable = true;
+        }
+      }
+    }
+
+    await Future.wait(List.generate(3, (_) => worker()));
+  }
+
+  /// Après un encaissement enregistré hors ligne : retire l'addition de la
+  /// copie locale des additions ouvertes et met à jour la table (nombre
+  /// d'additions, total, libre s'il n'en reste aucune) — sans quoi l'écran
+  /// proposerait d'encaisser une seconde fois la même addition. La date de la
+  /// copie n'est pas rafraîchie : elle reste celle du dernier vrai chargement.
+  Future<void> markOrderCheckedOutLocally(String tableId, OrderDetail order) async {
+    final orders = await _cache.load(_ordersCacheName(tableId));
+    if (orders != null && orders.json is List) {
+      final remaining = (orders.json as List).where((o) => (o as Map)['id'] != order.id).toList();
+      await _cache.save(_ordersCacheName(tableId), remaining, savedAt: orders.savedAt);
+    }
+    final tables = await _cache.load(_tablesCacheName);
+    if (tables != null && tables.json is List) {
+      final updated = [
+        for (final raw in tables.json as List)
+          if ((raw as Map)['id'] == tableId) _tableAfterCheckout(Map<String, dynamic>.from(raw), order.total) else raw,
+      ];
+      await _cache.save(_tablesCacheName, updated, savedAt: tables.savedAt);
+    }
+  }
+
+  static Map<String, dynamic> _tableAfterCheckout(Map<String, dynamic> table, double orderTotal) {
+    final count = ((table['openOrderCount'] as num?)?.toInt() ?? 1) - 1;
+    if (count <= 0) {
+      return {...table, 'openOrderCount': 0, 'currentTotal': null, 'guestCount': null, 'status': 'free'};
+    }
+    final total = ((table['currentTotal'] as num?)?.toDouble() ?? orderTotal) - orderTotal;
+    return {...table, 'openOrderCount': count, 'currentTotal': total < 0 ? 0 : total};
+  }
+
 
   Future<void> addItem(
     String orderId, {

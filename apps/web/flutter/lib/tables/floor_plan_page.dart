@@ -1,7 +1,12 @@
+import 'dart:async';
+
 import 'package:flutter/material.dart';
 
 import '../api/api_client.dart';
 import '../common/formatting.dart';
+import '../common/offline_banner.dart';
+import '../common/read_cache.dart';
+import '../sync/connectivity_status.dart';
 import '../theme/app_theme.dart';
 import 'table_order_page.dart';
 import 'tables_models.dart';
@@ -24,11 +29,58 @@ class _FloorPlanPageState extends State<FloorPlanPage> {
     ApiClient(),
     widget.establishmentId,
   );
-  late Future<List<RestaurantTable>> _future = _repository.listTables();
+  late Future<Cached<List<RestaurantTable>>> _future = _loadTables();
   String _filter = _kAllFilter;
   String _search = '';
+  // Date de la copie locale servie à la place du serveur injoignable (nul : les
+  // données sont fraîches). Tant qu'elle est renseignée, seules la consultation
+  // et l'encaissement d'une addition déjà ouverte sont possibles.
+  DateTime? _cachedAt;
+  StreamSubscription<bool>? _reconnectSubscription;
 
-  void _reload() => setState(() => _future = _repository.listTables());
+  @override
+  void initState() {
+    super.initState();
+    _reconnectSubscription = ConnectivityStatus.onReconnect(() {
+      if (mounted && _cachedAt != null) _reload();
+    });
+  }
+
+  @override
+  void dispose() {
+    _reconnectSubscription?.cancel();
+    super.dispose();
+  }
+
+  Future<Cached<List<RestaurantTable>>> _loadTables() async {
+    final result = await _repository.loadTables();
+    _cachedAt = result.cachedAt;
+    // Données fraîches : télécharge en arrière-plan les additions ouvertes des
+    // tables occupées pour qu'elles restent consultables hors ligne.
+    if (!result.isStale) unawaited(_repository.prefetchOpenOrders(result.value).catchError((Object _) {}));
+    return result;
+  }
+
+  void _reload() {
+    final next = _loadTables();
+    setState(() {
+      _future = next;
+    });
+  }
+
+  /// Les écritures (ouvrir/libérer une table, réserver, créer…) exigent le
+  /// serveur : refusées d'emblée plutôt que d'échouer après coup.
+  bool _requireOnline() {
+    if (_cachedAt == null) return true;
+    ScaffoldMessenger.of(context).showSnackBar(
+      const SnackBar(
+        content: Text(
+          "Hors ligne : cette action exige une connexion. Seules la consultation et l'encaissement d'une addition ouverte sont possibles.",
+        ),
+      ),
+    );
+    return false;
+  }
 
   // Regroupe le statut brut (chaîne libre côté API) dans l'un des filtres
   // affichés — même logique que _statusLabel, seulement pour le filtrage.
@@ -46,6 +98,17 @@ class _FloorPlanPageState extends State<FloorPlanPage> {
   }
 
   Future<void> _onTableTap(RestaurantTable table) async {
+    if (_cachedAt != null) {
+      // Hors ligne : une table occupée s'ouvre directement sur son addition
+      // (consultation, encaissement) ; le menu d'actions et l'ouverture d'une
+      // table libre exigent le serveur.
+      if (table.status == 'free' || table.status == 'reserved') {
+        _requireOnline();
+        return;
+      }
+      await _goToOrder(table);
+      return;
+    }
     switch (table.status) {
       case 'free':
         await _showFreeTableActions(table);
@@ -455,6 +518,7 @@ class _FloorPlanPageState extends State<FloorPlanPage> {
   }
 
   Future<void> _showCreateTableDialog() async {
+    if (!_requireOnline()) return;
     final nameController = TextEditingController();
     final zoneController = TextEditingController();
     final created = await showDialog<bool>(
@@ -509,6 +573,7 @@ class _FloorPlanPageState extends State<FloorPlanPage> {
   }
 
   Future<void> _showEditTableDialog(RestaurantTable table) async {
+    if (!_requireOnline()) return;
     final nameController = TextEditingController(text: table.name);
     final zoneController = TextEditingController(text: table.zone ?? '');
     final result = await showDialog<String>(
@@ -598,7 +663,7 @@ class _FloorPlanPageState extends State<FloorPlanPage> {
         tooltip: 'Nouvelle table',
         child: const Icon(Icons.add),
       ),
-      body: FutureBuilder<List<RestaurantTable>>(
+      body: FutureBuilder<Cached<List<RestaurantTable>>>(
         future: _future,
         builder: (context, snapshot) {
           if (snapshot.connectionState != ConnectionState.done) {
@@ -623,7 +688,7 @@ class _FloorPlanPageState extends State<FloorPlanPage> {
             );
           }
 
-          final allTables = snapshot.data!;
+          final allTables = snapshot.data!.value;
           if (allTables.isEmpty) {
             return Center(
               child: Column(
@@ -674,6 +739,10 @@ class _FloorPlanPageState extends State<FloorPlanPage> {
             child: ListView(
               padding: const EdgeInsets.all(12),
               children: [
+                if (snapshot.data!.cachedAt != null) ...[
+                  OfflineBanner(cachedAt: snapshot.data!.cachedAt!, onRefresh: _reload),
+                  const SizedBox(height: 8),
+                ],
                 TextField(
                   decoration: const InputDecoration(
                     prefixIcon: Icon(Icons.search),

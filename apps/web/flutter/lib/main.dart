@@ -7,6 +7,7 @@ import 'auth/link_confirmation_gate.dart';
 import 'auth/me_repository.dart';
 import 'auth/profile_cache.dart';
 import 'catalog/product_photo_service.dart';
+import 'common/read_cache.dart';
 import 'config/supabase_config.dart';
 import 'home/home_dashboard.dart';
 import 'sync/global_sync_context.dart';
@@ -25,6 +26,7 @@ Future<void> main() async {
   Supabase.instance.client.auth.onAuthStateChange.listen((state) {
     if (state.event == AuthChangeEvent.signedOut) {
       ProductPhotoService.instance.clearAll();
+      ReadCache.clearAll();
     }
   });
   runApp(const ChezYasmineApp());
