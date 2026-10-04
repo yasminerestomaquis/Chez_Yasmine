@@ -55,21 +55,26 @@ class ChezYasmineApp extends StatelessWidget {
       // utilisateur du 2026-09-13). N'affiche rien tant qu'aucun
       // établissement n'est résolu (avant connexion, ou pendant la sélection
       // d'établissement) — voir `GlobalSyncContext`.
-      builder: (context, child) => ValueListenableBuilder<String?>(
-        valueListenable: GlobalSyncContext.establishmentId,
-        builder: (context, establishmentId, _) => Column(
-          children: [
-            if (establishmentId != null)
-              SyncStatusBar(
-                syncQueue: SyncQueueService(ApiClient(), establishmentId),
-              ),
-            Expanded(child: child ?? const SizedBox.shrink()),
-          ],
-        ),
-      ),
+      builder: withSyncStatusBar,
     );
   }
 }
+
+/// `MaterialApp.builder` : pose la barre de synchronisation au-dessus de
+/// l'écran courant. Fonction publique pour que les tests exercent le vrai
+/// montage plutôt qu'une copie.
+Widget withSyncStatusBar(BuildContext context, Widget? child) => ValueListenableBuilder<String?>(
+      valueListenable: GlobalSyncContext.establishmentId,
+      builder: (context, establishmentId, _) => Column(
+        children: [
+          if (establishmentId != null)
+            SyncStatusBar(
+              syncQueue: SyncQueueService(ApiClient(), establishmentId),
+            ),
+          Expanded(child: child ?? const SizedBox.shrink()),
+        ],
+      ),
+    );
 
 /// Point d'entrée après connexion : charge le profil puis affiche le tableau
 /// de bord du seul établissement de l'utilisateur, ou un sélecteur si plusieurs.

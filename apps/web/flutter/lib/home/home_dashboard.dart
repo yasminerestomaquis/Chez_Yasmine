@@ -245,7 +245,18 @@ class _HomeDashboardState extends State<HomeDashboard> {
     // globale (montée une seule fois au-dessus de l'écran courant, voir
     // main.dart) — sans ça, elle n'a aucun moyen de savoir quelle file
     // hors ligne afficher tant qu'aucun module n'a été ouvert.
-    GlobalSyncContext.establishmentId.value = widget.establishmentId;
+    //
+    // Différé après la frame courante : cette écriture notifie le
+    // ValueListenableBuilder de main.dart, un ANCÊTRE de ce widget. La faire
+    // pendant le build (donc ici, en initState) est interdit par Flutter — en
+    // production la notification est perdue et la barre « En ligne / Hors
+    // ligne » n'apparaît jamais (régression du 2026-10-04 : l'accueil s'affiche
+    // maintenant dès la copie locale du profil, dans une frame où l'ancêtre est
+    // lui-même en construction). Même précaution que dans auth_gate.dart.
+    final establishmentId = widget.establishmentId;
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (mounted) GlobalSyncContext.establishmentId.value = establishmentId;
+    });
   }
 
   late final List<_ModuleEntry> _operations = [
