@@ -33,6 +33,42 @@
   <link rel="manifest" href="manifest.json">
 
   <!--
+    Démarrage plus rapide à la première ouverture (2026-10-04). Sans cela, le
+    navigateur découvre les gros fichiers l'un APRÈS l'autre : flutter_bootstrap.js,
+    puis main.dart.js, puis seulement CanvasKit (moteur de rendu, ~2 Mo compressé).
+    On les demande tous dès maintenant, en parallèle.
+  -->
+  <link rel="preload" href="main.dart.js" as="script">
+  <script>
+    (function () {
+      // Réveille l'API (Render, plan gratuit : en veille après ~15 min sans
+      // trafic, 30 à 60 s pour redémarrer) PENDANT que la page se télécharge,
+      // au lieu d'attendre le premier appel de l'application. Réponse ignorée.
+      // URL à garder identique à `API_URL` de vercel.json.
+      fetch('https://chez-yasmine-api.onrender.com/', { mode: 'no-cors', cache: 'no-store' }).catch(function () {});
+
+      // CanvasKit : même choix de variante que Flutter (`Intl.v8BreakIterator`
+      // et `Intl.Segmenter` => variante Chromium), pour ne précharger que celle
+      // qui sera réellement utilisée. Servi par le site lui-même, voir
+      // flutter_bootstrap.js.
+      var chromium = typeof Intl !== 'undefined' &&
+        typeof Intl.v8BreakIterator !== 'undefined' &&
+        typeof Intl.Segmenter !== 'undefined';
+      var base = chromium ? 'canvaskit/chromium/' : 'canvaskit/';
+      function preload(href, as, crossorigin) {
+        var link = document.createElement('link');
+        link.rel = 'preload';
+        link.href = href;
+        link.as = as;
+        if (crossorigin) link.crossOrigin = 'anonymous';
+        document.head.appendChild(link);
+      }
+      preload(base + 'canvaskit.js', 'script');
+      preload(base + 'canvaskit.wasm', 'fetch', true);
+    })();
+  </script>
+
+  <!--
     PWA avancée (Phase 15) : bandeau de mise à jour, bouton d'installation, et
     service worker de cache hors ligne (pwa_cache_worker.js), en JavaScript
     brut plutôt qu'en Dart (package:web/js_interop) — évite d'introduire du
@@ -61,6 +97,36 @@
       gap: 12px;
     }
     #pwa-update-banner.visible, #pwa-install-banner.visible { display: flex; }
+
+    /* Écran de démarrage : affiché dès le premier octet de HTML, retiré au
+       premier rendu de Flutter. Sans lui, la page restait entièrement blanche
+       pendant tout le téléchargement de l'application. */
+    #splash {
+      position: fixed;
+      inset: 0;
+      z-index: 9998;
+      background: #FFF9F5;
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      justify-content: center;
+      gap: 18px;
+      font-family: sans-serif;
+      color: #74675E;
+      transition: opacity 0.25s ease;
+    }
+    #splash img { width: 96px; height: 96px; border-radius: 50%; }
+    #splash .spinner {
+      width: 30px;
+      height: 30px;
+      border: 3px solid #EEF8EF;
+      border-top-color: #008A20;
+      border-radius: 50%;
+      animation: splash-spin 0.9s linear infinite;
+    }
+    #splash p { margin: 0; font-size: 14px; text-align: center; padding: 0 24px; visibility: hidden; }
+    #splash.slow p { visibility: visible; }
+    @keyframes splash-spin { to { transform: rotate(360deg); } }
     #pwa-update-banner button, #pwa-install-banner button {
       background: #fff;
       color: #0175C2;
@@ -73,6 +139,11 @@
   </style>
 </head>
 <body>
+  <div id="splash" role="status" aria-live="polite">
+    <img src="icons/Icon-192.png" alt="Chez Yasmine">
+    <div class="spinner"></div>
+    <p>Le chargement prend plus de temps que d'habitude… vérifiez votre connexion.</p>
+  </div>
   <div id="pwa-update-banner">
     <span>Nouvelle version disponible.</span>
     <button id="pwa-update-reload">Actualiser</button>
@@ -91,6 +162,20 @@
     * https://docs.flutter.dev/platform-integration/web/initialization
   -->
   <script src="flutter_bootstrap.js" async></script>
+
+  <script>
+    // Retire l'écran de démarrage dès que Flutter a affiché sa première image.
+    // Si cela tarde (réseau lent), le message de patience apparaît.
+    (function () {
+      var splash = document.getElementById('splash');
+      var slowTimer = setTimeout(function () { splash.classList.add('slow'); }, 8000);
+      window.addEventListener('flutter-first-frame', function () {
+        clearTimeout(slowTimer);
+        splash.style.opacity = '0';
+        setTimeout(function () { splash.remove(); }, 300);
+      });
+    })();
+  </script>
 
   <script>
     // Enregistrement du service worker de cache (pwa_cache_worker.js, voir ce

@@ -34,4 +34,11 @@ class ProfileCache {
     if (raw == null) return null;
     return MyProfile.fromJson(jsonDecode(raw) as Map<String, dynamic>);
   }
+
+  /// À la déconnexion : le profil (établissements, rôle) ne doit pas rester sur
+  /// un appareil que quelqu'un d'autre peut utiliser ensuite.
+  Future<void> clear() async {
+    final prefs = await SharedPreferences.getInstance();
+    await prefs.remove(_key);
+  }
 }

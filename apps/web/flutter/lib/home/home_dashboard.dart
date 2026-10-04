@@ -1005,10 +1005,14 @@ class _HomeDashboardState extends State<HomeDashboard> {
           child: FutureBuilder<_DashboardData>(
             future: _future,
             builder: (context, snapshot) {
-              if (snapshot.connectionState != ConnectionState.done) {
-                return const Center(child: CircularProgressIndicator());
-              }
-              if (snapshot.hasError) {
+              // La grille des modules s'affiche TOUT DE SUITE : seuls les
+              // indicateurs (ventes, alertes stock) attendent le serveur. Avant,
+              // un cercle de chargement masquait tout l'accueil jusqu'à la
+              // réponse des trois appels — jusqu'à 30 à 60 s au démarrage à
+              // froid de l'API (Render, plan gratuit), alors que les modules
+              // eux-mêmes ne dépendent pas de ces indicateurs.
+              final loading = snapshot.connectionState != ConnectionState.done;
+              if (!loading && snapshot.hasError) {
                 final message = snapshot.error is ApiException
                     ? (snapshot.error as ApiException).message
                     : '${snapshot.error}';
@@ -1037,7 +1041,7 @@ class _HomeDashboardState extends State<HomeDashboard> {
                 );
               }
 
-              final data = snapshot.data!;
+              final data = snapshot.data ?? _DashboardData(summary: null, breakdown: null, unreadCount: 0);
               // Variables locales : Dart peut alors "promouvoir" le type
               // (String? -> String) dans les blocs `if (breakdown != null)`
               // ci-dessous, ce qui serait refusé sur `data.breakdown` (getter).
@@ -1047,6 +1051,11 @@ class _HomeDashboardState extends State<HomeDashboard> {
               return ListView(
                 padding: const EdgeInsets.fromLTRB(16, 16, 16, 24),
                 children: [
+                  if (loading)
+                    const Padding(
+                      padding: EdgeInsets.only(bottom: 12),
+                      child: LinearProgressIndicator(minHeight: 2),
+                    ),
                   Row(
                     children: [
                       Flexible(
