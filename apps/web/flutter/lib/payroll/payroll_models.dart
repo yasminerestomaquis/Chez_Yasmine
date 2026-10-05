@@ -59,6 +59,9 @@ class PayrollRun {
     required this.periodEnd,
     required this.status,
     required this.lines,
+    this.createdAt,
+    this.paidAt,
+    this.expenseDate,
   });
   final String id;
   final DateTime periodStart;
@@ -66,7 +69,16 @@ class PayrollRun {
   final String status;
   final List<PayrollLine> lines;
 
+  /// Préparation de la paie / paiement effectif / date de la dépense
+  /// « Salaires » générée au paiement (nulle tant que la paie n'est pas payée).
+  final DateTime? createdAt;
+  final DateTime? paidAt;
+  final DateTime? expenseDate;
+
   double get total => lines.fold(0, (sum, l) => sum + l.netAmount);
+
+  static DateTime? _optionalDate(Object? value) =>
+      value == null ? null : DateTime.parse(value as String);
 
   factory PayrollRun.fromJson(Map<String, dynamic> json) => PayrollRun(
     id: json['id'] as String,
@@ -76,5 +88,10 @@ class PayrollRun {
     lines: (json['lines'] as List<dynamic>)
         .map((e) => PayrollLine.fromJson(e as Map<String, dynamic>))
         .toList(),
+    createdAt: _optionalDate(json['createdAt']),
+    paidAt: _optionalDate(json['paidAt']),
+    expenseDate: _optionalDate(
+      (json['expense'] as Map<String, dynamic>?)?['expenseDate'],
+    ),
   );
 }

@@ -3,7 +3,7 @@ import type { Request } from 'express';
 import { PermissionsGuard } from '../auth/permissions.guard.js';
 import { RequirePermissions } from '../auth/permissions.decorator.js';
 import { SupabaseJwtGuard } from '../auth/supabase-jwt.guard.js';
-import { PreparePayrollRunDto, UpdatePayrollLineDto } from './dto/payroll.dto.js';
+import { PreparePayrollRunDto, UpdatePayrollLineDto, UpdatePayrollRunDto } from './dto/payroll.dto.js';
 import { PayrollService } from './payroll.service.js';
 
 @Controller('establishments/:establishmentId/payroll')
@@ -31,6 +31,16 @@ export class PayrollController {
   @RequirePermissions('payroll.manage')
   prepare(@Req() request: Request, @Param('establishmentId') establishmentId: string, @Body() dto: PreparePayrollRunDto) {
     return this.payroll.prepare(establishmentId, request.user!.sub, dto);
+  }
+
+  @Patch('runs/:runId')
+  @RequirePermissions('payroll.manage')
+  updateRun(
+    @Param('establishmentId') establishmentId: string,
+    @Param('runId') runId: string,
+    @Body() dto: UpdatePayrollRunDto,
+  ) {
+    return this.payroll.updateRun(establishmentId, runId, dto);
   }
 
   @Patch('runs/:runId/lines/:lineId')

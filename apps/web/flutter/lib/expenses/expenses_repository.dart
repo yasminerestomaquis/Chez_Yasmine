@@ -48,6 +48,38 @@ class ExpensesRepository {
     return Expense.fromJson(json);
   }
 
+  /// Modification complète d'une dépense manuelle (`PATCH .../expenses/:id`).
+  /// `category`, `note` et `marketNumber` sont envoyés même vides (null) pour
+  /// pouvoir EFFACER une valeur existante — le serveur accepte null.
+  Future<Expense> updateExpense(
+    String expenseId, {
+    required String label,
+    required String? category,
+    required double amount,
+    required ExpensePeriodicity periodicity,
+    required String? note,
+    required DateTime expenseDate,
+    required int? marketNumber,
+    required ExpensePaymentMethod paymentMethod,
+    required ExpenseStatus status,
+  }) async {
+    final json = await _api.patch(
+      '$_base/$expenseId',
+      body: {
+        'label': label,
+        'category': category,
+        'amount': amount,
+        'periodicity': periodicity.value,
+        'note': note,
+        'expenseDate': _dateOnly(expenseDate),
+        'marketNumber': marketNumber,
+        'paymentMethod': paymentMethod.value,
+        'status': status.value,
+      },
+    ) as Map<String, dynamic>;
+    return Expense.fromJson(json);
+  }
+
   /// Suggestion éditable pour le prochain N° de marché — jamais imposée côté serveur.
   Future<int> nextMarketNumber() async {
     final json =

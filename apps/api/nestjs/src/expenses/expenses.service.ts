@@ -147,6 +147,13 @@ export class ExpensesService {
         'Cette dépense provient d\'un paiement de salaires — elle ne peut être modifiée que depuis l\'onglet Salaires.',
       );
     }
+    // Même garde qu'à la création : on ne doit pas pouvoir « fabriquer » une
+    // dépense Salaires en renommant la nature d'une dépense manuelle.
+    if (dto.category === 'Salaires') {
+      throw new BadRequestException(
+        'La nature "Salaires" est réservée aux paiements de paie — utilisez l\'onglet Salaires pour payer les employés.',
+      );
+    }
     return this.prisma.expense.update({
       where: { id: expenseId },
       data: {
@@ -202,6 +209,7 @@ export class ExpensesService {
           marketNumber: true,
           paymentMethod: true,
           status: true,
+          createdAt: true,
         },
       }),
       this.prisma.expense.findMany({

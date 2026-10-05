@@ -93,6 +93,35 @@ describe('ExpensesService.update / remove', () => {
     expect(prisma.expense.delete).not.toHaveBeenCalled();
   });
 
+  it('rejects renaming a manual expense into the reserved "Salaires" nature', async () => {
+    (prisma.expense as any).findFirst.mockResolvedValue({ id: 'exp-1', payrollRunId: null });
+    await expect(service.update('est-1', 'exp-1', { category: 'Salaires' })).rejects.toBeInstanceOf(BadRequestException);
+    expect(prisma.expense.update).not.toHaveBeenCalled();
+  });
+
+  it('lets the whole manual expense be edited (label, amount, date, nature, note, market number)', async () => {
+    (prisma.expense as any).findFirst.mockResolvedValue({ id: 'exp-1', payrollRunId: null });
+    (prisma.expense as any).update.mockResolvedValue({ id: 'exp-1' });
+    await service.update('est-1', 'exp-1', {
+      label: 'Gaz',
+      amount: 12500,
+      expenseDate: '2026-10-02',
+      category: 'Bouteilles de gaz',
+      note: 'x',
+      marketNumber: undefined,
+    });
+    expect(prisma.expense.update).toHaveBeenCalledWith({
+      where: { id: 'exp-1' },
+      data: expect.objectContaining({
+        label: 'Gaz',
+        amount: 12500,
+        expenseDate: new Date('2026-10-02'),
+        category: 'Bouteilles de gaz',
+        note: 'x',
+      }),
+    });
+  });
+
   it('rejects updating a payroll-generated expense', async () => {
     (prisma.expense as any).findFirst.mockResolvedValue({ id: 'exp-1', payrollRunId: 'run-1' });
     await expect(service.update('est-1', 'exp-1', { amount: 1 })).rejects.toBeInstanceOf(BadRequestException);

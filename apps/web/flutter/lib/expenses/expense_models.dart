@@ -76,6 +76,7 @@ class Expense {
     this.paymentMethod = ExpensePaymentMethod.cash,
     this.status = ExpenseStatus.paid,
     this.payrollRunId,
+    this.createdAt,
   });
 
   final String id;
@@ -96,6 +97,10 @@ class Expense {
   /// Dépenses (voir docs/api/expenses.md).
   final String? payrollRunId;
 
+  /// Date et heure de SAISIE de la dépense (distincte de `expenseDate`, la date
+  /// de la dépense elle-même, éditable). Nulle si le serveur ne l'a pas fournie.
+  final DateTime? createdAt;
+
   bool get isFromPayroll => payrollRunId != null;
 
   factory Expense.fromJson(Map<String, dynamic> json) => Expense(
@@ -112,5 +117,8 @@ class Expense {
     ),
     status: ExpenseStatus.fromValue(json['status'] as String?),
     payrollRunId: json['payrollRunId'] as String?,
+    createdAt: json['createdAt'] == null
+        ? null
+        : DateTime.parse(json['createdAt'] as String),
   );
 }

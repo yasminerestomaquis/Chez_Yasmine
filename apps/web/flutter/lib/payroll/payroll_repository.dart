@@ -45,6 +45,22 @@ class PayrollRepository {
     return PayrollRun.fromJson(json);
   }
 
+  /// Corrige la période d'une paie non annulée — pour une paie déjà payée, la
+  /// date de la dépense « Salaires » liée suit la fin de période (serveur).
+  Future<void> updateRun(
+    String runId, {
+    required DateTime periodStart,
+    required DateTime periodEnd,
+  }) {
+    return _api.patch(
+      '$_base/runs/$runId',
+      body: {
+        'periodStart': _dateOnly(periodStart),
+        'periodEnd': _dateOnly(periodEnd),
+      },
+    );
+  }
+
   Future<void> updateLine(
     String runId,
     String lineId, {

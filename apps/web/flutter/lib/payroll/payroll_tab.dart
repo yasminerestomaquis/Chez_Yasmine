@@ -7,6 +7,7 @@ import '../theme/app_theme.dart';
 import 'employee_form_dialog.dart';
 import 'employee_models.dart';
 import 'employees_repository.dart';
+import 'payroll_history_page.dart';
 import 'payroll_models.dart';
 import 'payroll_repository.dart';
 import 'payroll_run_page.dart';
@@ -187,6 +188,16 @@ class _PayrollTabState extends State<PayrollTab>
     _reload();
   }
 
+  Future<void> _openPayrollHistory() async {
+    await Navigator.of(context).push(
+      MaterialPageRoute(
+        builder: (_) =>
+            PayrollHistoryPage(establishmentId: widget.establishmentId),
+      ),
+    );
+    _reload();
+  }
+
   @override
   Widget build(BuildContext context) {
     return FutureBuilder<(PayrollDashboard, List<Employee>)>(
@@ -258,6 +269,12 @@ class _PayrollTabState extends State<PayrollTab>
                     ),
                   ),
                 ],
+              ),
+              const SizedBox(height: 12),
+              OutlinedButton.icon(
+                onPressed: _openPayrollHistory,
+                icon: const Icon(Icons.history),
+                label: const Text('Historique des paies'),
               ),
               const SizedBox(height: 16),
               if (employees.isEmpty)

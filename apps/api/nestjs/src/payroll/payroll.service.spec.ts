@@ -1,4 +1,4 @@
-import { BadRequestException } from '@nestjs/common';
+import { BadRequestException, NotFoundException } from '@nestjs/common';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import type { PrismaService } from '../prisma/prisma.service.js';
 import type { ActivityNotifierService } from '../notifications/activity-notifier.service.js';
@@ -10,8 +10,8 @@ function makePrismaMock() {
   return {
     employee: { findMany: vi.fn() },
     payrollRun: { create: vi.fn(), findFirst: vi.fn(), findMany: vi.fn(), update: vi.fn() },
-    payrollLine: { update: vi.fn(), findFirst: vi.fn() },
-    expense: { create: vi.fn(), findFirst: vi.fn() },
+    payrollLine: { update: vi.fn(), findFirst: vi.fn(), findMany: vi.fn() },
+    expense: { create: vi.fn(), findFirst: vi.fn(), update: vi.fn() },
     $transaction: vi.fn((fn: any) => (typeof fn === 'function' ? fn(makePrismaMock()) : Promise.all(fn))),
   };
 }
@@ -70,14 +70,122 @@ describe('PayrollService.updateLine', () => {
     });
   });
 
-  it('rejects editing a line on a run that is not "prepared"', async () => {
+  it('allows editing a line on a validated run (historique des paies)', async () => {
     (prisma.payrollLine as any).findFirst.mockResolvedValue({
       id: 'line-1',
       baseSalary: { toNumber: () => 30000 },
       payrollRun: { id: 'run-1', establishmentId: 'est-1', status: 'validated' },
     });
+    await service.updateLine('est-1', 'run-1', 'line-1', { advance: 1000, adjustment: 0 });
+    expect(prisma.payrollLine.update).toHaveBeenCalledWith({
+      where: { id: 'line-1' },
+      data: { advance: 1000, adjustment: 0, netAmount: 29000 },
+    });
+    expect(prisma.$transaction).not.toHaveBeenCalled();
+  });
+
+  it('rejects editing a line on a cancelled run', async () => {
+    (prisma.payrollLine as any).findFirst.mockResolvedValue({
+      id: 'line-1',
+      baseSalary: { toNumber: () => 30000 },
+      payrollRun: { id: 'run-1', establishmentId: 'est-1', status: 'cancelled' },
+    });
     await expect(service.updateLine('est-1', 'run-1', 'line-1', { advance: 0, adjustment: 0 })).rejects.toBeInstanceOf(
       BadRequestException,
+    );
+    expect(prisma.payrollLine.update).not.toHaveBeenCalled();
+  });
+
+  it('on a PAID run, updates the line and the linked "Salaires" expense total in one transaction', async () => {
+    (prisma.payrollLine as any).findFirst.mockResolvedValue({
+      id: 'line-1',
+      baseSalary: { toNumber: () => 30000 },
+      payrollRun: { id: 'run-1', establishmentId: 'est-1', status: 'paid' },
+    });
+    const tx = makePrismaMock();
+    (tx.payrollLine as any).findMany.mockResolvedValue([
+      { netAmount: { toNumber: () => 28000 } },
+      { netAmount: { toNumber: () => 25000 } },
+    ]);
+    (prisma.$transaction as any).mockImplementation((fn: any) => fn(tx));
+
+    await service.updateLine('est-1', 'run-1', 'line-1', { advance: 2000, adjustment: 0 });
+
+    expect(prisma.$transaction).toHaveBeenCalledTimes(1);
+    expect(prisma.payrollLine.update).not.toHaveBeenCalled();
+    expect(tx.payrollLine.update).toHaveBeenCalledWith({
+      where: { id: 'line-1' },
+      data: { advance: 2000, adjustment: 0, netAmount: 28000 },
+    });
+    expect(tx.expense.update).toHaveBeenCalledWith({ where: { payrollRunId: 'run-1' }, data: { amount: 53000 } });
+  });
+});
+
+describe('PayrollService.updateRun (période)', () => {
+  let prisma: ReturnType<typeof makePrismaMock>;
+  let service: PayrollService;
+
+  beforeEach(() => {
+    prisma = makePrismaMock();
+    service = new PayrollService(prisma as unknown as PrismaService, activityNotifierMock);
+  });
+
+  const run = (status: string) => ({
+    id: 'run-1',
+    establishmentId: 'est-1',
+    status,
+    periodStart: new Date('2026-09-07'),
+    periodEnd: new Date('2026-09-13'),
+    lines: [],
+  });
+
+  it('updates the period of a prepared run without touching expenses', async () => {
+    (prisma.payrollRun as any).findFirst.mockResolvedValue(run('prepared'));
+    await service.updateRun('est-1', 'run-1', { periodStart: '2026-09-14', periodEnd: '2026-09-20' });
+    expect(prisma.payrollRun.update).toHaveBeenCalledWith({
+      where: { id: 'run-1' },
+      data: { periodStart: new Date('2026-09-14'), periodEnd: new Date('2026-09-20') },
+    });
+    expect(prisma.expense.update).not.toHaveBeenCalled();
+    expect(prisma.$transaction).not.toHaveBeenCalled();
+  });
+
+  it('keeps the other bound when only one is given', async () => {
+    (prisma.payrollRun as any).findFirst.mockResolvedValue(run('validated'));
+    await service.updateRun('est-1', 'run-1', { periodEnd: '2026-09-15' });
+    expect(prisma.payrollRun.update).toHaveBeenCalledWith({
+      where: { id: 'run-1' },
+      data: { periodStart: new Date('2026-09-07'), periodEnd: new Date('2026-09-15') },
+    });
+  });
+
+  it('on a PAID run, moves the linked expense date to the new period end, in one transaction', async () => {
+    (prisma.payrollRun as any).findFirst.mockResolvedValue(run('paid'));
+    (prisma.$transaction as any).mockImplementation((ops: any[]) => Promise.all(ops));
+    await service.updateRun('est-1', 'run-1', { periodStart: '2026-09-14', periodEnd: '2026-09-20' });
+    expect(prisma.$transaction).toHaveBeenCalledTimes(1);
+    expect(prisma.expense.update).toHaveBeenCalledWith({
+      where: { payrollRunId: 'run-1' },
+      data: { expenseDate: new Date('2026-09-20') },
+    });
+  });
+
+  it('rejects a period that ends before it starts', async () => {
+    (prisma.payrollRun as any).findFirst.mockResolvedValue(run('prepared'));
+    await expect(
+      service.updateRun('est-1', 'run-1', { periodStart: '2026-09-20', periodEnd: '2026-09-14' }),
+    ).rejects.toBeInstanceOf(BadRequestException);
+    expect(prisma.payrollRun.update).not.toHaveBeenCalled();
+  });
+
+  it('rejects a cancelled run and an unknown run', async () => {
+    (prisma.payrollRun as any).findFirst.mockResolvedValue(run('cancelled'));
+    await expect(service.updateRun('est-1', 'run-1', { periodEnd: '2026-09-15' })).rejects.toBeInstanceOf(
+      BadRequestException,
+    );
+    (prisma.payrollRun as any).findFirst.mockResolvedValue(null);
+    await expect(service.updateRun('est-1', 'run-x', { periodEnd: '2026-09-15' })).rejects.toBeInstanceOf(
+      NotFoundException,
     );
   });
 });

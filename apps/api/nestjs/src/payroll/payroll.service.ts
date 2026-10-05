@@ -1,7 +1,7 @@
 import { BadRequestException, Injectable, NotFoundException } from '@nestjs/common';
 import { PrismaService } from '../prisma/prisma.service.js';
 import { ActivityNotifierService } from '../notifications/activity-notifier.service.js';
-import type { PreparePayrollRunDto, UpdatePayrollLineDto } from './dto/payroll.dto.js';
+import type { PreparePayrollRunDto, UpdatePayrollLineDto, UpdatePayrollRunDto } from './dto/payroll.dto.js';
 
 @Injectable()
 export class PayrollService {
@@ -13,8 +13,13 @@ export class PayrollService {
   list(establishmentId: string) {
     return this.prisma.payrollRun.findMany({
       where: { establishmentId },
-      include: { lines: { include: { employee: { select: { id: true, lastName: true, firstName: true } } } } },
-      orderBy: { periodStart: 'desc' },
+      // `expense` : la dépense « Salaires » générée au paiement (null tant que la
+      // paie n'est pas payée) — l'historique des paies affiche sa date de saisie.
+      include: {
+        lines: { include: { employee: { select: { id: true, lastName: true, firstName: true } } } },
+        expense: { select: { id: true, amount: true, expenseDate: true, createdAt: true } },
+      },
+      orderBy: [{ periodStart: 'desc' }, { createdAt: 'desc' }],
     });
   }
 
@@ -58,8 +63,10 @@ export class PayrollService {
     if (!line || line.payrollRun.establishmentId !== establishmentId) {
       throw new NotFoundException('Ligne de paie introuvable pour cet établissement');
     }
-    if (line.payrollRun.status !== 'prepared') {
-      throw new BadRequestException('Cette paie n\'est plus modifiable (déjà validée, payée ou annulée)');
+    // Historique des paies (demande du 2026-10-05) : une paie préparée, validée
+    // OU déjà payée reste corrigeable ; seule une paie annulée est figée.
+    if (line.payrollRun.status === 'cancelled') {
+      throw new BadRequestException('Cette paie est annulée : elle n\'est plus modifiable');
     }
     return line;
   }
@@ -67,10 +74,49 @@ export class PayrollService {
   async updateLine(establishmentId: string, payrollRunId: string, lineId: string, dto: UpdatePayrollLineDto) {
     const line = await this.getEditableLine(establishmentId, payrollRunId, lineId);
     const netAmount = line.baseSalary.toNumber() - dto.advance + dto.adjustment;
-    await this.prisma.payrollLine.update({
-      where: { id: lineId },
-      data: { advance: dto.advance, adjustment: dto.adjustment, netAmount },
+    const data = { advance: dto.advance, adjustment: dto.adjustment, netAmount };
+    if (line.payrollRun.status !== 'paid') {
+      await this.prisma.payrollLine.update({ where: { id: lineId }, data });
+      return;
+    }
+    // Paie déjà payée : la dépense « Salaires » générée au paiement doit suivre
+    // le nouveau total, dans la même transaction — sinon les totaux de l'onglet
+    // Dépenses (Vue d'ensemble, Historique) divergeraient de la paie.
+    await this.prisma.$transaction(async (tx) => {
+      await tx.payrollLine.update({ where: { id: lineId }, data });
+      const lines = await tx.payrollLine.findMany({ where: { payrollRunId }, select: { netAmount: true } });
+      const total = lines.reduce((sum, l) => sum + l.netAmount.toNumber(), 0);
+      await tx.expense.update({ where: { payrollRunId }, data: { amount: total } });
     });
+  }
+
+  /**
+   * Corrige la période d'une paie (« Du … au … »). Pour une paie déjà payée, la
+   * date de la dépense « Salaires » liée suit la fin de période (c'est la règle
+   * posée par `pay()`), dans la même transaction.
+   */
+  async updateRun(establishmentId: string, payrollRunId: string, dto: UpdatePayrollRunDto) {
+    const run = await this.getRun(establishmentId, payrollRunId);
+    if (run.status === 'cancelled') {
+      throw new BadRequestException('Cette paie est annulée : elle n\'est plus modifiable');
+    }
+    const periodStart = dto.periodStart ? new Date(dto.periodStart) : run.periodStart;
+    const periodEnd = dto.periodEnd ? new Date(dto.periodEnd) : run.periodEnd;
+    if (periodEnd.getTime() < periodStart.getTime()) {
+      throw new BadRequestException('La fin de période ne peut pas précéder le début');
+    }
+    const update = this.prisma.payrollRun.update({
+      where: { id: payrollRunId },
+      data: { periodStart, periodEnd },
+    });
+    if (run.status !== 'paid') {
+      await update;
+      return;
+    }
+    await this.prisma.$transaction([
+      update,
+      this.prisma.expense.update({ where: { payrollRunId }, data: { expenseDate: periodEnd } }),
+    ]);
   }
 
   private async getRun(establishmentId: string, payrollRunId: string) {

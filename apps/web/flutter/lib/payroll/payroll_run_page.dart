@@ -3,6 +3,7 @@ import 'package:intl/intl.dart';
 
 import '../api/api_client.dart';
 import '../common/formatting.dart';
+import 'payroll_dialogs.dart';
 import 'payroll_models.dart';
 import 'payroll_repository.dart';
 
@@ -64,80 +65,37 @@ class _PayrollRunPageState extends State<PayrollRunPage> {
   }
 
   Future<void> _editLine(PayrollRun run, PayrollLine line) async {
-    final advanceController = TextEditingController(
-      text: line.advance.toStringAsFixed(0),
-    );
-    final adjustmentController = TextEditingController(
-      text: line.adjustment.toStringAsFixed(0),
-    );
-    final formKey = GlobalKey<FormState>();
-    // Une saisie non numérique doit bloquer l'enregistrement plutôt que de
-    // silencieusement écraser l'avance/l'ajustement existant par 0 — même
-    // niveau de rigueur que employee_form_dialog.dart.
-    String? validateAmount(String? v) {
-      final value = double.tryParse((v ?? '').trim().replaceAll(',', '.'));
-      return value == null ? 'Montant invalide' : null;
-    }
-
-    final saved = await showDialog<bool>(
-      context: context,
-      builder: (context) => AlertDialog(
-        title: Text(line.employeeName),
-        content: Form(
-          key: formKey,
-          child: Column(
-            mainAxisSize: MainAxisSize.min,
-            children: [
-              TextFormField(
-                controller: advanceController,
-                keyboardType: const TextInputType.numberWithOptions(
-                  decimal: true,
-                ),
-                decoration: const InputDecoration(labelText: 'Avance'),
-                validator: validateAmount,
-              ),
-              TextFormField(
-                controller: adjustmentController,
-                keyboardType: const TextInputType.numberWithOptions(
-                  decimal: true,
-                  signed: true,
-                ),
-                decoration: const InputDecoration(
-                  labelText: 'Prime (+) / Retenue (-)',
-                ),
-                validator: validateAmount,
-              ),
-            ],
-          ),
-        ),
-        actions: [
-          TextButton(
-            onPressed: () => Navigator.of(context).pop(false),
-            child: const Text('Annuler'),
-          ),
-          FilledButton(
-            onPressed: () {
-              if (!formKey.currentState!.validate()) return;
-              Navigator.of(context).pop(true);
-            },
-            child: const Text('Enregistrer'),
-          ),
-        ],
-      ),
-    );
-    if (saved != true) return;
+    final values = await showPayrollLineDialog(context, line);
+    if (values == null) return;
     if (_isBusy) return;
     setState(() => _isBusy = true);
     try {
       await _repository.updateLine(
         run.id,
         line.id,
-        advance: double.parse(
-          advanceController.text.trim().replaceAll(',', '.'),
-        ),
-        adjustment: double.parse(
-          adjustmentController.text.trim().replaceAll(',', '.'),
-        ),
+        advance: values.advance,
+        adjustment: values.adjustment,
+      );
+      await _reload();
+    } on ApiException catch (e) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(context)
+          .showSnackBar(SnackBar(content: Text(e.message)));
+    } finally {
+      if (mounted) setState(() => _isBusy = false);
+    }
+  }
+
+  Future<void> _editPeriod(PayrollRun run) async {
+    final period = await showPayrollPeriodDialog(context, run);
+    if (period == null) return;
+    if (_isBusy) return;
+    setState(() => _isBusy = true);
+    try {
+      await _repository.updateRun(
+        run.id,
+        periodStart: period.start,
+        periodEnd: period.end,
       );
       await _reload();
     } on ApiException catch (e) {
@@ -215,14 +173,6 @@ class _PayrollRunPageState extends State<PayrollRunPage> {
     }
   }
 
-  String _statusLabel(String status) => switch (status) {
-    'prepared' => 'Préparée',
-    'validated' => 'Validée',
-    'paid' => 'Payée',
-    'cancelled' => 'Annulée',
-    _ => status,
-  };
-
   /// Vrai si une paie non annulée de la semaine en cours existe déjà — le
   /// backend n'a aucune contrainte d'unicité de période (voir
   /// PayrollService.prepare), donc c'est la seule protection contre un
@@ -296,7 +246,16 @@ class _PayrollRunPageState extends State<PayrollRunPage> {
                                 ),
                               ),
                             ),
-                            Chip(label: Text(_statusLabel(run.status))),
+                            if (run.status == 'prepared' ||
+                                run.status == 'validated')
+                              IconButton(
+                                tooltip: 'Modifier la période',
+                                icon: const Icon(Icons.edit_calendar_outlined),
+                                onPressed: _isBusy
+                                    ? null
+                                    : () => _editPeriod(run),
+                              ),
+                            Chip(label: Text(payrollStatusLabel(run.status))),
                           ],
                         ),
                         for (final line in run.lines)
@@ -312,7 +271,7 @@ class _PayrollRunPageState extends State<PayrollRunPage> {
                                 fontWeight: FontWeight.w600,
                               ),
                             ),
-                            onTap: (run.status == 'prepared' && !_isBusy)
+                            onTap: (run.status != 'cancelled' && run.status != 'paid' && !_isBusy)
                                 ? () => _editLine(run, line)
                                 : null,
                           ),

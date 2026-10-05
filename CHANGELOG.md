@@ -2,6 +2,12 @@
 
 ## [Unreleased]
 
+### Ajouté (2026-10-05) — Dépenses : date de saisie, modification ; Salaires : historique et correction des paies
+- **Dépenses → sous-module Dépenses** : chaque dépense affiche sa **date de saisie** (« Saisie le jj/mm/aaaa à hh:mm ») et peut être **modifiée** (bouton crayon, formulaire de création pré-rempli ; statut « Annulée » réactivable). Les dépenses issues d'une paie restent non modifiables ici. Le serveur refuse en outre de renommer une dépense manuelle en nature « Salaires ». La modification exige une connexion (pas de file hors ligne).
+- **Salaires → Historique des paies** (nouveau bouton) : toutes les paies, avec **le nom de chaque employé** et sa ligne (base, avance, ajustement, net), les dates de préparation/paiement et le total.
+- **Salaires → modifier une paie** : nouvelle route `PATCH /establishments/:id/payroll/runs/:runId` pour corriger la **période** ; l'avance/prime de chaque employé reste modifiable. Ces corrections sont maintenant possibles sur toute paie **non annulée**, y compris **déjà payée** (avant : figée dès la validation) ; pour une paie payée, la dépense « Salaires » liée suit dans la même transaction (montant = nouveau total, date = nouvelle fin de période). Détails : `docs/api/expenses.md`.
+- Tests : 9 tests NestJS (période, ligne d'une paie payée, garde « Salaires »…), 6 tests Flutter (date de saisie, modification, historique, dialogues). Aucune migration de base.
+
 ### Corrigé (2026-10-04) — Barre « En ligne / Hors ligne » disparue
 Régression introduite par la correction de la première ouverture (même jour) : l'accueil affichant maintenant le tableau de bord dès la copie locale du profil, `HomeDashboard.initState` écrivait l'établissement courant (`GlobalSyncContext`) pendant le build, dans une frame où le `ValueListenableBuilder` de `main.dart` — son ancêtre, qui monte la barre de synchronisation — était lui-même en construction. Flutter interdit cette écriture (exception en debug, notification perdue en production) : la barre ne s'affichait plus. L'écriture est maintenant différée après la frame (comme `auth_gate.dart` le faisait déjà pour la déconnexion). Le montage de la barre est extrait en `withSyncStatusBar` (`main.dart`) pour que les tests exercent le vrai code ; 2 tests de non-régression (`sync_bar_visibility_test.dart` : un seul établissement ; plusieurs établissements, sélecteur puis choix).
 

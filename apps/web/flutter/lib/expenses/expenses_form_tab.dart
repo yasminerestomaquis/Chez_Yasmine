@@ -44,18 +44,36 @@ class _ExpensesFormTabState extends State<ExpensesFormTab>
 
   void _reload() => setState(() => _future = _repository.listExpenses());
 
-  Future<void> _addExpense() async {
-    final labelController = TextEditingController();
+  Future<void> _addExpense() => _openExpenseDialog();
+
+  static String _amountText(double amount) =>
+      amount == amount.roundToDouble() ? amount.toStringAsFixed(0) : '$amount';
+
+  /// Création (`initial == null`) ou modification d'une dépense existante :
+  /// même formulaire, pré-rempli en modification (demande du 2026-10-05).
+  Future<void> _openExpenseDialog({Expense? initial}) async {
+    final editing = initial != null;
+    final labelController = TextEditingController(text: initial?.label);
     final customCategoryController = TextEditingController();
-    final amountController = TextEditingController();
-    final noteController = TextEditingController();
-    final marketNumberController = TextEditingController();
+    final amountController = TextEditingController(
+      text: initial == null ? null : _amountText(initial.amount),
+    );
+    final noteController = TextEditingController(text: initial?.note);
+    final marketNumberController = TextEditingController(
+      text: initial?.marketNumber?.toString(),
+    );
     final formKey = GlobalKey<FormState>();
     String? selectedCategory;
-    var periodicity = ExpensePeriodicity.oneOff;
-    var expenseDate = DateTime.now();
-    var paymentMethod = ExpensePaymentMethod.cash;
-    var status = ExpenseStatus.paid;
+    var periodicity = initial?.periodicity ?? ExpensePeriodicity.oneOff;
+    var expenseDate = initial == null
+        ? DateTime.now()
+        : DateTime(
+            initial.expenseDate.year,
+            initial.expenseDate.month,
+            initial.expenseDate.day,
+          );
+    var paymentMethod = initial?.paymentMethod ?? ExpensePaymentMethod.cash;
+    var status = initial?.status ?? ExpenseStatus.paid;
     final dateFieldFormat = DateFormat('dd/MM/yyyy');
     // "Salaires" est réservée aux paiements de paie (onglet Salaires) : son
     // montant ne doit jamais être saisi à la main — voir
@@ -64,13 +82,24 @@ class _ExpensesFormTabState extends State<ExpensesFormTab>
     final manualCategories = kPredefinedExpenseCategories
         .where((c) => c != 'Salaires')
         .toList();
+    // Nature saisie librement à la création : en modification, elle est
+    // retrouvée sous « Autre… » avec son texte.
+    final initialCategory = initial?.category?.trim();
+    if (initialCategory != null && initialCategory.isNotEmpty) {
+      if (manualCategories.contains(initialCategory)) {
+        selectedCategory = initialCategory;
+      } else {
+        selectedCategory = _otherCategoryValue;
+        customCategoryController.text = initialCategory;
+      }
+    }
 
     final saved = await showDialog<bool>(
       context: context,
       builder: (context) => StatefulBuilder(
         builder: (context, setDialogState) {
           return AlertDialog(
-            title: const Text('Nouvelle dépense'),
+            title: Text(editing ? 'Modifier la dépense' : 'Nouvelle dépense'),
             content: Form(
               key: formKey,
               child: SingleChildScrollView(
@@ -185,15 +214,23 @@ class _ExpensesFormTabState extends State<ExpensesFormTab>
                     Align(
                       alignment: Alignment.centerLeft,
                       child: SegmentedButton<ExpenseStatus>(
-                        segments: const [
-                          ButtonSegment(
+                        segments: [
+                          const ButtonSegment(
                             value: ExpenseStatus.paid,
                             label: Text('Payée'),
                           ),
-                          ButtonSegment(
+                          const ButtonSegment(
                             value: ExpenseStatus.pending,
                             label: Text('En attente'),
                           ),
+                          // « Annulée » ne se choisit jamais à la création ;
+                          // en modification elle permet de réactiver (ou de
+                          // garder) une dépense annulée.
+                          if (editing)
+                            const ButtonSegment(
+                              value: ExpenseStatus.cancelled,
+                              label: Text('Annulée'),
+                            ),
                         ],
                         selected: {status},
                         onSelectionChanged: (selection) =>
@@ -252,7 +289,7 @@ class _ExpensesFormTabState extends State<ExpensesFormTab>
     final category = selectedCategory == _otherCategoryValue
         ? customCategoryController.text.trim()
         : selectedCategory;
-    final expenseId = const Uuid().v4();
+    final expenseId = initial?.id ?? const Uuid().v4();
     final label = labelController.text.trim();
     final amount = double.parse(
       amountController.text.trim().replaceAll(',', '.'),
@@ -261,6 +298,40 @@ class _ExpensesFormTabState extends State<ExpensesFormTab>
     final marketNumber = category == 'Marché'
         ? int.tryParse(marketNumberController.text.trim())
         : null;
+
+    if (initial != null) {
+      // Modification : exige le serveur (pas de file hors ligne — corriger une
+      // dépense déjà enregistrée n'a de sens que contre l'état réel du serveur).
+      try {
+        await _repository.updateExpense(
+          initial.id,
+          label: label,
+          category: category?.isEmpty == true ? null : category,
+          amount: amount,
+          periodicity: periodicity,
+          note: note.isEmpty ? null : note,
+          expenseDate: expenseDate,
+          marketNumber: marketNumber,
+          paymentMethod: paymentMethod,
+          status: status,
+        );
+        _reload();
+      } on ApiException catch (e) {
+        if (!mounted) return;
+        ScaffoldMessenger.of(context)
+            .showSnackBar(SnackBar(content: Text(e.message)));
+      } catch (_) {
+        if (!mounted) return;
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(
+            content: Text(
+              'Impossible de modifier la dépense : connexion au serveur requise.',
+            ),
+          ),
+        );
+      }
+      return;
+    }
 
     try {
       await _repository.createExpense(
@@ -352,6 +423,7 @@ class _ExpensesFormTabState extends State<ExpensesFormTab>
   @override
   Widget build(BuildContext context) {
     final dateFormat = DateFormat('dd/MM/yyyy');
+    final enteredFormat = DateFormat('dd/MM/yyyy à HH:mm');
     return Stack(
       children: [
         Column(
@@ -399,13 +471,17 @@ class _ExpensesFormTabState extends State<ExpensesFormTab>
                           children: [
                             for (final expense in expenses)
                               ListTile(
+                                isThreeLine: expense.createdAt != null,
                                 title: Text(expense.label),
                                 subtitle: Text(
                                   '${expense.category != null && expense.category!.isNotEmpty ? '${expense.category}' : ''}'
                                   '${expense.marketNumber != null ? ' n°${expense.marketNumber}' : ''}'
                                   '${expense.category != null && expense.category!.isNotEmpty ? ' — ' : ''}'
                                   '${dateFormat.format(expense.expenseDate.toLocal())} · ${expense.periodicity.label}'
-                                  '${expense.status != ExpenseStatus.paid ? ' · ${expense.status.label}' : ''}',
+                                  '${expense.status != ExpenseStatus.paid ? ' · ${expense.status.label}' : ''}'
+                                  // Date de SAISIE (heure d'enregistrement), à
+                                  // ne pas confondre avec la date de la dépense.
+                                  '${expense.createdAt != null ? '\nSaisie le ${enteredFormat.format(expense.createdAt!.toLocal())}' : ''}',
                                 ),
                                 trailing: Row(
                                   mainAxisSize: MainAxisSize.min,
@@ -418,6 +494,14 @@ class _ExpensesFormTabState extends State<ExpensesFormTab>
                                     // supprimée ici : elle doit rester
                                     // cohérente avec son PayrollRun (voir
                                     // docs/api/expenses.md).
+                                    if (!expense.isFromPayroll)
+                                      IconButton(
+                                        tooltip: 'Modifier',
+                                        icon: const Icon(Icons.edit_outlined),
+                                        onPressed: () => _openExpenseDialog(
+                                          initial: expense,
+                                        ),
+                                      ),
                                     if (!expense.isFromPayroll &&
                                         expense.status !=
                                             ExpenseStatus.cancelled)
