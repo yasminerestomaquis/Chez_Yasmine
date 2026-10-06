@@ -17,6 +17,13 @@ class EmployeesRepository {
         .toList();
   }
 
+  /// Postes proposés à la création d'un employé : les noms des rôles de
+  /// l'application (`GET .../employees/positions`).
+  Future<List<String>> listPositions() async {
+    final json = await _api.get('$_base/positions') as List<dynamic>;
+    return json.map((e) => e as String).toList();
+  }
+
   String _dateOnly(DateTime date) =>
       '${date.year.toString().padLeft(4, '0')}-${date.month.toString().padLeft(2, '0')}-${date.day.toString().padLeft(2, '0')}';
 
@@ -31,6 +38,7 @@ class EmployeesRepository {
     required DateTime hireDate,
     String? contractType,
     required double weeklySalary,
+    String salaryType = 'weekly',
     String? team,
     String? registrationNumber,
     String? notes,
@@ -48,6 +56,7 @@ class EmployeesRepository {
         'hireDate': _dateOnly(hireDate),
         'contractType': ?contractType,
         'weeklySalary': weeklySalary,
+        'salaryType': salaryType,
         'team': ?team,
         'registrationNumber': ?registrationNumber,
         'notes': ?notes,

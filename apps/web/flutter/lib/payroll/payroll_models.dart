@@ -59,6 +59,7 @@ class PayrollRun {
     required this.periodEnd,
     required this.status,
     required this.lines,
+    this.periodType = 'weekly',
     this.createdAt,
     this.paidAt,
     this.expenseDate,
@@ -68,6 +69,10 @@ class PayrollRun {
   final DateTime periodEnd;
   final String status;
   final List<PayrollLine> lines;
+
+  /// 'weekly' : employés payés à la semaine ; 'monthly' : employés payés au mois.
+  final String periodType;
+  bool get isMonthly => periodType == 'monthly';
 
   /// Préparation de la paie / paiement effectif / date de la dépense
   /// « Salaires » générée au paiement (nulle tant que la paie n'est pas payée).
@@ -88,6 +93,7 @@ class PayrollRun {
     lines: (json['lines'] as List<dynamic>)
         .map((e) => PayrollLine.fromJson(e as Map<String, dynamic>))
         .toList(),
+    periodType: json['periodType'] as String? ?? 'weekly',
     createdAt: _optionalDate(json['createdAt']),
     paidAt: _optionalDate(json['paidAt']),
     expenseDate: _optionalDate(

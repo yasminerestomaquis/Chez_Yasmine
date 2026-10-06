@@ -35,9 +35,10 @@ describe('PayrollService.prepare', () => {
     await service.prepare('est-1', 'user-1', { periodStart: '2026-09-07', periodEnd: '2026-09-13' });
 
     expect(prisma.employee.findMany).toHaveBeenCalledWith({
-      where: { establishmentId: 'est-1', status: 'active' },
+      where: { establishmentId: 'est-1', status: 'active', salaryType: 'weekly' },
       select: { id: true, weeklySalary: true },
     });
+    expect((prisma.payrollRun as any).create.mock.calls[0][0].data.periodType).toBe('weekly');
     const createCall = (prisma.payrollRun as any).create.mock.calls[0][0];
     expect(createCall.data.status).toBe('prepared');
     expect(createCall.data.preparedBy).toBe('user-1');
@@ -45,6 +46,55 @@ describe('PayrollService.prepare', () => {
       { employeeId: 'emp-1', baseSalary: 30000, advance: 0, adjustment: 0, netAmount: 30000 },
       { employeeId: 'emp-2', baseSalary: 25000, advance: 0, adjustment: 0, netAmount: 25000 },
     ]);
+  });
+});
+
+describe('PayrollService.prepare (semaine omise, paie mensuelle)', () => {
+  let prisma: ReturnType<typeof makePrismaMock>;
+  let service: PayrollService;
+
+  beforeEach(() => {
+    prisma = makePrismaMock();
+    service = new PayrollService(prisma as unknown as PrismaService, activityNotifierMock);
+    (prisma.payrollRun as any).create.mockImplementation(({ data }: any) => Promise.resolve({ id: 'run-1', ...data }));
+  });
+
+  it('a monthly run only takes the active employees paid monthly', async () => {
+    (prisma.employee as any).findMany.mockResolvedValue([{ id: 'emp-m', weeklySalary: { toNumber: () => 150000 } }]);
+    await service.prepare('est-1', 'user-1', { periodStart: '2026-09-01', periodEnd: '2026-09-30', periodType: 'monthly' });
+    expect((prisma.employee as any).findMany.mock.calls[0][0].where).toEqual({
+      establishmentId: 'est-1',
+      status: 'active',
+      salaryType: 'monthly',
+    });
+    const data = (prisma.payrollRun as any).create.mock.calls[0][0].data;
+    expect(data.periodType).toBe('monthly');
+    expect(data.lines.create).toEqual([
+      { employeeId: 'emp-m', baseSalary: 150000, advance: 0, adjustment: 0, netAmount: 150000 },
+    ]);
+  });
+
+  it('a past (omitted) week can be prepared', async () => {
+    (prisma.employee as any).findMany.mockResolvedValue([]);
+    await service.prepare('est-1', 'user-1', { periodStart: '2026-08-17', periodEnd: '2026-08-23' });
+    expect((prisma.payrollRun as any).findFirst).toHaveBeenCalledWith({
+      where: {
+        establishmentId: 'est-1',
+        periodType: 'weekly',
+        periodStart: new Date('2026-08-17'),
+        status: { not: 'cancelled' },
+      },
+      select: { id: true },
+    });
+    expect((prisma.payrollRun as any).create).toHaveBeenCalledTimes(1);
+  });
+
+  it('refuses a second non-cancelled run for the same period start and type', async () => {
+    (prisma.payrollRun as any).findFirst.mockResolvedValue({ id: 'existing' });
+    await expect(
+      service.prepare('est-1', 'user-1', { periodStart: '2026-08-17', periodEnd: '2026-08-23' }),
+    ).rejects.toThrow(BadRequestException);
+    expect((prisma.payrollRun as any).create).not.toHaveBeenCalled();
   });
 });
 
@@ -129,9 +179,15 @@ describe('PayrollService.addLine / removeLine (employés de la paie)', () => {
     id: 'run-1',
     establishmentId: 'est-1',
     status,
+    periodType: 'weekly',
     lines: employeeIds.map((employeeId) => ({ employeeId })),
   });
-  const employee = (status = 'active') => ({ id: 'emp-2', status, weeklySalary: { toNumber: () => 20000 } });
+  const employee = (status = 'active', salaryType = 'weekly') => ({
+    id: 'emp-2',
+    status,
+    salaryType,
+    weeklySalary: { toNumber: () => 20000 },
+  });
 
   beforeEach(() => {
     prisma = makePrismaMock();
@@ -165,6 +221,16 @@ describe('PayrollService.addLine / removeLine (employés de la paie)', () => {
     (prisma.payrollRun as any).findFirst.mockResolvedValue(run('prepared', ['emp-1', 'emp-2']));
     (prisma.employee as any).findFirst.mockResolvedValue(employee());
     await expect(service.addLine('est-1', 'run-1', { employeeId: 'emp-2' })).rejects.toThrow('déjà');
+    expect(prisma.payrollLine.create).not.toHaveBeenCalled();
+  });
+
+  it('addLine refuses an employee whose salary type differs from the run period type', async () => {
+    (prisma.payrollRun as any).findFirst.mockResolvedValue(run('prepared'));
+    (prisma.employee as any).findFirst.mockResolvedValue(employee('active', 'monthly'));
+    await expect(service.addLine('est-1', 'run-1', { employeeId: 'emp-2' })).rejects.toThrow('payé au mois');
+    (prisma.payrollRun as any).findFirst.mockResolvedValue({ ...run('prepared'), periodType: 'monthly' });
+    (prisma.employee as any).findFirst.mockResolvedValue(employee('active', 'weekly'));
+    await expect(service.addLine('est-1', 'run-1', { employeeId: 'emp-2' })).rejects.toThrow('payé à la semaine');
     expect(prisma.payrollLine.create).not.toHaveBeenCalled();
   });
 

@@ -85,12 +85,18 @@ class _PayrollHistoryPageState extends State<PayrollHistoryPage> {
     if (!mounted) return;
     final onRun = run.lines.map((l) => l.employeeId).toSet();
     final candidates = employees
-        .where((e) => e.isActive && !onRun.contains(e.id))
+        .where(
+          (e) =>
+              e.isActive &&
+              e.salaryType == run.periodType &&
+              !onRun.contains(e.id),
+        )
         .toList();
     final employee = await showAddPayrollEmployeeDialog(
       context,
       candidates,
       paid: run.status == 'paid',
+      monthly: run.isMonthly,
     );
     if (employee == null || _isBusy) return;
     setState(() => _isBusy = true);
@@ -299,6 +305,11 @@ class _PayrollHistoryPageState extends State<PayrollHistoryPage> {
                             Chip(label: Text(payrollStatusLabel(run.status))),
                           ],
                         ),
+                        if (run.isMonthly)
+                          const Text(
+                            'Paie mensuelle (employés payés au mois)',
+                            style: TextStyle(fontSize: 12),
+                          ),
                         if (run.createdAt != null)
                           Text(
                             'Préparée le ${dateTimeFormat.format(run.createdAt!.toLocal())}',

@@ -16,6 +16,12 @@ export class EmployeesController {
     return this.employees.list(establishmentId);
   }
 
+  @Get('positions')
+  @RequirePermissions('payroll.view')
+  listPositions(@Param('establishmentId') establishmentId: string) {
+    return this.employees.listPositions(establishmentId);
+  }
+
   @Post()
   @RequirePermissions('payroll.manage')
   create(@Param('establishmentId') establishmentId: string, @Body() dto: CreateEmployeeDto) {

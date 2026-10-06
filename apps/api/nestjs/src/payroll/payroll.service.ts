@@ -53,10 +53,27 @@ export class PayrollService {
     });
   }
 
-  /** Une ligne par employé actif au moment de la préparation, `baseSalary` figé sur `Employee.weeklySalary` (un changement de salaire ultérieur ne réécrit jamais un bulletin déjà préparé). */
+  /**
+   * Une ligne par employé actif au moment de la préparation, `baseSalary` figé
+   * sur `Employee.weeklySalary` (un changement de salaire ultérieur ne réécrit
+   * jamais un bulletin déjà préparé).
+   *
+   * `periodType` ('weekly' par défaut, 'monthly') : une paie hebdomadaire ne
+   * reprend que les employés payés à la semaine, une paie mensuelle que ceux
+   * payés au mois. Une seule paie non annulée par type et par début de période
+   * (évite le doublon quand on prépare une semaine omise après coup).
+   */
   async prepare(establishmentId: string, userId: string, dto: PreparePayrollRunDto) {
+    const periodType = dto.periodType ?? 'weekly';
+    const duplicate = await this.prisma.payrollRun.findFirst({
+      where: { establishmentId, periodType, periodStart: new Date(dto.periodStart), status: { not: 'cancelled' } },
+      select: { id: true },
+    });
+    if (duplicate) {
+      throw new BadRequestException('Une paie existe déjà pour cette période (annulez-la d\'abord pour la refaire)');
+    }
     const employees = await this.prisma.employee.findMany({
-      where: { establishmentId, status: 'active' },
+      where: { establishmentId, status: 'active', salaryType: periodType },
       select: { id: true, weeklySalary: true },
     });
     const run = await this.prisma.payrollRun.create({
@@ -64,6 +81,7 @@ export class PayrollService {
         establishmentId,
         periodStart: new Date(dto.periodStart),
         periodEnd: new Date(dto.periodEnd),
+        periodType,
         status: 'prepared',
         preparedBy: userId,
         lines: {
@@ -127,10 +145,17 @@ export class PayrollService {
     }
     const employee = await this.prisma.employee.findFirst({
       where: { id: dto.employeeId, establishmentId },
-      select: { id: true, status: true, weeklySalary: true },
+      select: { id: true, status: true, weeklySalary: true, salaryType: true },
     });
     if (!employee) {
       throw new NotFoundException('Employé introuvable pour cet établissement');
+    }
+    if (employee.salaryType !== run.periodType) {
+      throw new BadRequestException(
+        run.periodType === 'monthly'
+          ? 'Cet employé est payé à la semaine : il ne peut pas figurer sur une paie mensuelle'
+          : 'Cet employé est payé au mois : il ne peut pas figurer sur une paie hebdomadaire',
+      );
     }
     if (employee.status !== 'active') {
       throw new BadRequestException('Seul un employé actif peut être ajouté à une paie');

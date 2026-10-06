@@ -4,6 +4,18 @@ import 'employee_models.dart';
 
 final _ciPhoneRegex = RegExp(r'^0\d{9}$');
 
+/// Postes proposés quand la liste des rôles n'a pas pu être chargée (hors
+/// ligne) — mêmes noms que les rôles système de l'application.
+const defaultEmployeePositions = <String>[
+  'Administrateur',
+  'Caissier',
+  'Comptable',
+  'Gérant',
+  'Magasinier',
+  'Propriétaire',
+  'Serveur',
+];
+
 String _formatDate(DateTime date) =>
     '${date.day.toString().padLeft(2, '0')}/${date.month.toString().padLeft(2, '0')}/${date.year}';
 
@@ -12,15 +24,30 @@ String _formatDate(DateTime date) =>
 /// apps/api/nestjs/src/payroll/dto/employee.dto.ts. Retourne un `Map` prêt à
 /// passer à `EmployeesRepository.createEmployee`/`updateEmployee`, ou `null`
 /// si annulé.
+///
+/// [positions] alimente la liste déroulante « Poste » (noms des rôles, voir
+/// `EmployeesRepository.listPositions`) ; le poste actuel d'un employé en
+/// modification y est toujours ajouté s'il n'en fait plus partie.
 Future<Map<String, dynamic>?> showEmployeeFormDialog(
   BuildContext context, {
   Employee? initial,
+  List<String>? positions,
 }) {
+  final positionOptions = <String>[
+    ...(positions == null || positions.isEmpty
+        ? defaultEmployeePositions
+        : positions),
+    if (initial != null &&
+        !(positions == null || positions.isEmpty
+                ? defaultEmployeePositions
+                : positions)
+            .contains(initial.position))
+      initial.position,
+  ];
   final lastNameController = TextEditingController(text: initial?.lastName);
   final firstNameController = TextEditingController(text: initial?.firstName);
   final phoneController = TextEditingController(text: initial?.phone);
   final addressController = TextEditingController(text: initial?.address);
-  final positionController = TextEditingController(text: initial?.position);
   final weeklySalaryController = TextEditingController(
     text: initial?.weeklySalary.toStringAsFixed(0),
   );
@@ -34,6 +61,8 @@ Future<Map<String, dynamic>?> showEmployeeFormDialog(
   DateTime? birthDate = initial?.birthDate;
   var hireDate = initial?.hireDate ?? DateTime.now();
   String? contractType = initial?.contractType;
+  String? position = initial?.position;
+  var salaryType = initial?.salaryType ?? 'weekly';
 
   return showDialog<Map<String, dynamic>>(
     context: context,
@@ -127,15 +156,18 @@ Future<Map<String, dynamic>?> showEmployeeFormDialog(
                     controller: addressController,
                     decoration: const InputDecoration(labelText: 'Adresse'),
                   ),
-                  TextFormField(
-                    controller: positionController,
+                  DropdownButtonFormField<String>(
+                    initialValue: position,
+                    isExpanded: true,
                     decoration: const InputDecoration(labelText: 'Poste *'),
-                    validator: (v) {
-                      if (v == null || v.trim().isEmpty) {
-                        return 'Poste requis';
-                      }
-                      return null;
+                    items: [
+                      for (final name in positionOptions)
+                        DropdownMenuItem(value: name, child: Text(name)),
+                    ],
+                    onChanged: (v) {
+                      setDialogState(() => position = v);
                     },
+                    validator: (v) => v == null ? 'Poste requis' : null,
                   ),
                   Padding(
                     padding: const EdgeInsets.symmetric(vertical: 8),
@@ -173,13 +205,35 @@ Future<Map<String, dynamic>?> showEmployeeFormDialog(
                       setDialogState(() => contractType = v);
                     },
                   ),
+                  DropdownButtonFormField<String>(
+                    initialValue: salaryType,
+                    isExpanded: true,
+                    decoration: const InputDecoration(
+                      labelText: 'Type de salaire *',
+                    ),
+                    items: const [
+                      DropdownMenuItem(
+                        value: 'weekly',
+                        child: Text('Hebdomadaire'),
+                      ),
+                      DropdownMenuItem(
+                        value: 'monthly',
+                        child: Text('Mensuel'),
+                      ),
+                    ],
+                    onChanged: (v) {
+                      if (v != null) setDialogState(() => salaryType = v);
+                    },
+                  ),
                   TextFormField(
                     controller: weeklySalaryController,
                     keyboardType: const TextInputType.numberWithOptions(
                       decimal: true,
                     ),
-                    decoration: const InputDecoration(
-                      labelText: 'Salaire hebdomadaire *',
+                    decoration: InputDecoration(
+                      labelText: salaryType == 'monthly'
+                          ? 'Salaire mensuel *'
+                          : 'Salaire hebdomadaire *',
                     ),
                     validator: (v) {
                       final value = double.tryParse(
@@ -227,12 +281,13 @@ Future<Map<String, dynamic>?> showEmployeeFormDialog(
                 'birthDate': birthDate,
                 'phone': phoneController.text.replaceAll(RegExp(r'[\s.-]'), ''),
                 'address': addressController.text.trim(),
-                'position': positionController.text.trim(),
+                'position': position,
                 'hireDate': hireDate,
                 'contractType': contractType,
                 'weeklySalary': double.parse(
                   weeklySalaryController.text.trim().replaceAll(',', '.'),
                 ),
+                'salaryType': salaryType,
                 'team': teamController.text.trim(),
                 'registrationNumber': registrationNumberController.text.trim(),
                 'notes': notesController.text.trim(),

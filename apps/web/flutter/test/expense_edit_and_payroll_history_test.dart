@@ -593,4 +593,180 @@ void main() {
       }, server);
     });
   });
+
+  group('Préparer la paie : semaine omise et paie mensuelle', () {
+    List<Map<String, dynamic>> existing = [];
+
+    MockClient server() => MockClient((request) async {
+      sent.add(request);
+      if (request.method == 'GET') return json(existing);
+      return json({
+        'id': 'run-new',
+        'periodStart': '2026-01-01T00:00:00.000Z',
+        'periodEnd': '2026-01-07T00:00:00.000Z',
+        'status': 'prepared',
+        'lines': <Object>[],
+      });
+    });
+
+    String two(int n) => n.toString().padLeft(2, '0');
+    String iso(DateTime d) => '${d.year}-${two(d.month)}-${two(d.day)}';
+
+    Future<void> pickDay10AndConfirm(WidgetTester tester) async {
+      await tester.tap(find.text('10').first);
+      await tester.pump();
+      await tester.tap(find.text('OK'));
+      await tester.pumpAndSettle();
+    }
+
+    setUp(() => existing = []);
+
+    testWidgets('une semaine omise se prépare en choisissant un de ses jours', (
+      tester,
+    ) async {
+      await http.runWithClient(() async {
+        await tester.pumpWidget(
+          const MaterialApp(home: PayrollRunPage(establishmentId: 'est-1')),
+        );
+        await tester.pumpAndSettle();
+
+        await tester.tap(find.text('Préparer une paie'));
+        await tester.pumpAndSettle();
+        await tester.tap(find.text('Une autre semaine (semaine omise)'));
+        await tester.pumpAndSettle();
+        await pickDay10AndConfirm(tester);
+        expect(find.text('Préparer cette paie ?'), findsOneWidget);
+        await tester.tap(find.text('Préparer'));
+        await tester.pumpAndSettle();
+
+        final now = DateTime.now();
+        final day = DateTime(now.year, now.month, 10);
+        final monday = day.subtract(Duration(days: day.weekday - 1));
+        final post = sent.singleWhere((r) => r.method == 'POST');
+        expect(post.url.path, endsWith('/payroll/runs'));
+        expect(jsonDecode(post.body), {
+          'periodStart': iso(monday),
+          'periodEnd': iso(monday.add(const Duration(days: 6))),
+          'periodType': 'weekly',
+        });
+      }, server);
+    });
+
+    testWidgets('la paie mensuelle couvre le mois du jour choisi', (
+      tester,
+    ) async {
+      await http.runWithClient(() async {
+        await tester.pumpWidget(
+          const MaterialApp(home: PayrollRunPage(establishmentId: 'est-1')),
+        );
+        await tester.pumpAndSettle();
+
+        await tester.tap(find.text('Préparer une paie'));
+        await tester.pumpAndSettle();
+        await tester.tap(find.text('Paie mensuelle'));
+        await tester.pumpAndSettle();
+        await pickDay10AndConfirm(tester);
+        await tester.tap(find.text('Préparer'));
+        await tester.pumpAndSettle();
+
+        final now = DateTime.now();
+        final post = sent.singleWhere((r) => r.method == 'POST');
+        expect(jsonDecode(post.body), {
+          'periodStart': iso(DateTime(now.year, now.month, 1)),
+          'periodEnd': iso(DateTime(now.year, now.month + 1, 0)),
+          'periodType': 'monthly',
+        });
+      }, server);
+    });
+
+    testWidgets('une période déjà préparée n\'est pas préparée deux fois', (
+      tester,
+    ) async {
+      final now = DateTime.now();
+      final day = DateTime(now.year, now.month, 10);
+      final monday = day.subtract(Duration(days: day.weekday - 1));
+      existing = [
+        {
+          'id': 'run-x',
+          'periodStart': '${iso(monday)}T00:00:00.000Z',
+          'periodEnd':
+              '${iso(monday.add(const Duration(days: 6)))}T00:00:00.000Z',
+          'status': 'prepared',
+          'periodType': 'weekly',
+          'lines': <Object>[],
+        },
+      ];
+      await http.runWithClient(() async {
+        await tester.pumpWidget(
+          const MaterialApp(home: PayrollRunPage(establishmentId: 'est-1')),
+        );
+        await tester.pumpAndSettle();
+
+        await tester.tap(find.text('Préparer une paie'));
+        await tester.pumpAndSettle();
+        await tester.tap(find.text('Une autre semaine (semaine omise)'));
+        await tester.pumpAndSettle();
+        await pickDay10AndConfirm(tester);
+        await tester.tap(find.text('Préparer'));
+        await tester.pumpAndSettle();
+
+        expect(
+          find.text('Une paie existe déjà pour cette période.'),
+          findsOneWidget,
+        );
+        expect(sent.where((r) => r.method == 'POST'), isEmpty);
+      }, server);
+    });
+
+    testWidgets(
+      'une paie mensuelle est signalée et n\'accepte que les employés payés au mois',
+      (tester) async {
+        existing = [
+          {
+            'id': 'run-m',
+            'periodStart': '2026-09-01T00:00:00.000Z',
+            'periodEnd': '2026-09-30T00:00:00.000Z',
+            'status': 'prepared',
+            'periodType': 'monthly',
+            'lines': <Object>[],
+          },
+        ];
+        final srv = MockClient((request) async {
+          sent.add(request);
+          if (request.method == 'GET' &&
+              request.url.path.endsWith('/employees')) {
+            Map<String, dynamic> e(String id, String last, String type) => {
+              'id': id,
+              'lastName': last,
+              'firstName': 'X',
+              'phone': '0700000000',
+              'position': 'Serveur',
+              'hireDate': '2026-01-01T00:00:00.000Z',
+              'weeklySalary': 100000,
+              'salaryType': type,
+              'status': 'active',
+            };
+            return json([
+              e('e1', 'Mensuel', 'monthly'),
+              e('e2', 'Hebdo', 'weekly'),
+            ]);
+          }
+          return request.method == 'GET' ? json(existing) : json({});
+        });
+        await http.runWithClient(() async {
+          await tester.pumpWidget(
+            const MaterialApp(home: PayrollRunPage(establishmentId: 'est-1')),
+          );
+          await tester.pumpAndSettle();
+          expect(find.text('Paie mensuelle'), findsOneWidget);
+
+          await tester.tap(find.text('Ajouter un employé'));
+          await tester.pumpAndSettle();
+          expect(find.text('Mensuel X'), findsOneWidget);
+          expect(find.text('Hebdo X'), findsNothing);
+          expect(find.textContaining('F / mois'), findsOneWidget);
+        }, () => srv);
+      },
+    );
+  });
 }

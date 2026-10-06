@@ -12,6 +12,8 @@ function makePrismaMock() {
       updateMany: vi.fn(),
       findUniqueOrThrow: vi.fn(),
     },
+    establishment: { findUniqueOrThrow: vi.fn() },
+    role: { findMany: vi.fn() },
   };
 }
 
@@ -45,6 +47,27 @@ describe('EmployeesService', () => {
     });
     expect(prisma.employee.create).toHaveBeenCalledWith({
       data: expect.objectContaining({ establishmentId: 'est-1', status: 'active' }),
+    });
+  });
+
+  it('creates an employee paid weekly by default and accepts a monthly salary type', async () => {
+    (prisma.employee as any).create.mockResolvedValue({ id: 'emp-1' });
+    const base = { lastName: 'K', firstName: 'A', phone: '0708091011', position: 'Serveur', hireDate: '2026-01-10', weeklySalary: 1 };
+    await service.create('est-1', base);
+    expect((prisma.employee as any).create.mock.calls[0][0].data.salaryType).toBe('weekly');
+    await service.create('est-1', { ...base, weeklySalary: 150000, salaryType: 'monthly' });
+    expect((prisma.employee as any).create.mock.calls[1][0].data.salaryType).toBe('monthly');
+  });
+
+  it('lists the positions as the distinct role names (system roles + the organization\'s own), sorted', async () => {
+    (prisma.establishment as any).findUniqueOrThrow.mockResolvedValue({ organizationId: 'org-1' });
+    (prisma.role as any).findMany.mockResolvedValue([{ name: 'Caissier' }, { name: 'Serveur' }, { name: 'Serveur' }]);
+    const positions = await service.listPositions('est-1');
+    expect(positions).toEqual(['Caissier', 'Serveur']);
+    expect((prisma.role as any).findMany).toHaveBeenCalledWith({
+      where: { OR: [{ isSystem: true }, { organizationId: 'org-1' }] },
+      select: { name: true },
+      orderBy: { name: 'asc' },
     });
   });
 

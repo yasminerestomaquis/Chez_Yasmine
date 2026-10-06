@@ -48,6 +48,11 @@ export class CreateEmployeeDto {
   @Min(0.01)
   weeklySalary!: number;
 
+  /** Le montant `weeklySalary` est par semaine (défaut) ou par mois. */
+  @IsOptional()
+  @IsIn(['weekly', 'monthly'])
+  salaryType?: string;
+
   @IsOptional()
   @IsString()
   team?: string;
@@ -106,6 +111,10 @@ export class UpdateEmployeeDto {
   @IsNumber()
   @Min(0.01)
   weeklySalary?: number;
+
+  @IsOptional()
+  @IsIn(['weekly', 'monthly'])
+  salaryType?: string;
 
   @IsOptional()
   @IsString()

@@ -51,15 +51,19 @@ class PayrollRepository {
   Future<void> removeLine(String runId, String lineId) =>
       _api.delete('$_base/runs/$runId/lines/$lineId');
 
+  /// [periodType] : 'weekly' (employés payés à la semaine) ou 'monthly'
+  /// (employés payés au mois).
   Future<PayrollRun> prepare({
     required DateTime periodStart,
     required DateTime periodEnd,
+    String periodType = 'weekly',
   }) async {
     final json = await _api.post(
       '$_base/runs',
       body: {
         'periodStart': _dateOnly(periodStart),
         'periodEnd': _dateOnly(periodEnd),
+        'periodType': periodType,
       },
     ) as Map<String, dynamic>;
     return PayrollRun.fromJson(json);

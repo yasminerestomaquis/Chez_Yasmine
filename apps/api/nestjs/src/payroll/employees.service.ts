@@ -13,6 +13,25 @@ export class EmployeesService {
     });
   }
 
+  /**
+   * Postes proposés dans « Ajouter un employé » : les noms des rôles de
+   * l'application (rôles système + rôles propres à l'organisation), triés.
+   * Dans `payroll` (permission `payroll.view`) plutôt que `GET roles` qui exige
+   * `users.manage` — un gestionnaire de paie n'a pas forcément ce droit.
+   */
+  async listPositions(establishmentId: string): Promise<string[]> {
+    const establishment = await this.prisma.establishment.findUniqueOrThrow({
+      where: { id: establishmentId },
+      select: { organizationId: true },
+    });
+    const roles = await this.prisma.role.findMany({
+      where: { OR: [{ isSystem: true }, { organizationId: establishment.organizationId }] },
+      select: { name: true },
+      orderBy: { name: 'asc' },
+    });
+    return [...new Set(roles.map((r) => r.name))];
+  }
+
   async create(establishmentId: string, dto: CreateEmployeeDto) {
     return this.prisma.employee.create({
       data: {
@@ -27,6 +46,7 @@ export class EmployeesService {
         hireDate: new Date(dto.hireDate),
         contractType: dto.contractType,
         weeklySalary: dto.weeklySalary,
+        salaryType: dto.salaryType ?? 'weekly',
         team: dto.team,
         registrationNumber: dto.registrationNumber,
         notes: dto.notes,
@@ -50,6 +70,7 @@ export class EmployeesService {
         hireDate: dto.hireDate ? new Date(dto.hireDate) : undefined,
         contractType: dto.contractType,
         weeklySalary: dto.weeklySalary,
+        salaryType: dto.salaryType,
         team: dto.team,
         registrationNumber: dto.registrationNumber,
         notes: dto.notes,

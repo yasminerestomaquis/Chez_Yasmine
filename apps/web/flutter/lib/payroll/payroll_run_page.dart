@@ -18,6 +18,8 @@ DateTime _mondayOf(DateTime date) {
   ).subtract(Duration(days: weekdayIndex));
 }
 
+enum _PrepareChoice { currentWeek, otherWeek, month }
+
 /// Workflow préparé → validé → payé → annulé (demande utilisateur du
 /// 2026-09-12). Le paiement crée automatiquement, côté serveur, une dépense
 /// "Salaires" — voir PayrollService.pay.
@@ -50,18 +52,125 @@ class _PayrollRunPageState extends State<PayrollRunPage> {
     await future;
   }
 
-  Future<void> _prepare() async {
+  /// Propose les trois paies préparables : semaine en cours, semaine omise
+  /// (n'importe quelle semaine passée) et paie mensuelle (employés payés au
+  /// mois), puis lance la préparation.
+  Future<void> _choosePrepare() async {
     if (_isBusy) return;
-    final monday = _mondayOf(DateTime.now());
-    final sunday = monday.add(const Duration(days: 6));
+    final choice = await showDialog<_PrepareChoice>(
+      context: context,
+      builder: (context) => SimpleDialog(
+        title: const Text('Préparer une paie'),
+        children: [
+          SimpleDialogOption(
+            onPressed: () =>
+                Navigator.of(context).pop(_PrepareChoice.currentWeek),
+            child: const ListTile(
+              leading: Icon(Icons.today_outlined),
+              title: Text('Semaine en cours'),
+              subtitle: Text('Employés payés à la semaine'),
+            ),
+          ),
+          SimpleDialogOption(
+            onPressed: () =>
+                Navigator.of(context).pop(_PrepareChoice.otherWeek),
+            child: const ListTile(
+              leading: Icon(Icons.history_toggle_off),
+              title: Text('Une autre semaine (semaine omise)'),
+              subtitle: Text('Choisir un jour de la semaine à préparer'),
+            ),
+          ),
+          SimpleDialogOption(
+            onPressed: () => Navigator.of(context).pop(_PrepareChoice.month),
+            child: const ListTile(
+              leading: Icon(Icons.calendar_month_outlined),
+              title: Text('Paie mensuelle'),
+              subtitle: Text(
+                'Employés payés au mois — choisir un jour du mois',
+              ),
+            ),
+          ),
+        ],
+      ),
+    );
+    if (choice == null || !mounted) return;
+
+    DateTime start;
+    DateTime end;
+    var type = 'weekly';
+    if (choice == _PrepareChoice.currentWeek) {
+      start = _mondayOf(DateTime.now());
+      end = start.add(const Duration(days: 6));
+    } else {
+      final picked = await showDatePicker(
+        context: context,
+        initialDate: DateTime.now(),
+        firstDate: DateTime(2020),
+        lastDate: DateTime(2100),
+        helpText: choice == _PrepareChoice.otherWeek
+            ? 'Un jour de la semaine à préparer'
+            : 'Un jour du mois à payer',
+      );
+      if (picked == null || !mounted) return;
+      if (choice == _PrepareChoice.otherWeek) {
+        start = _mondayOf(picked);
+        end = start.add(const Duration(days: 6));
+      } else {
+        type = 'monthly';
+        start = DateTime(picked.year, picked.month, 1);
+        end = DateTime(picked.year, picked.month + 1, 0);
+      }
+      final fmt = DateFormat('dd/MM/yyyy');
+      final confirmed = await showDialog<bool>(
+        context: context,
+        builder: (context) => AlertDialog(
+          title: const Text('Préparer cette paie ?'),
+          content: Text(
+            '${type == 'monthly' ? 'Paie mensuelle' : 'Paie hebdomadaire'} du '
+            '${fmt.format(start)} au ${fmt.format(end)}.',
+          ),
+          actions: [
+            TextButton(
+              onPressed: () => Navigator.of(context).pop(false),
+              child: const Text('Annuler'),
+            ),
+            FilledButton(
+              onPressed: () => Navigator.of(context).pop(true),
+              child: const Text('Préparer'),
+            ),
+          ],
+        ),
+      );
+      if (confirmed != true || !mounted) return;
+    }
+
+    // Une seule paie non annulée par type et par début de période (le serveur
+    // le refuse aussi) : on évite l'aller-retour réseau et on explique.
+    final runs = await _future.catchError((_) => <PayrollRun>[]);
+    if (_alreadyPrepared(runs, start, type)) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text('Une paie existe déjà pour cette période.'),
+        ),
+      );
+      return;
+    }
+    await _prepare(start, end, type);
+  }
+
+  Future<void> _prepare(DateTime start, DateTime end, String type) async {
+    if (_isBusy) return;
     setState(() => _isBusy = true);
     try {
-      await _repository.prepare(periodStart: monday, periodEnd: sunday);
-      // Attendu explicitement : le backend n'a aucune contrainte d'unicité
-      // de période (voir Task 4), donc `_isBusy` seul ne protège que la
-      // fenêtre de l'appel réseau — `await` ici (pas de fire-and-forget)
-      // garantit que la liste rechargée est affichée AVANT de réactiver le
-      // FAB, fermant la fenêtre où un second appui créerait un doublon.
+      await _repository.prepare(
+        periodStart: start,
+        periodEnd: end,
+        periodType: type,
+      );
+      // `await` ici (pas de fire-and-forget) : la liste rechargée est affichée
+      // AVANT de réactiver le bouton, fermant la fenêtre où un second appui
+      // créerait un doublon.
       await _reload();
     } on ApiException catch (e) {
       if (!mounted) return;
@@ -114,8 +223,16 @@ class _PayrollRunPageState extends State<PayrollRunPage> {
     final onRun = run.lines.map((l) => l.employeeId).toSet();
     final employee = await showAddPayrollEmployeeDialog(
       context,
-      employees.where((e) => e.isActive && !onRun.contains(e.id)).toList(),
+      employees
+          .where(
+            (e) =>
+                e.isActive &&
+                e.salaryType == run.periodType &&
+                !onRun.contains(e.id),
+          )
+          .toList(),
       paid: run.status == 'paid',
+      monthly: run.isMonthly,
     );
     if (employee == null || _isBusy) return;
     setState(() => _isBusy = true);
@@ -234,15 +351,16 @@ class _PayrollRunPageState extends State<PayrollRunPage> {
     }
   }
 
-  /// Vrai si une paie non annulée de la semaine en cours existe déjà — le
-  /// backend n'a aucune contrainte d'unicité de période (voir
-  /// PayrollService.prepare), donc c'est la seule protection contre un
-  /// doublon si l'utilisateur ré-appuie sur "Préparer" alors qu'une paie de
-  /// cette semaine est déjà `prepared`/`validated`/`paid`.
-  bool _alreadyPreparedThisWeek(List<PayrollRun> runs) {
-    final monday = _mondayOf(DateTime.now());
+  /// Vrai si une paie non annulée du même type commence déjà ce jour-là
+  /// (comparaison par jour calendaire : `periodStart` est une date sans heure).
+  bool _alreadyPrepared(List<PayrollRun> runs, DateTime start, String type) {
     return runs.any(
-      (r) => r.status != 'cancelled' && r.periodStart.isAtSameMomentAs(monday),
+      (r) =>
+          r.status != 'cancelled' &&
+          r.periodType == type &&
+          r.periodStart.year == start.year &&
+          r.periodStart.month == start.month &&
+          r.periodStart.day == start.day,
     );
   }
 
@@ -251,21 +369,10 @@ class _PayrollRunPageState extends State<PayrollRunPage> {
     final fmt = DateFormat('dd/MM/yyyy');
     return Scaffold(
       appBar: AppBar(title: const Text('Préparer la paie')),
-      floatingActionButton: FutureBuilder<List<PayrollRun>>(
-        future: _future,
-        builder: (context, snapshot) {
-          final alreadyPrepared =
-              snapshot.data != null && _alreadyPreparedThisWeek(snapshot.data!);
-          return FloatingActionButton.extended(
-            onPressed: (_isBusy || alreadyPrepared) ? null : _prepare,
-            icon: const Icon(Icons.add),
-            label: Text(
-              alreadyPrepared
-                  ? 'Paie de la semaine déjà préparée'
-                  : 'Préparer la semaine en cours',
-            ),
-          );
-        },
+      floatingActionButton: FloatingActionButton.extended(
+        onPressed: _isBusy ? null : _choosePrepare,
+        icon: const Icon(Icons.add),
+        label: const Text('Préparer une paie'),
       ),
       body: FutureBuilder<List<PayrollRun>>(
         future: _future,
@@ -300,11 +407,21 @@ class _PayrollRunPageState extends State<PayrollRunPage> {
                         Row(
                           children: [
                             Expanded(
-                              child: Text(
-                                'Du ${fmt.format(run.periodStart)} au ${fmt.format(run.periodEnd)}',
-                                style: const TextStyle(
-                                  fontWeight: FontWeight.bold,
-                                ),
+                              child: Column(
+                                crossAxisAlignment: CrossAxisAlignment.start,
+                                children: [
+                                  Text(
+                                    'Du ${fmt.format(run.periodStart)} au ${fmt.format(run.periodEnd)}',
+                                    style: const TextStyle(
+                                      fontWeight: FontWeight.bold,
+                                    ),
+                                  ),
+                                  if (run.isMonthly)
+                                    const Text(
+                                      'Paie mensuelle',
+                                      style: TextStyle(fontSize: 12),
+                                    ),
+                                ],
                               ),
                             ),
                             if (run.status == 'prepared' ||

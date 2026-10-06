@@ -610,7 +610,15 @@ model Employee {
   position           String
   hireDate           DateTime  @map("hire_date") @db.Date
   contractType       String?   @map("contract_type")
+  /**
+   * Montant du salaire PAR PÉRIODE : par semaine ou par mois selon `salaryType`
+   * (le nom de colonne historique est conservé).
+   */
   weeklySalary       Decimal   @map("weekly_salary") @db.Decimal(12, 2)
+  /**
+   * 'weekly' | 'monthly'
+   */
+  salaryType         String    @default("weekly") @map("salary_type")
   team               String?
   registrationNumber String?   @map("registration_number")
   notes              String?
@@ -636,6 +644,10 @@ model PayrollRun {
   periodStart     DateTime  @map("period_start") @db.Date
   periodEnd       DateTime  @map("period_end") @db.Date
   status          String    @default("prepared")
+  /**
+   * 'weekly' | 'monthly' : une paie hebdomadaire ne contient que les employés payés à la semaine, une paie mensuelle que ceux payés au mois.
+   */
+  periodType      String    @default("weekly") @map("period_type")
   preparedBy      String    @map("prepared_by")
   validatedBy     String?   @map("validated_by")
   paidBy          String?   @map("paid_by")

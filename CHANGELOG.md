@@ -2,6 +2,13 @@
 
 ## [Unreleased]
 
+### Ajouté (2026-10-06) — Salaires : semaine omise, salaire mensuel, poste en liste déroulante
+- **Préparer une paie** : nouveau choix Semaine en cours / **semaine omise** (n'importe quelle semaine passée) / **paie mensuelle**, avec confirmation de la période ; une seule paie non annulée par type et par début de période (refus côté serveur aussi).
+- **Ajouter un employé** : choix **Hebdomadaire / Mensuel** du salaire (libellé du montant adapté) et champ **Poste** devenu liste déroulante alimentée par les rôles de l'application (`GET .../employees/positions`).
+- **Paie des salariés mensuels** : une paie hebdomadaire ne reprend que les employés payés à la semaine, une paie mensuelle que ceux payés au mois (ajout manuel d'un employé de l'autre type refusé).
+- Migration additive `20261006120000_add_salary_type_and_payroll_period_type.sql` (appliquée en production) : `employees.salary_type`, `payroll_runs.period_type`, défaut `weekly` pour l'existant. Détails : `docs/api/expenses.md`.
+- Tests : 6 NestJS, 8 Flutter.
+
 ### Ajouté (2026-10-06) — Paies : employés ajoutables/retirables, historique par période et total
 - **Ajouter / retirer un employé d'une paie**, depuis « Préparer la paie » et « Historique des paies » (nouvelles routes `POST/DELETE /establishments/:id/payroll/runs/:runId/lines[/:lineId]`). Possible sur toute paie non annulée ; sur une paie déjà payée, la dépense « Salaires » liée suit dans la même transaction. Seuls les employés actifs absents de la paie sont proposés.
 - **Historique des paies par période** : `GET .../payroll/runs?from=&to=` (paies dont la période chevauche l'intervalle) ; sélecteur de période dans l'écran, et **total des paies (hors annulées) en haut à droite**.

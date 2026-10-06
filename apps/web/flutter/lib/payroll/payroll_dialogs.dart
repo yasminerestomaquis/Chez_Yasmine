@@ -113,14 +113,16 @@ Future<Employee?> showAddPayrollEmployeeDialog(
   BuildContext context,
   List<Employee> candidates, {
   bool paid = false,
+  bool monthly = false,
 }) {
   if (candidates.isEmpty) {
     return showDialog<Employee>(
       context: context,
       builder: (context) => AlertDialog(
         title: const Text('Ajouter un employé'),
-        content: const Text(
-          'Tous les employés actifs figurent déjà sur cette paie.',
+        content: Text(
+          'Tous les employés actifs payés ${monthly ? 'au mois' : 'à la semaine'} '
+          'figurent déjà sur cette paie.',
         ),
         actions: [
           TextButton(
@@ -155,7 +157,7 @@ Future<Employee?> showAddPayrollEmployeeDialog(
                 contentPadding: EdgeInsets.zero,
                 title: Text(employee.fullName),
                 subtitle: Text(
-                  '${employee.position} — ${formatAmount(employee.weeklySalary)} F / semaine',
+                  '${employee.position} — ${formatAmount(employee.weeklySalary)} F / ${employee.isMonthly ? 'mois' : 'semaine'}',
                 ),
                 onTap: () => Navigator.of(context).pop(employee),
               ),

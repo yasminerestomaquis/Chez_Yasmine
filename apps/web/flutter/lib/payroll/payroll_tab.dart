@@ -53,8 +53,20 @@ class _PayrollTabState extends State<PayrollTab>
 
   void _reload() => setState(() => _future = _load());
 
+  /// Noms des rôles (liste « Poste ») ; `null` si indisponible — le formulaire
+  /// retombe alors sur les rôles système par défaut.
+  Future<List<String>?> _loadPositions() async {
+    try {
+      return await _employees.listPositions();
+    } catch (_) {
+      return null;
+    }
+  }
+
   Future<void> _addEmployee() async {
-    final data = await showEmployeeFormDialog(context);
+    final positions = await _loadPositions();
+    if (!mounted) return;
+    final data = await showEmployeeFormDialog(context, positions: positions);
     if (data == null) {
       return;
     }
@@ -72,6 +84,7 @@ class _PayrollTabState extends State<PayrollTab>
         hireDate: data['hireDate'] as DateTime,
         contractType: data['contractType'] as String?,
         weeklySalary: data['weeklySalary'] as double,
+        salaryType: data['salaryType'] as String,
         team: (data['team'] as String).isEmpty ? null : data['team'] as String,
         registrationNumber: (data['registrationNumber'] as String).isEmpty
             ? null
@@ -95,7 +108,13 @@ class _PayrollTabState extends State<PayrollTab>
       : '${date.year.toString().padLeft(4, '0')}-${date.month.toString().padLeft(2, '0')}-${date.day.toString().padLeft(2, '0')}';
 
   Future<void> _editEmployee(Employee employee) async {
-    final data = await showEmployeeFormDialog(context, initial: employee);
+    final positions = await _loadPositions();
+    if (!mounted) return;
+    final data = await showEmployeeFormDialog(
+      context,
+      initial: employee,
+      positions: positions,
+    );
     if (data == null) {
       return;
     }
@@ -113,6 +132,7 @@ class _PayrollTabState extends State<PayrollTab>
         'hireDate': _dateOnly(data['hireDate'] as DateTime),
         'contractType': data['contractType'] as String?,
         'weeklySalary': data['weeklySalary'] as double,
+        'salaryType': data['salaryType'] as String,
         'team': (data['team'] as String).isEmpty
             ? null
             : data['team'] as String,
@@ -318,7 +338,7 @@ class _PayrollTabState extends State<PayrollTab>
                             mainAxisSize: MainAxisSize.min,
                             children: [
                               Text(
-                                '${formatAmount(e.weeklySalary)} F/sem.',
+                                '${formatAmount(e.weeklySalary)} F/${e.isMonthly ? 'mois' : 'sem.'}',
                                 style: const TextStyle(
                                   fontWeight: FontWeight.w600,
                                 ),

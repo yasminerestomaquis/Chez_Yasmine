@@ -1,4 +1,4 @@
-import { IsArray, IsDateString, IsNotEmpty, IsNumber, IsOptional, IsString, ValidateNested } from 'class-validator';
+import { IsArray, IsDateString, IsIn, IsNotEmpty, IsNumber, IsOptional, IsString, ValidateNested } from 'class-validator';
 import { Type } from 'class-transformer';
 
 export class PrepareLineDto {
@@ -17,6 +17,11 @@ export class PreparePayrollRunDto {
 
   @IsDateString()
   periodEnd!: string;
+
+  /** 'weekly' (défaut) : employés payés à la semaine ; 'monthly' : employés payés au mois. */
+  @IsOptional()
+  @IsIn(['weekly', 'monthly'])
+  periodType?: string;
 }
 
 /** Modification de la période d'une paie existante (au moins un des deux champs). */
