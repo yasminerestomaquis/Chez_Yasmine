@@ -1,7 +1,23 @@
 import { BadRequestException, Injectable, NotFoundException } from '@nestjs/common';
 import { PrismaService } from '../prisma/prisma.service.js';
 import { ActivityNotifierService } from '../notifications/activity-notifier.service.js';
-import type { PreparePayrollRunDto, UpdatePayrollLineDto, UpdatePayrollRunDto } from './dto/payroll.dto.js';
+import type {
+  AddPayrollLineDto,
+  PreparePayrollRunDto,
+  UpdatePayrollLineDto,
+  UpdatePayrollRunDto,
+} from './dto/payroll.dto.js';
+
+const DATE_ONLY = /^\d{4}-\d{2}-\d{2}$/;
+
+function parseDateFilter(value: string | undefined, name: string): Date | undefined {
+  if (!value) return undefined;
+  const date = DATE_ONLY.test(value) ? new Date(value) : null;
+  if (!date || Number.isNaN(date.getTime())) {
+    throw new BadRequestException(`Paramètre « ${name} » invalide : format AAAA-MM-JJ attendu`);
+  }
+  return date;
+}
 
 @Injectable()
 export class PayrollService {
@@ -10,9 +26,23 @@ export class PayrollService {
     private readonly activityNotifier: ActivityNotifierService,
   ) {}
 
-  list(establishmentId: string) {
+  /**
+   * `from` / `to` (AAAA-MM-JJ, optionnels) : ne garde que les paies dont la
+   * période CHEVAUCHE [from, to] (fin de période >= from ET début <= to) —
+   * historique des paies sur une période choisie par l'utilisateur.
+   */
+  list(establishmentId: string, from?: string, to?: string) {
+    const fromDate = parseDateFilter(from, 'from');
+    const toDate = parseDateFilter(to, 'to');
+    if (fromDate && toDate && toDate.getTime() < fromDate.getTime()) {
+      throw new BadRequestException('La fin de la période ne peut pas précéder le début');
+    }
     return this.prisma.payrollRun.findMany({
-      where: { establishmentId },
+      where: {
+        establishmentId,
+        ...(fromDate ? { periodEnd: { gte: fromDate } } : {}),
+        ...(toDate ? { periodStart: { lte: toDate } } : {}),
+      },
       // `expense` : la dépense « Salaires » générée au paiement (null tant que la
       // paie n'est pas payée) — l'historique des paies affiche sa date de saisie.
       include: {
@@ -71,6 +101,68 @@ export class PayrollService {
     return line;
   }
 
+  /**
+   * Paie déjà payée : la dépense « Salaires » générée au paiement doit suivre
+   * le nouveau total, dans la même transaction que la modification des lignes.
+   */
+  private async syncPaidExpenseTotal(
+    tx: Pick<PrismaService, 'payrollLine' | 'expense'>,
+    payrollRunId: string,
+  ) {
+    const lines = await tx.payrollLine.findMany({ where: { payrollRunId }, select: { netAmount: true } });
+    const total = lines.reduce((sum, l) => sum + l.netAmount.toNumber(), 0);
+    await tx.expense.update({ where: { payrollRunId }, data: { amount: total } });
+  }
+
+  /**
+   * Ajoute un employé sur une paie non annulée (préparée, validée ou payée) :
+   * ligne au salaire hebdomadaire courant, sans avance ni ajustement. Un seul
+   * bulletin par employé et par paie (@@unique en base, contrôlé ici pour un
+   * message clair).
+   */
+  async addLine(establishmentId: string, payrollRunId: string, dto: AddPayrollLineDto) {
+    const run = await this.getRun(establishmentId, payrollRunId);
+    if (run.status === 'cancelled') {
+      throw new BadRequestException('Cette paie est annulée : elle n\'est plus modifiable');
+    }
+    const employee = await this.prisma.employee.findFirst({
+      where: { id: dto.employeeId, establishmentId },
+      select: { id: true, status: true, weeklySalary: true },
+    });
+    if (!employee) {
+      throw new NotFoundException('Employé introuvable pour cet établissement');
+    }
+    if (employee.status !== 'active') {
+      throw new BadRequestException('Seul un employé actif peut être ajouté à une paie');
+    }
+    if (run.lines.some((l) => l.employeeId === dto.employeeId)) {
+      throw new BadRequestException('Cet employé figure déjà sur cette paie');
+    }
+    const baseSalary = employee.weeklySalary.toNumber();
+    const data = { payrollRunId, employeeId: employee.id, baseSalary, advance: 0, adjustment: 0, netAmount: baseSalary };
+    if (run.status !== 'paid') {
+      await this.prisma.payrollLine.create({ data });
+      return;
+    }
+    await this.prisma.$transaction(async (tx) => {
+      await tx.payrollLine.create({ data });
+      await this.syncPaidExpenseTotal(tx, payrollRunId);
+    });
+  }
+
+  /** Retire un employé d'une paie non annulée ; une paie payée voit sa dépense « Salaires » ajustée. */
+  async removeLine(establishmentId: string, payrollRunId: string, lineId: string) {
+    const line = await this.getEditableLine(establishmentId, payrollRunId, lineId);
+    if (line.payrollRun.status !== 'paid') {
+      await this.prisma.payrollLine.delete({ where: { id: lineId } });
+      return;
+    }
+    await this.prisma.$transaction(async (tx) => {
+      await tx.payrollLine.delete({ where: { id: lineId } });
+      await this.syncPaidExpenseTotal(tx, payrollRunId);
+    });
+  }
+
   async updateLine(establishmentId: string, payrollRunId: string, lineId: string, dto: UpdatePayrollLineDto) {
     const line = await this.getEditableLine(establishmentId, payrollRunId, lineId);
     const netAmount = line.baseSalary.toNumber() - dto.advance + dto.adjustment;
@@ -84,9 +176,7 @@ export class PayrollService {
     // Dépenses (Vue d'ensemble, Historique) divergeraient de la paie.
     await this.prisma.$transaction(async (tx) => {
       await tx.payrollLine.update({ where: { id: lineId }, data });
-      const lines = await tx.payrollLine.findMany({ where: { payrollRunId }, select: { netAmount: true } });
-      const total = lines.reduce((sum, l) => sum + l.netAmount.toNumber(), 0);
-      await tx.expense.update({ where: { payrollRunId }, data: { amount: total } });
+      await this.syncPaidExpenseTotal(tx, payrollRunId);
     });
   }
 

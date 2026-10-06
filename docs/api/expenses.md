@@ -82,6 +82,8 @@ GET    /establishments/:establishmentId/payroll-runs/dashboard         (payroll.
 POST   /establishments/:establishmentId/payroll-runs                   (payroll.manage)   -- « préparer »
 PATCH  /establishments/:establishmentId/payroll-runs/:runId/lines/:lineId  (payroll.manage) -- éditer avance/prime
 PATCH  /establishments/:establishmentId/payroll/runs/:runId                 (payroll.manage) -- corriger la période (2026-10-05)
+POST   /establishments/:establishmentId/payroll/runs/:runId/lines           (payroll.manage) -- ajouter un employé à la paie (2026-10-06)
+DELETE /establishments/:establishmentId/payroll/runs/:runId/lines/:lineId   (payroll.manage) -- retirer un employé de la paie (2026-10-06)
 POST   /establishments/:establishmentId/payroll-runs/:runId/validate   (payroll.manage)
 POST   /establishments/:establishmentId/payroll-runs/:runId/pay        (payroll.manage)
 POST   /establishments/:establishmentId/payroll-runs/:runId/cancel     (payroll.manage)
@@ -114,6 +116,14 @@ Le formulaire employé (`employee_form_dialog.dart`) n'inclut volontairement **a
 - **Corrections autorisées sur toute paie non annulée** (préparée, validée OU payée) — décision du 2026-10-05, qui remplace la règle précédente « figée dès la validation » : (1) avance / prime-retenue de chaque employé (`PATCH .../payroll/runs/:runId/lines/:lineId`), (2) période (`PATCH .../payroll/runs/:runId`, corps `{ periodStart?, periodEnd? }`, refusée si la fin précède le début). Une paie **annulée** reste figée.
 - **Cohérence avec les dépenses** pour une paie déjà **payée**, dans la même transaction : modifier une ligne recalcule le total de la paie et met à jour `Expense.amount` de la dépense « Salaires » liée ; modifier la période déplace `Expense.expenseDate` sur la nouvelle fin de période (règle posée par `PayrollService.pay`). Ainsi la Vue d'ensemble et l'Historique des dépenses ne divergent jamais de la paie.
 - L'écran « Préparer la paie » propose aussi la modification de période et l'édition des lignes pour une paie préparée ou validée (dialogues partagés : `payroll_dialogs.dart`).
+
+## Employés d'une paie, historique par période (demande du 2026-10-06)
+
+- **Ajouter un employé** à une paie : `POST .../payroll/runs/:runId/lines` `{ employeeId }`. Employé de l'établissement et **actif** exigé, un seul bulletin par employé et par paie (400 « figure déjà »). La ligne est créée au `weeklySalary` courant, sans avance ni ajustement (modifiables ensuite).
+- **Retirer un employé** : `DELETE .../payroll/runs/:runId/lines/:lineId` (la ligne est supprimée ; une paie peut se retrouver sans employé, total 0).
+- Les deux sont permis sur toute paie **non annulée** (préparée, validée ou payée), comme les autres corrections ; pour une paie **payée**, la dépense « Salaires » liée est recalculée dans la même transaction (`syncPaidExpenseTotal`).
+- **Historique filtré** : `GET .../payroll/runs?from=AAAA-MM-JJ&to=AAAA-MM-JJ` (les deux optionnels). Sont renvoyées les paies dont la **période chevauche** [from, to] (`periodEnd >= from` et `periodStart <= to`) ; date mal formée ou `to < from` → 400.
+- Flutter : écran **Historique des paies** (`payroll_history_page.dart`) — sélecteur de période (« Toutes les périodes » par défaut), **total des paies en haut à droite** = somme des paies **non annulées** de la liste affichée (une paie à cheval sur la période compte en entier), boutons « Ajouter un employé » / « Retirer de la paie ». Les mêmes boutons existent dans « Préparer la paie ». Un bouton **Historique des paies** (icône horloge) est ajouté à l'en-tête du module Dépenses, visible depuis tous les sous-onglets.
 
 ## Vérifications effectuées
 

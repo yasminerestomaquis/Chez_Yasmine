@@ -3,6 +3,7 @@ import 'package:flutter/material.dart';
 import 'expenses_form_tab.dart';
 import 'expenses_history_tab.dart';
 import 'expenses_overview_tab.dart';
+import '../payroll/payroll_history_page.dart';
 import '../payroll/payroll_tab.dart';
 
 /// Module Dépenses restructuré en 4 sous-onglets (demande utilisateur du
@@ -27,6 +28,20 @@ class ExpensesPage extends StatelessWidget {
       child: Scaffold(
         appBar: AppBar(
           title: const Text('Dépenses'),
+          actions: [
+            // Historique de toutes les paies, filtrable par période, depuis
+            // n'importe quel sous-onglet du module (demande du 2026-10-06).
+            IconButton(
+              tooltip: 'Historique des paies',
+              icon: const Icon(Icons.history),
+              onPressed: () => Navigator.of(context).push(
+                MaterialPageRoute(
+                  builder: (_) =>
+                      PayrollHistoryPage(establishmentId: establishmentId),
+                ),
+              ),
+            ),
+          ],
           bottom: const TabBar(
             isScrollable: true,
             tabs: [

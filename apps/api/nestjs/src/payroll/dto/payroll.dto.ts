@@ -1,4 +1,4 @@
-import { IsArray, IsDateString, IsNumber, IsOptional, ValidateNested } from 'class-validator';
+import { IsArray, IsDateString, IsNotEmpty, IsNumber, IsOptional, IsString, ValidateNested } from 'class-validator';
 import { Type } from 'class-transformer';
 
 export class PrepareLineDto {
@@ -28,6 +28,13 @@ export class UpdatePayrollRunDto {
   @IsOptional()
   @IsDateString()
   periodEnd?: string;
+}
+
+/** Ajout d'un employé sur une paie existante (ligne créée au salaire hebdomadaire courant). */
+export class AddPayrollLineDto {
+  @IsString()
+  @IsNotEmpty()
+  employeeId!: string;
 }
 
 export class UpdatePayrollLineDto {

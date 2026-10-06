@@ -3,6 +3,8 @@ import 'package:intl/intl.dart';
 
 import '../api/api_client.dart';
 import '../common/formatting.dart';
+import 'employee_models.dart';
+import 'employees_repository.dart';
 import 'payroll_dialogs.dart';
 import 'payroll_models.dart';
 import 'payroll_repository.dart';
@@ -33,12 +35,18 @@ class _PayrollRunPageState extends State<PayrollRunPage> {
     ApiClient(),
     widget.establishmentId,
   );
+  late final EmployeesRepository _employees = EmployeesRepository(
+    ApiClient(),
+    widget.establishmentId,
+  );
   late Future<List<PayrollRun>> _future = _repository.listRuns();
   bool _isBusy = false;
 
   Future<void> _reload() async {
     final future = _repository.listRuns();
-    setState(() => _future = future);
+    setState(() {
+      _future = future;
+    });
     await future;
   }
 
@@ -81,6 +89,59 @@ class _PayrollRunPageState extends State<PayrollRunPage> {
       if (!mounted) return;
       ScaffoldMessenger.of(context)
           .showSnackBar(SnackBar(content: Text(e.message)));
+    } finally {
+      if (mounted) setState(() => _isBusy = false);
+    }
+  }
+
+  void _showMessage(String message) {
+    if (!mounted) return;
+    ScaffoldMessenger.of(context)
+        .showSnackBar(SnackBar(content: Text(message)));
+  }
+
+  /// Ajoute à la paie un employé actif qui n'y figure pas encore.
+  Future<void> _addEmployee(PayrollRun run) async {
+    if (_isBusy) return;
+    List<Employee> employees;
+    try {
+      employees = await _employees.listEmployees();
+    } on ApiException catch (e) {
+      _showMessage(e.message);
+      return;
+    }
+    if (!mounted) return;
+    final onRun = run.lines.map((l) => l.employeeId).toSet();
+    final employee = await showAddPayrollEmployeeDialog(
+      context,
+      employees.where((e) => e.isActive && !onRun.contains(e.id)).toList(),
+      paid: run.status == 'paid',
+    );
+    if (employee == null || _isBusy) return;
+    setState(() => _isBusy = true);
+    try {
+      await _repository.addLine(run.id, employee.id);
+      await _reload();
+    } on ApiException catch (e) {
+      _showMessage(e.message);
+    } finally {
+      if (mounted) setState(() => _isBusy = false);
+    }
+  }
+
+  Future<void> _removeLine(PayrollRun run, PayrollLine line) async {
+    final confirmed = await confirmRemovePayrollLine(
+      context,
+      line,
+      paid: run.status == 'paid',
+    );
+    if (!confirmed || _isBusy) return;
+    setState(() => _isBusy = true);
+    try {
+      await _repository.removeLine(run.id, line.id);
+      await _reload();
+    } on ApiException catch (e) {
+      _showMessage(e.message);
     } finally {
       if (mounted) setState(() => _isBusy = false);
     }
@@ -265,15 +326,44 @@ class _PayrollRunPageState extends State<PayrollRunPage> {
                             subtitle: Text(
                               'Base ${formatAmount(line.baseSalary)} — Avance ${formatAmount(line.advance)} — Ajust. ${formatAmount(line.adjustment)}',
                             ),
-                            trailing: Text(
-                              '${formatAmount(line.netAmount)} F',
-                              style: const TextStyle(
-                                fontWeight: FontWeight.w600,
-                              ),
+                            trailing: Row(
+                              mainAxisSize: MainAxisSize.min,
+                              children: [
+                                Text(
+                                  '${formatAmount(line.netAmount)} F',
+                                  style: const TextStyle(
+                                    fontWeight: FontWeight.w600,
+                                  ),
+                                ),
+                                if (isPayrollRunEditable(run))
+                                  IconButton(
+                                    tooltip: 'Retirer de la paie',
+                                    icon: const Icon(
+                                      Icons.person_remove_outlined,
+                                    ),
+                                    onPressed: _isBusy
+                                        ? null
+                                        : () => _removeLine(run, line),
+                                  ),
+                              ],
                             ),
-                            onTap: (run.status != 'cancelled' && run.status != 'paid' && !_isBusy)
+                            onTap:
+                                (run.status != 'cancelled' &&
+                                    run.status != 'paid' &&
+                                    !_isBusy)
                                 ? () => _editLine(run, line)
                                 : null,
+                          ),
+                        if (isPayrollRunEditable(run))
+                          Align(
+                            alignment: Alignment.centerLeft,
+                            child: TextButton.icon(
+                              onPressed: _isBusy
+                                  ? null
+                                  : () => _addEmployee(run),
+                              icon: const Icon(Icons.person_add_alt_1),
+                              label: const Text('Ajouter un employé'),
+                            ),
                           ),
                         const Divider(),
                         Row(

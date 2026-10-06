@@ -2,6 +2,12 @@
 
 ## [Unreleased]
 
+### Ajouté (2026-10-06) — Paies : employés ajoutables/retirables, historique par période et total
+- **Ajouter / retirer un employé d'une paie**, depuis « Préparer la paie » et « Historique des paies » (nouvelles routes `POST/DELETE /establishments/:id/payroll/runs/:runId/lines[/:lineId]`). Possible sur toute paie non annulée ; sur une paie déjà payée, la dépense « Salaires » liée suit dans la même transaction. Seuls les employés actifs absents de la paie sont proposés.
+- **Historique des paies par période** : `GET .../payroll/runs?from=&to=` (paies dont la période chevauche l'intervalle) ; sélecteur de période dans l'écran, et **total des paies (hors annulées) en haut à droite**.
+- **Module Dépenses** : bouton « Historique des paies » dans l'en-tête, accessible depuis tous les sous-onglets. Détails : `docs/api/expenses.md`.
+- Tests : 9 NestJS (ajout, retrait, filtre de période), 7 Flutter. Aucune migration de base.
+
 ### Ajouté (2026-10-05) — Dépenses : date de saisie, modification ; Salaires : historique et correction des paies
 - **Dépenses → sous-module Dépenses** : chaque dépense affiche sa **date de saisie** (« Saisie le jj/mm/aaaa à hh:mm ») et peut être **modifiée** (bouton crayon, formulaire de création pré-rempli ; statut « Annulée » réactivable). Les dépenses issues d'une paie restent non modifiables ici. Le serveur refuse en outre de renommer une dépense manuelle en nature « Salaires ». La modification exige une connexion (pas de file hors ligne).
 - **Salaires → Historique des paies** (nouveau bouton) : toutes les paies, avec **le nom de chaque employé** et sa ligne (base, avance, ajustement, net), les dates de préparation/paiement et le total.

@@ -1,9 +1,9 @@
-import { Body, Controller, Get, Param, Patch, Post, Query, Req, UseGuards } from '@nestjs/common';
+import { Body, Controller, Delete, Get, Param, Patch, Post, Query, Req, UseGuards } from '@nestjs/common';
 import type { Request } from 'express';
 import { PermissionsGuard } from '../auth/permissions.guard.js';
 import { RequirePermissions } from '../auth/permissions.decorator.js';
 import { SupabaseJwtGuard } from '../auth/supabase-jwt.guard.js';
-import { PreparePayrollRunDto, UpdatePayrollLineDto, UpdatePayrollRunDto } from './dto/payroll.dto.js';
+import { AddPayrollLineDto, PreparePayrollRunDto, UpdatePayrollLineDto, UpdatePayrollRunDto } from './dto/payroll.dto.js';
 import { PayrollService } from './payroll.service.js';
 
 @Controller('establishments/:establishmentId/payroll')
@@ -13,8 +13,12 @@ export class PayrollController {
 
   @Get('runs')
   @RequirePermissions('payroll.view')
-  list(@Param('establishmentId') establishmentId: string) {
-    return this.payroll.list(establishmentId);
+  list(
+    @Param('establishmentId') establishmentId: string,
+    @Query('from') from?: string,
+    @Query('to') to?: string,
+  ) {
+    return this.payroll.list(establishmentId, from, to);
   }
 
   @Get('dashboard')
@@ -52,6 +56,26 @@ export class PayrollController {
     @Body() dto: UpdatePayrollLineDto,
   ) {
     return this.payroll.updateLine(establishmentId, runId, lineId, dto);
+  }
+
+  @Post('runs/:runId/lines')
+  @RequirePermissions('payroll.manage')
+  addLine(
+    @Param('establishmentId') establishmentId: string,
+    @Param('runId') runId: string,
+    @Body() dto: AddPayrollLineDto,
+  ) {
+    return this.payroll.addLine(establishmentId, runId, dto);
+  }
+
+  @Delete('runs/:runId/lines/:lineId')
+  @RequirePermissions('payroll.manage')
+  removeLine(
+    @Param('establishmentId') establishmentId: string,
+    @Param('runId') runId: string,
+    @Param('lineId') lineId: string,
+  ) {
+    return this.payroll.removeLine(establishmentId, runId, lineId);
   }
 
   @Post('runs/:runId/validate')

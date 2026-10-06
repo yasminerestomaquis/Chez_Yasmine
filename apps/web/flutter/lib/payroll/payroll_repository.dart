@@ -21,8 +21,18 @@ class PayrollRepository {
     return PayrollDashboard.fromJson(json);
   }
 
-  Future<List<PayrollRun>> listRuns() async {
-    final json = await _api.get('$_base/runs') as List<dynamic>;
+  /// [from] / [to] (inclus, optionnels) : ne garde que les paies dont la
+  /// période chevauche cet intervalle — historique des paies sur une période
+  /// choisie par l'utilisateur.
+  Future<List<PayrollRun>> listRuns({DateTime? from, DateTime? to}) async {
+    final query = {
+      if (from != null) 'from': _dateOnly(from),
+      if (to != null) 'to': _dateOnly(to),
+    };
+    final json = await _api.get(
+      '$_base/runs',
+      query: query.isEmpty ? null : query,
+    ) as List<dynamic>;
     return json
         .map((e) => PayrollRun.fromJson(e as Map<String, dynamic>))
         .toList();
@@ -30,6 +40,16 @@ class PayrollRepository {
 
   String _dateOnly(DateTime date) =>
       '${date.year.toString().padLeft(4, '0')}-${date.month.toString().padLeft(2, '0')}-${date.day.toString().padLeft(2, '0')}';
+
+  /// Ajoute un employé actif sur la paie (salaire hebdomadaire courant, sans
+  /// avance ni ajustement). Exige le serveur.
+  Future<void> addLine(String runId, String employeeId) =>
+      _api.post('$_base/runs/$runId/lines', body: {'employeeId': employeeId});
+
+  /// Retire un employé de la paie ; pour une paie payée, la dépense « Salaires »
+  /// liée est ajustée côté serveur.
+  Future<void> removeLine(String runId, String lineId) =>
+      _api.delete('$_base/runs/$runId/lines/$lineId');
 
   Future<PayrollRun> prepare({
     required DateTime periodStart,

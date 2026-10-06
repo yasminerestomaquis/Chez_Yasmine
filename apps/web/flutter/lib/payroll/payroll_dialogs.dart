@@ -1,6 +1,8 @@
 import 'package:flutter/material.dart';
 import 'package:intl/intl.dart';
 
+import '../common/formatting.dart';
+import 'employee_models.dart';
 import 'payroll_models.dart';
 
 /// Libellé français du statut d'une paie.
@@ -102,6 +104,101 @@ Future<({double advance, double adjustment})?> showPayrollLineDialog(
       adjustmentController.text.trim().replaceAll(',', '.'),
     ),
   );
+}
+
+/// Choix de l'employé à ajouter à une paie parmi [candidates] (employés actifs
+/// absents de la paie). Renvoie `null` si l'utilisateur annule ou s'il n'y a
+/// personne à ajouter.
+Future<Employee?> showAddPayrollEmployeeDialog(
+  BuildContext context,
+  List<Employee> candidates, {
+  bool paid = false,
+}) {
+  if (candidates.isEmpty) {
+    return showDialog<Employee>(
+      context: context,
+      builder: (context) => AlertDialog(
+        title: const Text('Ajouter un employé'),
+        content: const Text(
+          'Tous les employés actifs figurent déjà sur cette paie.',
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.of(context).pop(),
+            child: const Text('Fermer'),
+          ),
+        ],
+      ),
+    );
+  }
+  return showDialog<Employee>(
+    context: context,
+    builder: (context) => AlertDialog(
+      title: const Text('Ajouter un employé'),
+      content: SizedBox(
+        width: double.maxFinite,
+        child: ListView(
+          shrinkWrap: true,
+          children: [
+            if (paid)
+              const Padding(
+                padding: EdgeInsets.only(bottom: 8),
+                child: Text(
+                  'Cette paie est déjà payée : la dépense « Salaires » '
+                  'correspondante sera ajustée au nouveau total.',
+                  style: TextStyle(fontSize: 12),
+                ),
+              ),
+            for (final employee in candidates)
+              ListTile(
+                dense: true,
+                contentPadding: EdgeInsets.zero,
+                title: Text(employee.fullName),
+                subtitle: Text(
+                  '${employee.position} — ${formatAmount(employee.weeklySalary)} F / semaine',
+                ),
+                onTap: () => Navigator.of(context).pop(employee),
+              ),
+          ],
+        ),
+      ),
+      actions: [
+        TextButton(
+          onPressed: () => Navigator.of(context).pop(),
+          child: const Text('Annuler'),
+        ),
+      ],
+    ),
+  );
+}
+
+/// Confirmation du retrait d'un employé d'une paie.
+Future<bool> confirmRemovePayrollLine(
+  BuildContext context,
+  PayrollLine line, {
+  bool paid = false,
+}) async {
+  final confirmed = await showDialog<bool>(
+    context: context,
+    builder: (context) => AlertDialog(
+      title: const Text('Retirer cet employé ?'),
+      content: Text(
+        '${line.employeeName} ne figurera plus sur cette paie'
+        '${paid ? ' et la dépense « Salaires » correspondante sera ajustée au nouveau total' : ''}.',
+      ),
+      actions: [
+        TextButton(
+          onPressed: () => Navigator.of(context).pop(false),
+          child: const Text('Annuler'),
+        ),
+        FilledButton(
+          onPressed: () => Navigator.of(context).pop(true),
+          child: const Text('Retirer'),
+        ),
+      ],
+    ),
+  );
+  return confirmed == true;
 }
 
 /// Période (« Du … au … ») d'une paie. Renvoie `null` si l'utilisateur annule.

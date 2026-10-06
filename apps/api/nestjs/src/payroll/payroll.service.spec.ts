@@ -8,9 +8,9 @@ const activityNotifierMock = { notify: vi.fn() } as unknown as ActivityNotifierS
 
 function makePrismaMock() {
   return {
-    employee: { findMany: vi.fn() },
+    employee: { findMany: vi.fn(), findFirst: vi.fn() },
     payrollRun: { create: vi.fn(), findFirst: vi.fn(), findMany: vi.fn(), update: vi.fn() },
-    payrollLine: { update: vi.fn(), findFirst: vi.fn(), findMany: vi.fn() },
+    payrollLine: { update: vi.fn(), findFirst: vi.fn(), findMany: vi.fn(), create: vi.fn(), delete: vi.fn() },
     expense: { create: vi.fn(), findFirst: vi.fn(), update: vi.fn() },
     $transaction: vi.fn((fn: any) => (typeof fn === 'function' ? fn(makePrismaMock()) : Promise.all(fn))),
   };
@@ -118,6 +118,133 @@ describe('PayrollService.updateLine', () => {
       data: { advance: 2000, adjustment: 0, netAmount: 28000 },
     });
     expect(tx.expense.update).toHaveBeenCalledWith({ where: { payrollRunId: 'run-1' }, data: { amount: 53000 } });
+  });
+});
+
+describe('PayrollService.addLine / removeLine (employés de la paie)', () => {
+  let prisma: ReturnType<typeof makePrismaMock>;
+  let service: PayrollService;
+
+  const run = (status: string, employeeIds: string[] = ['emp-1']) => ({
+    id: 'run-1',
+    establishmentId: 'est-1',
+    status,
+    lines: employeeIds.map((employeeId) => ({ employeeId })),
+  });
+  const employee = (status = 'active') => ({ id: 'emp-2', status, weeklySalary: { toNumber: () => 20000 } });
+
+  beforeEach(() => {
+    prisma = makePrismaMock();
+    service = new PayrollService(prisma as unknown as PrismaService, activityNotifierMock);
+  });
+
+  it('addLine on a prepared run creates a line at the current weekly salary', async () => {
+    (prisma.payrollRun as any).findFirst.mockResolvedValue(run('prepared'));
+    (prisma.employee as any).findFirst.mockResolvedValue(employee());
+    await service.addLine('est-1', 'run-1', { employeeId: 'emp-2' });
+    expect(prisma.employee.findFirst).toHaveBeenCalledWith(
+      expect.objectContaining({ where: { id: 'emp-2', establishmentId: 'est-1' } }),
+    );
+    expect(prisma.payrollLine.create).toHaveBeenCalledWith({
+      data: { payrollRunId: 'run-1', employeeId: 'emp-2', baseSalary: 20000, advance: 0, adjustment: 0, netAmount: 20000 },
+    });
+    expect(prisma.$transaction).not.toHaveBeenCalled();
+  });
+
+  it('addLine rejects a cancelled run, an unknown/inactive employee and a duplicate', async () => {
+    (prisma.payrollRun as any).findFirst.mockResolvedValue(run('cancelled'));
+    await expect(service.addLine('est-1', 'run-1', { employeeId: 'emp-2' })).rejects.toThrow(BadRequestException);
+
+    (prisma.payrollRun as any).findFirst.mockResolvedValue(run('prepared'));
+    (prisma.employee as any).findFirst.mockResolvedValue(null);
+    await expect(service.addLine('est-1', 'run-1', { employeeId: 'emp-2' })).rejects.toThrow(NotFoundException);
+
+    (prisma.employee as any).findFirst.mockResolvedValue(employee('inactive'));
+    await expect(service.addLine('est-1', 'run-1', { employeeId: 'emp-2' })).rejects.toThrow(BadRequestException);
+
+    (prisma.payrollRun as any).findFirst.mockResolvedValue(run('prepared', ['emp-1', 'emp-2']));
+    (prisma.employee as any).findFirst.mockResolvedValue(employee());
+    await expect(service.addLine('est-1', 'run-1', { employeeId: 'emp-2' })).rejects.toThrow('déjà');
+    expect(prisma.payrollLine.create).not.toHaveBeenCalled();
+  });
+
+  it('addLine on a PAID run also updates the linked "Salaires" expense in one transaction', async () => {
+    (prisma.payrollRun as any).findFirst.mockResolvedValue(run('paid'));
+    (prisma.employee as any).findFirst.mockResolvedValue(employee());
+    const tx = makePrismaMock();
+    (tx.payrollLine as any).findMany.mockResolvedValue([
+      { netAmount: { toNumber: () => 30000 } },
+      { netAmount: { toNumber: () => 20000 } },
+    ]);
+    (prisma.$transaction as any).mockImplementation((fn: any) => fn(tx));
+    await service.addLine('est-1', 'run-1', { employeeId: 'emp-2' });
+    expect(prisma.payrollLine.create).not.toHaveBeenCalled();
+    expect(tx.payrollLine.create).toHaveBeenCalledTimes(1);
+    expect(tx.expense.update).toHaveBeenCalledWith({ where: { payrollRunId: 'run-1' }, data: { amount: 50000 } });
+  });
+
+  const lineOf = (status: string) => ({
+    id: 'line-1',
+    baseSalary: { toNumber: () => 30000 },
+    payrollRun: { id: 'run-1', establishmentId: 'est-1', status },
+  });
+
+  it('removeLine deletes the line of a validated run', async () => {
+    (prisma.payrollLine as any).findFirst.mockResolvedValue(lineOf('validated'));
+    await service.removeLine('est-1', 'run-1', 'line-1');
+    expect(prisma.payrollLine.delete).toHaveBeenCalledWith({ where: { id: 'line-1' } });
+    expect(prisma.$transaction).not.toHaveBeenCalled();
+  });
+
+  it('removeLine rejects a cancelled run and a line of another establishment', async () => {
+    (prisma.payrollLine as any).findFirst.mockResolvedValue(lineOf('cancelled'));
+    await expect(service.removeLine('est-1', 'run-1', 'line-1')).rejects.toThrow(BadRequestException);
+    (prisma.payrollLine as any).findFirst.mockResolvedValue({
+      ...lineOf('prepared'),
+      payrollRun: { id: 'run-1', establishmentId: 'est-2', status: 'prepared' },
+    });
+    await expect(service.removeLine('est-1', 'run-1', 'line-1')).rejects.toThrow(NotFoundException);
+    expect(prisma.payrollLine.delete).not.toHaveBeenCalled();
+  });
+
+  it('removeLine on a PAID run recomputes the linked expense (0 when no line is left)', async () => {
+    (prisma.payrollLine as any).findFirst.mockResolvedValue(lineOf('paid'));
+    const tx = makePrismaMock();
+    (tx.payrollLine as any).findMany.mockResolvedValue([]);
+    (prisma.$transaction as any).mockImplementation((fn: any) => fn(tx));
+    await service.removeLine('est-1', 'run-1', 'line-1');
+    expect(tx.payrollLine.delete).toHaveBeenCalledWith({ where: { id: 'line-1' } });
+    expect(tx.expense.update).toHaveBeenCalledWith({ where: { payrollRunId: 'run-1' }, data: { amount: 0 } });
+  });
+});
+
+describe('PayrollService.list (période)', () => {
+  let prisma: ReturnType<typeof makePrismaMock>;
+  let service: PayrollService;
+
+  beforeEach(() => {
+    prisma = makePrismaMock();
+    service = new PayrollService(prisma as unknown as PrismaService, activityNotifierMock);
+  });
+
+  it('without bounds lists every run of the establishment', async () => {
+    await service.list('est-1');
+    expect((prisma.payrollRun as any).findMany.mock.calls[0][0].where).toEqual({ establishmentId: 'est-1' });
+  });
+
+  it('keeps the runs whose period overlaps [from, to]', async () => {
+    await service.list('est-1', '2026-09-01', '2026-09-30');
+    expect((prisma.payrollRun as any).findMany.mock.calls[0][0].where).toEqual({
+      establishmentId: 'est-1',
+      periodEnd: { gte: new Date('2026-09-01') },
+      periodStart: { lte: new Date('2026-09-30') },
+    });
+  });
+
+  it('rejects a malformed date and an inverted period', () => {
+    expect(() => service.list('est-1', 'hier')).toThrow(BadRequestException);
+    expect(() => service.list('est-1', '2026-09-30', '2026-09-01')).toThrow(BadRequestException);
+    expect(prisma.payrollRun.findMany).not.toHaveBeenCalled();
   });
 });
 
