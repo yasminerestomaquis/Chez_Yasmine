@@ -334,6 +334,40 @@ void main() {
     });
 
     testWidgets(
+      'mise en page sans débordement sur un écran de téléphone étroit',
+      (tester) async {
+        tester.view.physicalSize = const Size(360, 800);
+        tester.view.devicePixelRatio = 1;
+        addTearDown(tester.view.reset);
+        await http.runWithClient(() async {
+          await openHistory(tester);
+          expect(tester.takeException(), isNull);
+          expect(find.text('Semaine 40'), findsOneWidget);
+        }, payrollServer);
+      },
+    );
+
+    testWidgets(
+      'chaque paie est distinguée : semaine ISO, type, groupe de mois avec sous-total',
+      (tester) async {
+        await http.runWithClient(() async {
+          await openHistory(tester);
+
+          expect(find.text('Semaine 40'), findsOneWidget); // 28/09 → 04/10
+          expect(find.text('Semaine 39'), findsOneWidget); // 21/09 → 27/09
+          expect(find.text('Hebdo'), findsNWidgets(2));
+          expect(find.text('28/09/2026 → 04/10/2026'), findsOneWidget);
+          // Les deux paies commencent en septembre : un seul en-tête de mois,
+          // sous-total = paies non annulées uniquement.
+          expect(find.text('Septembre 2026'), findsOneWidget);
+          expect(find.text('1 paie · 55 000 FCFA'), findsOneWidget);
+          expect(find.text('2 employés'), findsOneWidget);
+          expect(find.text('1 employé'), findsOneWidget);
+        }, payrollServer);
+      },
+    );
+
+    testWidgets(
       'le total des paies (hors annulées) s\'affiche en haut à droite',
       (tester) async {
         await http.runWithClient(() async {
@@ -758,7 +792,8 @@ void main() {
             const MaterialApp(home: PayrollRunPage(establishmentId: 'est-1')),
           );
           await tester.pumpAndSettle();
-          expect(find.text('Paie mensuelle'), findsOneWidget);
+          expect(find.text('Septembre 2026'), findsOneWidget);
+          expect(find.text('Mensuelle'), findsOneWidget);
 
           await tester.tap(find.text('Ajouter un employé'));
           await tester.pumpAndSettle();

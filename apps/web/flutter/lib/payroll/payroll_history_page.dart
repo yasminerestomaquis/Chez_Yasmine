@@ -8,6 +8,7 @@ import 'employees_repository.dart';
 import 'payroll_dialogs.dart';
 import 'payroll_models.dart';
 import 'payroll_repository.dart';
+import 'payroll_run_widgets.dart';
 
 /// Historique des paies (demande utilisateur du 2026-10-05) : TOUTES les paies
 /// (préparées, validées, payées, annulées), la plus récente d'abord, avec pour
@@ -249,6 +250,149 @@ class _PayrollHistoryPageState extends State<PayrollHistoryPage> {
     );
   }
 
+  /// Les paies (déjà triées de la plus récente à la plus ancienne) regroupées
+  /// par mois de début de période, chaque groupe précédé d'un en-tête
+  /// (« Octobre 2026 — 2 paies · 52 000 FCFA »).
+  List<Widget> _buildItems(
+    List<PayrollRun> runs,
+    DateFormat dateFormat,
+    DateFormat dateTimeFormat,
+  ) {
+    final items = <Widget>[];
+    String? currentKey;
+    for (final run in runs) {
+      final key = '${run.periodStart.year}-${run.periodStart.month}';
+      if (key != currentKey) {
+        currentKey = key;
+        final group = runs.where(
+          (r) => '${r.periodStart.year}-${r.periodStart.month}' == key,
+        );
+        final active = group.where((r) => r.status != 'cancelled').toList();
+        items.add(
+          PayrollMonthHeader(
+            month: run.periodStart,
+            count: active.length,
+            totalText:
+                '${formatAmount(active.fold(0.0, (sum, r) => sum + r.total))} FCFA',
+          ),
+        );
+      }
+      items.add(_buildRunCard(run, dateFormat, dateTimeFormat));
+    }
+    return items;
+  }
+
+  Widget _buildRunCard(
+    PayrollRun run,
+    DateFormat dateFormat,
+    DateFormat dateTimeFormat,
+  ) {
+    return PayrollRunCardFrame(
+      run: run,
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Row(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Expanded(child: PayrollRunTitle(run)),
+              if (isPayrollRunEditable(run))
+                IconButton(
+                  tooltip: 'Modifier la période',
+                  icon: const Icon(Icons.edit_calendar_outlined),
+                  onPressed: _isBusy ? null : () => _editPeriod(run),
+                ),
+              PayrollStatusChip(run.status),
+            ],
+          ),
+          const SizedBox(height: 6),
+          if (run.createdAt != null)
+            Text(
+              'Préparée le ${dateTimeFormat.format(run.createdAt!.toLocal())}',
+              style: const TextStyle(fontSize: 12),
+            ),
+          if (run.status == 'paid' && run.paidAt != null)
+            Text(
+              'Payée le ${dateTimeFormat.format(run.paidAt!.toLocal())}'
+              ' — dépense « Salaires » du ${dateFormat.format(run.expenseDate ?? run.periodEnd)}',
+              style: const TextStyle(fontSize: 12),
+            ),
+          const SizedBox(height: 4),
+          if (run.lines.isEmpty)
+            const Padding(
+              padding: EdgeInsets.symmetric(vertical: 8),
+              child: Text('Aucun employé sur cette paie.'),
+            ),
+          for (final line in run.lines)
+            ListTile(
+              dense: true,
+              contentPadding: EdgeInsets.zero,
+              title: Text(line.employeeName),
+              subtitle: Text(
+                'Base ${formatAmount(line.baseSalary)} — Avance ${formatAmount(line.advance)} — Ajust. ${formatAmount(line.adjustment)}',
+              ),
+              trailing: Row(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  Text(
+                    '${formatAmount(line.netAmount)} F',
+                    style: const TextStyle(fontWeight: FontWeight.w600),
+                  ),
+                  if (isPayrollRunEditable(run)) ...[
+                    IconButton(
+                      tooltip: 'Modifier',
+                      icon: const Icon(Icons.edit_outlined),
+                      onPressed: _isBusy ? null : () => _editLine(run, line),
+                    ),
+                    IconButton(
+                      tooltip: 'Retirer de la paie',
+                      icon: const Icon(Icons.person_remove_outlined),
+                      onPressed: _isBusy ? null : () => _removeLine(run, line),
+                    ),
+                  ],
+                ],
+              ),
+            ),
+          if (isPayrollRunEditable(run))
+            Align(
+              alignment: Alignment.centerLeft,
+              child: TextButton.icon(
+                onPressed: _isBusy ? null : () => _addEmployee(run),
+                icon: const Icon(Icons.person_add_alt_1),
+                label: const Text('Ajouter un employé'),
+              ),
+            ),
+          const Divider(),
+          Row(
+            children: [
+              if (run.lines.isNotEmpty)
+                Text(
+                  '${run.lines.length} employé${run.lines.length > 1 ? 's' : ''}',
+                  style: const TextStyle(fontSize: 12),
+                ),
+              const SizedBox(width: 8),
+              Expanded(
+                child: Align(
+                  alignment: Alignment.centerRight,
+                  child: FittedBox(
+                    fit: BoxFit.scaleDown,
+                    child: Text(
+                      'Total : ${formatAmount(run.total)} FCFA',
+                      style: const TextStyle(
+                        fontWeight: FontWeight.bold,
+                        fontSize: 16,
+                      ),
+                    ),
+                  ),
+                ),
+              ),
+            ],
+          ),
+        ],
+      ),
+    );
+  }
+
   Widget _buildList(DateFormat dateFormat, DateFormat dateTimeFormat) {
     return FutureBuilder<List<PayrollRun>>(
       future: _future,
@@ -276,116 +420,7 @@ class _PayrollHistoryPageState extends State<PayrollHistoryPage> {
           onRefresh: _reload,
           child: ListView(
             padding: const EdgeInsets.all(12),
-            children: [
-              for (final run in runs)
-                Card(
-                  child: Padding(
-                    padding: const EdgeInsets.all(12),
-                    child: Column(
-                      crossAxisAlignment: CrossAxisAlignment.start,
-                      children: [
-                        Row(
-                          children: [
-                            Expanded(
-                              child: Text(
-                                'Du ${dateFormat.format(run.periodStart)} au ${dateFormat.format(run.periodEnd)}',
-                                style: const TextStyle(
-                                  fontWeight: FontWeight.bold,
-                                ),
-                              ),
-                            ),
-                            if (isPayrollRunEditable(run))
-                              IconButton(
-                                tooltip: 'Modifier la période',
-                                icon: const Icon(Icons.edit_calendar_outlined),
-                                onPressed: _isBusy
-                                    ? null
-                                    : () => _editPeriod(run),
-                              ),
-                            Chip(label: Text(payrollStatusLabel(run.status))),
-                          ],
-                        ),
-                        if (run.isMonthly)
-                          const Text(
-                            'Paie mensuelle (employés payés au mois)',
-                            style: TextStyle(fontSize: 12),
-                          ),
-                        if (run.createdAt != null)
-                          Text(
-                            'Préparée le ${dateTimeFormat.format(run.createdAt!.toLocal())}',
-                            style: const TextStyle(fontSize: 12),
-                          ),
-                        if (run.status == 'paid' && run.paidAt != null)
-                          Text(
-                            'Payée le ${dateTimeFormat.format(run.paidAt!.toLocal())}'
-                            ' — dépense « Salaires » du ${dateFormat.format(run.expenseDate ?? run.periodEnd)}',
-                            style: const TextStyle(fontSize: 12),
-                          ),
-                        const SizedBox(height: 4),
-                        if (run.lines.isEmpty)
-                          const Padding(
-                            padding: EdgeInsets.symmetric(vertical: 8),
-                            child: Text('Aucun employé sur cette paie.'),
-                          ),
-                        for (final line in run.lines)
-                          ListTile(
-                            dense: true,
-                            contentPadding: EdgeInsets.zero,
-                            title: Text(line.employeeName),
-                            subtitle: Text(
-                              'Base ${formatAmount(line.baseSalary)} — Avance ${formatAmount(line.advance)} — Ajust. ${formatAmount(line.adjustment)}',
-                            ),
-                            trailing: Row(
-                              mainAxisSize: MainAxisSize.min,
-                              children: [
-                                Text(
-                                  '${formatAmount(line.netAmount)} F',
-                                  style: const TextStyle(
-                                    fontWeight: FontWeight.w600,
-                                  ),
-                                ),
-                                if (isPayrollRunEditable(run)) ...[
-                                  IconButton(
-                                    tooltip: 'Modifier',
-                                    icon: const Icon(Icons.edit_outlined),
-                                    onPressed: _isBusy
-                                        ? null
-                                        : () => _editLine(run, line),
-                                  ),
-                                  IconButton(
-                                    tooltip: 'Retirer de la paie',
-                                    icon: const Icon(
-                                      Icons.person_remove_outlined,
-                                    ),
-                                    onPressed: _isBusy
-                                        ? null
-                                        : () => _removeLine(run, line),
-                                  ),
-                                ],
-                              ],
-                            ),
-                          ),
-                        if (isPayrollRunEditable(run))
-                          Align(
-                            alignment: Alignment.centerLeft,
-                            child: TextButton.icon(
-                              onPressed: _isBusy
-                                  ? null
-                                  : () => _addEmployee(run),
-                              icon: const Icon(Icons.person_add_alt_1),
-                              label: const Text('Ajouter un employé'),
-                            ),
-                          ),
-                        const Divider(),
-                        Text(
-                          'Total : ${formatAmount(run.total)} FCFA',
-                          style: const TextStyle(fontWeight: FontWeight.bold),
-                        ),
-                      ],
-                    ),
-                  ),
-                ),
-            ],
+            children: _buildItems(runs, dateFormat, dateTimeFormat),
           ),
         );
       },

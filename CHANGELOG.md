@@ -2,6 +2,11 @@
 
 ## [Unreleased]
 
+### Modifié (2026-10-06) — Historique des paies : distinction nette de chaque paie
+- Chaque paie porte un titre lisible : **« Semaine 41 »** (numéro ISO, pour une semaine lundi→dimanche) ou **« Septembre 2026 »** (paie mensuelle sur un mois entier), une pastille de type (**Hebdo** en vert / **Mensuelle** en orange, avec bandeau d'accent à gauche de la carte), un repère relatif (Semaine en cours / dernière, Mois en cours / dernier), les dates exactes et le nombre d'employés. Une période modifiée à la main s'affiche « Période personnalisée ».
+- Statuts en pastilles colorées (Préparée orange, Validée bleu, Payée vert, Annulée rouge, carte atténuée) ; paies **regroupées par mois** avec en-tête et sous-total (paies non annulées). Mêmes titres et pastilles dans « Préparer la paie ». Aucun changement d'API.
+- Tests : 4 Flutter.
+
 ### Ajouté (2026-10-06) — Pinger anti-veille de l'API Render
 - Job `pg_cron` **`render-keepalive`** (toutes les 5 min) qui appelle `GET /` de l'API via `pg_net`, depuis la base Supabase : exécution ponctuelle, contrairement aux tâches planifiées GitHub Actions (médiane 14,7 min pour un cron à 10 min). Le workflow `render-keepalive.yml` est conservé en redondance. Purge quotidienne de `cron.job_run_details`. Migration `20261006130000_add_render_keepalive_cron.sql` (appliquée en production). Prompt de mise en place : `PROMPT/Prompt_Pinger_Anti_Veille_Render.md`.
 

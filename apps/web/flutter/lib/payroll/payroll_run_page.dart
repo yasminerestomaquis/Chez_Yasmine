@@ -8,6 +8,7 @@ import 'employees_repository.dart';
 import 'payroll_dialogs.dart';
 import 'payroll_models.dart';
 import 'payroll_repository.dart';
+import 'payroll_run_widgets.dart';
 
 DateTime _mondayOf(DateTime date) {
   final weekdayIndex = (date.weekday - 1) % 7;
@@ -366,7 +367,6 @@ class _PayrollRunPageState extends State<PayrollRunPage> {
 
   @override
   Widget build(BuildContext context) {
-    final fmt = DateFormat('dd/MM/yyyy');
     return Scaffold(
       appBar: AppBar(title: const Text('Préparer la paie')),
       floatingActionButton: FloatingActionButton.extended(
@@ -398,134 +398,111 @@ class _PayrollRunPageState extends State<PayrollRunPage> {
             padding: const EdgeInsets.all(12),
             children: [
               for (final run in runs)
-                Card(
-                  child: Padding(
-                    padding: const EdgeInsets.all(12),
-                    child: Column(
-                      crossAxisAlignment: CrossAxisAlignment.start,
-                      children: [
-                        Row(
-                          children: [
-                            Expanded(
-                              child: Column(
-                                crossAxisAlignment: CrossAxisAlignment.start,
-                                children: [
-                                  Text(
-                                    'Du ${fmt.format(run.periodStart)} au ${fmt.format(run.periodEnd)}',
-                                    style: const TextStyle(
-                                      fontWeight: FontWeight.bold,
-                                    ),
-                                  ),
-                                  if (run.isMonthly)
-                                    const Text(
-                                      'Paie mensuelle',
-                                      style: TextStyle(fontSize: 12),
-                                    ),
-                                ],
-                              ),
-                            ),
-                            if (run.status == 'prepared' ||
-                                run.status == 'validated')
-                              IconButton(
-                                tooltip: 'Modifier la période',
-                                icon: const Icon(Icons.edit_calendar_outlined),
-                                onPressed: _isBusy
-                                    ? null
-                                    : () => _editPeriod(run),
-                              ),
-                            Chip(label: Text(payrollStatusLabel(run.status))),
-                          ],
-                        ),
-                        for (final line in run.lines)
-                          ListTile(
-                            dense: true,
-                            title: Text(line.employeeName),
-                            subtitle: Text(
-                              'Base ${formatAmount(line.baseSalary)} — Avance ${formatAmount(line.advance)} — Ajust. ${formatAmount(line.adjustment)}',
-                            ),
-                            trailing: Row(
-                              mainAxisSize: MainAxisSize.min,
-                              children: [
-                                Text(
-                                  '${formatAmount(line.netAmount)} F',
-                                  style: const TextStyle(
-                                    fontWeight: FontWeight.w600,
-                                  ),
-                                ),
-                                if (isPayrollRunEditable(run))
-                                  IconButton(
-                                    tooltip: 'Retirer de la paie',
-                                    icon: const Icon(
-                                      Icons.person_remove_outlined,
-                                    ),
-                                    onPressed: _isBusy
-                                        ? null
-                                        : () => _removeLine(run, line),
-                                  ),
-                              ],
-                            ),
-                            onTap:
-                                (run.status != 'cancelled' &&
-                                    run.status != 'paid' &&
-                                    !_isBusy)
-                                ? () => _editLine(run, line)
-                                : null,
-                          ),
-                        if (isPayrollRunEditable(run))
-                          Align(
-                            alignment: Alignment.centerLeft,
-                            child: TextButton.icon(
+                PayrollRunCardFrame(
+                  run: run,
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Row(
+                        children: [
+                          Expanded(child: PayrollRunTitle(run)),
+                          if (run.status == 'prepared' ||
+                              run.status == 'validated')
+                            IconButton(
+                              tooltip: 'Modifier la période',
+                              icon: const Icon(Icons.edit_calendar_outlined),
                               onPressed: _isBusy
                                   ? null
-                                  : () => _addEmployee(run),
-                              icon: const Icon(Icons.person_add_alt_1),
-                              label: const Text('Ajouter un employé'),
+                                  : () => _editPeriod(run),
                             ),
+                          PayrollStatusChip(run.status),
+                        ],
+                      ),
+                      for (final line in run.lines)
+                        ListTile(
+                          dense: true,
+                          title: Text(line.employeeName),
+                          subtitle: Text(
+                            'Base ${formatAmount(line.baseSalary)} — Avance ${formatAmount(line.advance)} — Ajust. ${formatAmount(line.adjustment)}',
                           ),
-                        const Divider(),
-                        Row(
-                          mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                          children: [
-                            Text(
-                              'Total : ${formatAmount(run.total)} FCFA',
-                              style: const TextStyle(
-                                fontWeight: FontWeight.bold,
+                          trailing: Row(
+                            mainAxisSize: MainAxisSize.min,
+                            children: [
+                              Text(
+                                '${formatAmount(line.netAmount)} F',
+                                style: const TextStyle(
+                                  fontWeight: FontWeight.w600,
+                                ),
                               ),
-                            ),
-                            Row(
-                              children: [
-                                if (run.status == 'prepared') ...[
-                                  TextButton(
-                                    onPressed: _isBusy
-                                        ? null
-                                        : () => _cancel(run),
-                                    child: const Text('Annuler'),
+                              if (isPayrollRunEditable(run))
+                                IconButton(
+                                  tooltip: 'Retirer de la paie',
+                                  icon: const Icon(
+                                    Icons.person_remove_outlined,
                                   ),
-                                  FilledButton(
-                                    onPressed: _isBusy
-                                        ? null
-                                        : () => _validate(run),
-                                    child: const Text('Valider'),
-                                  ),
-                                ],
-                                if (run.status == 'validated') ...[
-                                  TextButton(
-                                    onPressed: _isBusy
-                                        ? null
-                                        : () => _cancel(run),
-                                    child: const Text('Annuler'),
-                                  ),
-                                  FilledButton(
-                                    onPressed: _isBusy ? null : () => _pay(run),
-                                    child: const Text('Payer'),
-                                  ),
-                                ],
-                              ],
-                            ),
-                          ],
+                                  onPressed: _isBusy
+                                      ? null
+                                      : () => _removeLine(run, line),
+                                ),
+                            ],
+                          ),
+                          onTap:
+                              (run.status != 'cancelled' &&
+                                  run.status != 'paid' &&
+                                  !_isBusy)
+                              ? () => _editLine(run, line)
+                              : null,
                         ),
-                      ],
-                    ),
+                      if (isPayrollRunEditable(run))
+                        Align(
+                          alignment: Alignment.centerLeft,
+                          child: TextButton.icon(
+                            onPressed: _isBusy ? null : () => _addEmployee(run),
+                            icon: const Icon(Icons.person_add_alt_1),
+                            label: const Text('Ajouter un employé'),
+                          ),
+                        ),
+                      const Divider(),
+                      Row(
+                        mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                        children: [
+                          Text(
+                            'Total : ${formatAmount(run.total)} FCFA',
+                            style: const TextStyle(fontWeight: FontWeight.bold),
+                          ),
+                          Row(
+                            children: [
+                              if (run.status == 'prepared') ...[
+                                TextButton(
+                                  onPressed: _isBusy
+                                      ? null
+                                      : () => _cancel(run),
+                                  child: const Text('Annuler'),
+                                ),
+                                FilledButton(
+                                  onPressed: _isBusy
+                                      ? null
+                                      : () => _validate(run),
+                                  child: const Text('Valider'),
+                                ),
+                              ],
+                              if (run.status == 'validated') ...[
+                                TextButton(
+                                  onPressed: _isBusy
+                                      ? null
+                                      : () => _cancel(run),
+                                  child: const Text('Annuler'),
+                                ),
+                                FilledButton(
+                                  onPressed: _isBusy ? null : () => _pay(run),
+                                  child: const Text('Payer'),
+                                ),
+                              ],
+                            ],
+                          ),
+                        ],
+                      ),
+                    ],
                   ),
                 ),
             ],
