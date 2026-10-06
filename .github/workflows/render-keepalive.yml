@@ -14,6 +14,11 @@ name: Render Keep-Alive
 # ces trous ; la planification de GitHub reste « au mieux » et aucune
 # fréquence ne la rend fiable (un service externe de supervision, ou un plan
 # Render payant, le serait).
+#
+# 2026-10-06 : le pinger PRINCIPAL est désormais pg_cron + pg_net dans la base
+# Supabase (job `render-keepalive`, toutes les 5 min, ponctuel — voir
+# supabase/migrations/20261006130000_add_render_keepalive_cron.sql). Ce workflow
+# est conservé comme redondance (filet de sécurité si la base est en pause).
 on:
   schedule:
     - cron: '*/5 * * * *'

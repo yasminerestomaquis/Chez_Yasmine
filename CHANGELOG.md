@@ -2,6 +2,9 @@
 
 ## [Unreleased]
 
+### Ajouté (2026-10-06) — Pinger anti-veille de l'API Render
+- Job `pg_cron` **`render-keepalive`** (toutes les 5 min) qui appelle `GET /` de l'API via `pg_net`, depuis la base Supabase : exécution ponctuelle, contrairement aux tâches planifiées GitHub Actions (médiane 14,7 min pour un cron à 10 min). Le workflow `render-keepalive.yml` est conservé en redondance. Purge quotidienne de `cron.job_run_details`. Migration `20261006130000_add_render_keepalive_cron.sql` (appliquée en production). Prompt de mise en place : `PROMPT/Prompt_Pinger_Anti_Veille_Render.md`.
+
 ### Ajouté (2026-10-06) — Salaires : semaine omise, salaire mensuel, poste en liste déroulante
 - **Préparer une paie** : nouveau choix Semaine en cours / **semaine omise** (n'importe quelle semaine passée) / **paie mensuelle**, avec confirmation de la période ; une seule paie non annulée par type et par début de période (refus côté serveur aussi).
 - **Ajouter un employé** : choix **Hebdomadaire / Mensuel** du salaire (libellé du montant adapté) et champ **Poste** devenu liste déroulante alimentée par les rôles de l'application (`GET .../employees/positions`).
