@@ -113,6 +113,16 @@ void main() {
         expect(find.text('Plats - Espèces'), findsOneWidget);
         expect(find.text('ACTIONS RAPIDES'), findsOneWidget);
         expect(find.text('OPÉRATIONS'), findsOneWidget);
+        // Régression 2026-10-07 : « Espèces » / « Mobile Money » s'écrivaient
+        // à la verticale (une lettre par ligne) sur téléphone — chaque
+        // désignation doit tenir sur une ou deux lignes au plus.
+        for (final label in ['Espèces', 'Mobile Money']) {
+          expect(
+            tester.getSize(find.text(label)).height,
+            lessThan(2.5 * 13 * 1.25),
+            reason: '« $label » ne doit pas être écrasé en colonne étroite',
+          );
+        }
         // Aucun débordement (RenderFlex overflow) levé pendant le rendu.
         expect(tester.takeException(), isNull);
 

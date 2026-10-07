@@ -158,9 +158,15 @@ class DashStatCard extends StatelessWidget {
       child: Text(value, style: valueStyle),
     );
 
+    // Disposition empilée pour toutes les cartes sauf la grande : pastille et
+    // images en haut, désignation PUIS valeur en dessous, sur toute la largeur
+    // de la carte. (Une disposition « pastille | désignation » laissait à
+    // « Espèces » moins de 10 px sur téléphone — le mot s'écrivait à la
+    // verticale, constaté le 2026-10-07.) La désignation n'est jamais
+    // comprimée à côté d'autre chose qu'une pastille sur la grande carte.
     final Widget content;
-    if (compact) {
-      final imageSize = images.length <= 1 ? 38.0 : 22.0;
+    if (!large) {
+      final imageSize = images.length <= 1 ? (compact ? 38.0 : 52.0) : 22.0;
       content = Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         mainAxisSize: MainAxisSize.min,
@@ -168,7 +174,7 @@ class DashStatCard extends StatelessWidget {
           Row(
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
-              DashBadge(icon: icon, tone: tone, size: 32),
+              DashBadge(icon: icon, tone: tone, size: compact ? 32 : 40),
               const Spacer(),
               for (var i = 0; i < images.length; i++) ...[
                 if (i > 0) const SizedBox(width: 3),
@@ -176,7 +182,7 @@ class DashStatCard extends StatelessWidget {
               ],
             ],
           ),
-          const SizedBox(height: 8),
+          SizedBox(height: compact ? 8 : 10),
           labelWidget,
           const SizedBox(height: 4),
           valueWidget,
@@ -190,7 +196,7 @@ class DashStatCard extends StatelessWidget {
           Row(
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
-              DashBadge(icon: icon, tone: tone, size: large ? 46 : 40),
+              DashBadge(icon: icon, tone: tone, size: 46),
               const SizedBox(width: 12),
               Expanded(
                 child: Padding(
@@ -200,16 +206,12 @@ class DashStatCard extends StatelessWidget {
               ),
             ],
           ),
-          SizedBox(height: large ? 8 : 6),
-          Padding(
-            padding: EdgeInsets.only(left: large ? 0 : 52),
-            child: valueWidget,
-          ),
+          const SizedBox(height: 8),
+          valueWidget,
         ],
       );
     }
 
-    final rightInset = !compact && images.isNotEmpty ? 70.0 : 0.0;
     return Container(
       decoration: BoxDecoration(
         gradient: tone.gradient,
@@ -236,25 +238,8 @@ class DashStatCard extends StatelessWidget {
                 color: tone.accent.withValues(alpha: 0.14),
               ),
             ),
-          if (!compact && images.isNotEmpty)
-            Positioned(
-              right: 8,
-              top: 0,
-              bottom: 0,
-              child: Center(
-                child: Row(
-                  mainAxisSize: MainAxisSize.min,
-                  children: [for (final a in images) _image(a, 56)],
-                ),
-              ),
-            ),
           Padding(
-            padding: EdgeInsets.fromLTRB(
-              compact ? 10 : 14,
-              compact ? 10 : 14,
-              (compact ? 10 : 14) + rightInset,
-              compact ? 10 : 14,
-            ),
+            padding: EdgeInsets.all(compact ? 10 : 14),
             child: content,
           ),
         ],
