@@ -2,6 +2,11 @@
 
 ## [Unreleased]
 
+### Modifié (2026-10-07) — Pertes en « Lot (1) » ; Action rapide « Vérifier le Stock »
+- **Pertes** : même règle qu'en Caisse/Tables — un produit dont le lot ne contient qu'une unité (`Product.unit` = « 1 ») n'affiche plus le choix Lot/Unité et la perte est valorisée à l'unité (`sellAsUnit`). Un vrai lot garde le choix.
+- **Accueil → Action rapide** : « Enregistrer une dépense » est remplacé par **« Vérifier le Stock »**, qui ouvre le module Stock (le module Dépenses reste accessible par la grille des modules).
+- Tests : 4 Flutter. Aucun changement d'API.
+
 ### Corrigé (2026-10-07) — Caisse et Tables : produit en « Lot (1) »
 - Un produit à prix à l'unité dont le lot ne contient qu'**une** unité (`Product.unit` = « 1 », ex. Cody's Energy : « Lot (1) — 600 » / « Unité — 600 ») ne déclenche plus la question « Comment vendre ce produit ? » : il est ajouté directement, vendu à l'unité (`sellAsUnit`), en Caisse comme dans l'Addition d'une table. Un vrai lot (3, 12…) ou une taille de lot non renseignée garde le choix Lot/Unité. Les Pertes ne sont pas concernées. Aucun changement d'API.
 - Tests : 5 Flutter.

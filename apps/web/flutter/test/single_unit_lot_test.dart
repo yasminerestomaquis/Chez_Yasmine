@@ -8,6 +8,7 @@ import 'package:shared_preferences/shared_preferences.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 
 import 'package:chez_yasmine/catalog/models.dart';
+import 'package:chez_yasmine/losses/loss_pricing_choice.dart';
 import 'package:chez_yasmine/pos/pos_page.dart';
 
 /// Demande du 2026-10-07 : un produit dont le « lot » ne contient qu'une unité
@@ -53,6 +54,27 @@ void main() {
         product(unit: '1', unitSalePrice: null).isSoldAsSingleUnitOnly,
         isFalse,
       );
+    });
+  });
+
+  group('Pertes (même règle que la Caisse)', () {
+    test('« Lot (1) » : aucun choix Lot/Unité, valorisée à l’unité', () {
+      final single = product(unit: '1');
+      expect(hasLotAndUnitPricing(single), isFalse);
+      expect(lossSellsAsUnit(single, false), isTrue);
+      expect(lossSellsAsUnit(single, true), isTrue);
+    });
+
+    test('vrai lot : le choix reste proposé et suit la sélection', () {
+      final lot = product(unit: '3');
+      expect(hasLotAndUnitPricing(lot), isTrue);
+      expect(lossSellsAsUnit(lot, false), isFalse);
+      expect(lossSellsAsUnit(lot, true), isTrue);
+    });
+
+    test('sans prix à l’unité ou sans produit : jamais valorisée à l’unité', () {
+      expect(lossSellsAsUnit(product(unit: '1', unitSalePrice: null), true), isFalse);
+      expect(lossSellsAsUnit(null, true), isFalse);
     });
   });
 

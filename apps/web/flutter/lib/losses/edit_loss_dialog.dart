@@ -95,7 +95,7 @@ class _EditLossDialogState extends State<_EditLossDialog> {
         quantity: quantity,
         reason: _reasonController.text.trim(),
         createdAt: _date,
-        sellAsUnit: _sellAsUnit && hasLotAndUnitPricing(_selectedProduct),
+        sellAsUnit: lossSellsAsUnit(_selectedProduct, _sellAsUnit),
         orderNumber: _orderNumber,
       );
       if (!mounted) return;

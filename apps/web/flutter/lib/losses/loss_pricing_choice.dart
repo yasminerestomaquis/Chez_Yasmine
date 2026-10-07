@@ -6,7 +6,17 @@ import '../common/formatting.dart';
 /// Vrai si le produit se vend par lot ET à l'unité (`unitSalePrice` renseigné
 /// et `salePrice` = prix du lot) : la perte propose alors le choix Lot/Unité,
 /// comme « Comment vendre ce produit ? » en caisse.
-bool hasLotAndUnitPricing(Product? product) => product != null && product.unitSalePrice != null && product.salePrice != null;
+///
+/// Un lot d'UNE seule unité (`Product.isSoldAsSingleUnitOnly`, « Lot (1) » =
+/// « Unité ») n'offre pas de vrai choix : même règle qu'en Caisse/Tables
+/// (demande du 2026-10-07), voir [lossSellsAsUnit].
+bool hasLotAndUnitPricing(Product? product) =>
+    product != null && product.unitSalePrice != null && product.salePrice != null && !product.isSoldAsSingleUnitOnly;
+
+/// Valorisation « Unité » d'une perte : imposée pour un lot d'une seule unité,
+/// sinon selon le choix de l'utilisateur (si le produit propose le choix).
+bool lossSellsAsUnit(Product? product, bool chosenUnit) =>
+    product != null && (product.isSoldAsSingleUnitOnly || (chosenUnit && hasLotAndUnitPricing(product)));
 
 /// Libellé de l'option Lot (ex. « Lot (3) — 2 000 FCFA »).
 String lossLotLabel(Product product) {

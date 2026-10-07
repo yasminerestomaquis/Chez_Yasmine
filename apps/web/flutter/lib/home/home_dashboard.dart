@@ -518,14 +518,17 @@ class _HomeDashboardState extends State<HomeDashboard> {
             ),
             ListTile(
               leading: const Icon(
-                Icons.receipt_long_outlined,
+                Icons.fact_check_outlined,
                 color: AppColors.green,
               ),
-              title: const Text('Enregistrer une dépense'),
+              title: const Text('Vérifier le Stock'),
               onTap: () {
                 Navigator.of(sheetContext).pop();
                 _openPage(
-                  (_) => ExpensesPage(establishmentId: widget.establishmentId),
+                  (_) => StockPage(
+                    establishmentId: widget.establishmentId,
+                    roleName: widget.roleName,
+                  ),
                 );
               },
             ),

@@ -86,7 +86,7 @@ class _RecordLossDialogState extends State<_RecordLossDialog> {
     setState(() => _date = DateTime(picked.year, picked.month, picked.day, now.hour, now.minute, now.second));
   }
 
-  bool get _sendSellAsUnit => _sellAsUnit && hasLotAndUnitPricing(_selectedProduct);
+  bool get _sendSellAsUnit => lossSellsAsUnit(_selectedProduct, _sellAsUnit);
 
   Future<void> _submit() async {
     if (_selectedProduct == null) {

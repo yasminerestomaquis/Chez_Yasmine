@@ -4,6 +4,7 @@ import 'package:shared_preferences/shared_preferences.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 
 import 'package:chez_yasmine/home/home_dashboard.dart';
+import 'package:chez_yasmine/stock/stock_page.dart';
 
 void main() {
   // Voir graphiques_page_test.dart/reports_page_test.dart : ApiClient lit
@@ -187,6 +188,36 @@ void main() {
 
       // De retour sur "Choisir un intervalle", l'heure choisie a mis à jour "Du".
       expect(find.text('Choisir un intervalle'), findsOneWidget);
+    },
+  );
+
+  // Demande du 2026-10-07 : « Enregistrer une dépense » remplacé par
+  // « Vérifier le Stock », qui ouvre le module Stock.
+  testWidgets(
+    'Action rapide : « Vérifier le Stock » remplace « Enregistrer une dépense » et ouvre le module Stock',
+    (tester) async {
+      await tester.pumpWidget(
+        const MaterialApp(
+          home: HomeDashboard(
+            establishmentId: 'est-1',
+            establishmentName: 'Chez Yasmine',
+            roleName: 'Gérant',
+          ),
+        ),
+      );
+      await tester.pump();
+
+      await tester.tap(find.text('Action'));
+      await tester.pumpAndSettle();
+
+      expect(find.text('Action rapide'), findsOneWidget);
+      expect(find.text('Enregistrer une dépense'), findsNothing);
+      expect(find.text('Vérifier le Stock'), findsOneWidget);
+
+      await tester.tap(find.text('Vérifier le Stock'));
+      await tester.pumpAndSettle();
+
+      expect(find.byType(StockPage), findsOneWidget);
     },
   );
 }
