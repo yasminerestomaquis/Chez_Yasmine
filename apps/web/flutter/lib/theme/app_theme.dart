@@ -7,6 +7,7 @@ class AppColors {
   AppColors._();
 
   static const Color green = Color(0xFF008A20);
+  static const Color greenDark = Color(0xFF16702F);
   static const Color greenLight = Color(0xFFEEF8EF);
   static const Color orange = Color(0xFFF97316);
   static const Color orangeLight = Color(0xFFFFF1E6);

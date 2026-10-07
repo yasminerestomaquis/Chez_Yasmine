@@ -11,6 +11,7 @@ import '../common/date_time_range_picker.dart';
 import '../common/formatting.dart';
 import '../customers/customers_page.dart';
 import '../expenses/expenses_page.dart';
+import 'dashboard_widgets.dart';
 import 'date_selection.dart';
 import '../losses/losses_page.dart';
 import '../notifications/notifications_page.dart';
@@ -33,6 +34,17 @@ class _ModuleEntry {
   final IconData icon;
   final String label;
   final WidgetBuilder builder;
+
+  /// Teinte de la tuile du module (purement visuelle).
+  DashTone get tone => switch (label) {
+    'Tables' => DashTone.teal,
+    'Caisse' || 'Rapports' => DashTone.purple,
+    'Stock' || 'Catalogue' || 'Clôture' => DashTone.orange,
+    'Achats' || 'Graphiques' => DashTone.green,
+    'Dépenses' || 'Pertes' || 'Clients' => DashTone.blue,
+    'Notifications' => DashTone.red,
+    _ => DashTone.teal,
+  };
 }
 
 /// Tableau de bord d'un établissement — écran d'accueil principal.
@@ -575,327 +587,177 @@ class _HomeDashboardState extends State<HomeDashboard> {
     );
   }
 
-  /// Grille de vignettes `_statCard`, 2 par ligne, sans hauteur figée — pour
-  /// que les désignations longues (ex. « Boissons sans Gbêlê · Mobile Money »)
-  /// s'affichent toujours en entier, sur plusieurs lignes si besoin, quelle
-  /// que soit la largeur de l'écran, plutôt que d'être coupées par une
-  /// ellipse dans une carte de hauteur fixe (demande utilisateur du
-  /// 2026-09-25). `IntrinsicHeight` aligne les deux cartes d'une même ligne
-  /// sur la plus haute des deux.
-  Widget _statCardGrid(List<Widget> cards) {
+  /// Grille de vignettes `DashStatCard`, [columns] par ligne, sans hauteur
+  /// figée — pour que les désignations longues (ex. « Boissons sans Gbêlê -
+  /// Mobile Money ») s'affichent toujours en entier, sur plusieurs lignes si
+  /// besoin, quelle que soit la largeur de l'écran, plutôt que d'être coupées
+  /// par une ellipse dans une carte de hauteur fixe (demande utilisateur du
+  /// 2026-09-25). `IntrinsicHeight` aligne les cartes d'une même ligne sur la
+  /// plus haute.
+  Widget _cardGrid(List<Widget> cards, {int columns = 2}) {
+    const gap = 10.0;
     final rows = <Widget>[];
-    for (var i = 0; i < cards.length; i += 2) {
-      final second = i + 1 < cards.length ? cards[i + 1] : null;
+    for (var i = 0; i < cards.length; i += columns) {
       rows.add(
         IntrinsicHeight(
           child: Row(
             crossAxisAlignment: CrossAxisAlignment.stretch,
             children: [
-              Expanded(child: cards[i]),
-              const SizedBox(width: 10),
-              Expanded(child: second ?? const SizedBox()),
+              for (var c = 0; c < columns; c++) ...[
+                if (c > 0) const SizedBox(width: gap),
+                Expanded(
+                  child: i + c < cards.length ? cards[i + c] : const SizedBox(),
+                ),
+              ],
             ],
           ),
         ),
       );
-      if (i + 2 < cards.length) rows.add(const SizedBox(height: 10));
+      if (i + columns < cards.length) rows.add(const SizedBox(height: gap));
     }
     return Column(crossAxisAlignment: CrossAxisAlignment.stretch, children: rows);
   }
 
-  Widget _statCard({
-    required IconData icon,
-    required String label,
-    required String value,
-    required Color color,
-    // Icônes décoratives à côté du libellé (demande utilisateur du
-    // 2026-09-12 : Wave/Espèces existants + 2 icônes produit — Malta pour
-    // les cartes "Boissons", Kedjenou de poulet pour les cartes "Plats" —,
-    // un peu plus grandes que l'icône unique précédente) ; `null`/vide :
-    // aucune icône.
-    List<String>? iconAssets,
-  }) {
-    return Card(
-      child: Padding(
-        padding: const EdgeInsets.all(14),
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            Row(
-              children: [
-                Container(
-                  padding: const EdgeInsets.all(8),
-                  decoration: BoxDecoration(
-                    color: color.withValues(alpha: 0.12),
-                    shape: BoxShape.circle,
-                  ),
-                  child: Icon(icon, color: color, size: 20),
-                ),
-              ],
-            ),
-            const SizedBox(height: 10),
-            Text(
-              value,
-              style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 18),
-            ),
-            const SizedBox(height: 2),
-            Row(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                Expanded(
-                  // Pas d'`overflow`/`maxLines` : la désignation s'affiche
-                  // toujours en entier, quitte à retourner à la ligne
-                  // (demande utilisateur du 2026-09-25) — jamais coupée par
-                  // une ellipse, quelle que soit la largeur de l'écran.
-                  child: Text(
-                    label,
-                    softWrap: true,
-                    style: const TextStyle(
-                      color: AppColors.textSecondary,
-                      fontSize: 12,
-                    ),
-                  ),
-                ),
-                if (iconAssets != null)
-                  for (final asset in iconAssets) ...[
-                    const SizedBox(width: 4),
-                    ClipRRect(
-                      borderRadius: BorderRadius.circular(4),
-                      child: Image.asset(
-                        asset,
-                        width: 18,
-                        height: 18,
-                        fit: BoxFit.cover,
-                      ),
-                    ),
-                  ],
-              ],
-            ),
-          ],
-        ),
-      ),
-    );
-  }
+  /// 3 colonnes quand le nombre de cartes s'y prête (3 ou 6), sinon 2.
+  int _columnsFor(int count) => count % 3 == 0 ? 3 : 2;
 
-  /// Carte pleine largeur : "Ventes aujourd'hui" décomposée par mode de
-  /// paiement (Espèces/Mobile Money) — le total est construit comme la somme
-  /// exacte des deux, voir `ReportsService.paymentCategoryBreakdown`.
-  Widget _salesSummaryCard(PaymentCategoryBreakdown breakdown) {
-    return Card(
-      child: Padding(
-        padding: const EdgeInsets.all(16),
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            Row(
-              children: [
-                Container(
-                  padding: const EdgeInsets.all(8),
-                  decoration: BoxDecoration(
-                    color: AppColors.green.withValues(alpha: 0.12),
-                    shape: BoxShape.circle,
-                  ),
-                  child: const Icon(
-                    Icons.trending_up,
-                    color: AppColors.green,
-                    size: 20,
-                  ),
-                ),
-                const SizedBox(width: 10),
-                Text(
-                  'Total ventes $_periodPhrase',
-                  style: const TextStyle(
-                    color: AppColors.textSecondary,
-                    fontSize: 12,
-                  ),
-                ),
-                const SizedBox(width: 4),
-                ClipRRect(
-                  borderRadius: BorderRadius.circular(3),
-                  child: Image.asset(
-                    'assets/home_icon_1.jpg',
-                    width: 14,
-                    height: 14,
-                    fit: BoxFit.cover,
-                  ),
-                ),
-              ],
-            ),
-            const SizedBox(height: 8),
-            Text(
-              '${formatAmount(breakdown.totalRevenue)} F',
-              style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 24),
-            ),
-            const SizedBox(height: 12),
-            Row(
-              children: [
-                Expanded(
-                  child: _miniStat(
-                    'Espèces',
-                    breakdown.cashRevenue,
-                    iconAsset: 'assets/home_icon_2.jpg',
-                  ),
-                ),
-                const SizedBox(width: 12),
-                Expanded(
-                  child: _miniStat(
-                    'Mobile Money',
-                    breakdown.mobileMoneyRevenue,
-                    iconAsset: 'assets/home_icon_3.jpg',
-                  ),
-                ),
-              ],
-            ),
-          ],
-        ),
-      ),
-    );
-  }
-
-  Widget _miniStat(String label, double value, {String? iconAsset}) {
-    return Container(
-      padding: const EdgeInsets.symmetric(vertical: 8, horizontal: 10),
-      decoration: BoxDecoration(
-        color: AppColors.greenLight,
-        borderRadius: BorderRadius.circular(10),
-      ),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          Row(
-            children: [
-              Flexible(
-                child: Text(
-                  label,
-                  style: const TextStyle(
-                    fontSize: 11,
-                    color: AppColors.textSecondary,
-                  ),
-                  overflow: TextOverflow.ellipsis,
-                ),
-              ),
-              if (iconAsset != null) ...[
-                const SizedBox(width: 4),
-                ClipRRect(
-                  borderRadius: BorderRadius.circular(3),
-                  child: Image.asset(
-                    iconAsset,
-                    width: 13,
-                    height: 13,
-                    fit: BoxFit.cover,
-                  ),
-                ),
-              ],
-            ],
-          ),
-          const SizedBox(height: 2),
-          Text(
-            '${formatAmount(value)} F',
-            style: const TextStyle(fontWeight: FontWeight.w700, fontSize: 15),
-          ),
-        ],
-      ),
-    );
-  }
-
-  Widget _quickActionButton({
-    required IconData icon,
-    required String label,
-    required VoidCallback onTap,
-  }) {
-    return Card(
-      child: InkWell(
-        borderRadius: BorderRadius.circular(14),
-        onTap: onTap,
-        child: Padding(
-          padding: const EdgeInsets.symmetric(vertical: 14, horizontal: 8),
+  /// Tuiles cliquables de hauteur fixe, [columns] par ligne.
+  Widget _tileGrid(List<DashTile> tiles, {int columns = 3}) {
+    const gap = 10.0;
+    final rows = <Widget>[];
+    for (var i = 0; i < tiles.length; i += columns) {
+      rows.add(
+        SizedBox(
+          height: 68,
           child: Row(
-            mainAxisAlignment: MainAxisAlignment.center,
             children: [
-              Icon(icon, color: AppColors.green, size: 20),
-              const SizedBox(width: 8),
-              Flexible(
-                child: Text(
-                  label,
-                  style: const TextStyle(fontWeight: FontWeight.w600),
-                  overflow: TextOverflow.ellipsis,
+              for (var c = 0; c < columns; c++) ...[
+                if (c > 0) const SizedBox(width: gap),
+                Expanded(
+                  child: i + c < tiles.length ? tiles[i + c] : const SizedBox(),
                 ),
-              ),
+              ],
             ],
           ),
         ),
-      ),
+      );
+      if (i + columns < tiles.length) rows.add(const SizedBox(height: gap));
+    }
+    return Column(crossAxisAlignment: CrossAxisAlignment.stretch, children: rows);
+  }
+
+  Widget _moduleSection(String title, IconData icon, List<_ModuleEntry> entries) {
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.stretch,
+      children: [
+        DashSectionTitle(icon: icon, title: title),
+        const SizedBox(height: 10),
+        _tileGrid([
+          for (final entry in entries)
+            DashTile(
+              tone: entry.tone,
+              icon: entry.icon,
+              label: entry.label,
+              onTap: () => _openPage(entry.builder),
+            ),
+        ]),
+        const SizedBox(height: 18),
+      ],
     );
   }
 
-  Widget _moduleSection(String title, List<_ModuleEntry> entries) {
-    return Column(
-      crossAxisAlignment: CrossAxisAlignment.start,
-      children: [
-        Text(
-          title,
-          style: const TextStyle(
-            fontWeight: FontWeight.bold,
-            fontSize: 15,
-            color: AppColors.textSecondary,
-          ),
+  /// Bandeau d'accueil crème : salutation, filtre de date, « Bon appétit ».
+  Widget _greetingHeader() {
+    const amber = Color(0xFFF5A524);
+    return Container(
+      width: double.infinity,
+      padding: const EdgeInsets.fromLTRB(16, 12, 16, 12),
+      decoration: const BoxDecoration(
+        gradient: LinearGradient(
+          colors: [Color(0xFFFFF4E4), Color(0xFFFCF8EE), Color(0xFFEDF6E6)],
         ),
-        const SizedBox(height: 10),
-        GridView.builder(
-          shrinkWrap: true,
-          physics: const NeverScrollableScrollPhysics(),
-          gridDelegate: const SliverGridDelegateWithMaxCrossAxisExtent(
-            maxCrossAxisExtent: 200,
-            mainAxisExtent: 84,
-            crossAxisSpacing: 10,
-            mainAxisSpacing: 10,
-          ),
-          itemCount: entries.length,
-          itemBuilder: (context, index) {
-            final entry = entries[index];
-            return Card(
-              child: InkWell(
-                borderRadius: BorderRadius.circular(14),
-                onTap: () => _openPage(entry.builder),
-                child: Padding(
-                  padding: const EdgeInsets.symmetric(
-                    horizontal: 8,
-                    vertical: 10,
-                  ),
-                  child: Row(
+      ),
+      child: LayoutBuilder(
+        builder: (context, constraints) => Row(
+          children: [
+            Expanded(
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Row(
                     children: [
-                      Container(
-                        padding: const EdgeInsets.all(6),
-                        decoration: const BoxDecoration(
-                          color: AppColors.greenLight,
-                          shape: BoxShape.circle,
-                        ),
-                        child: Icon(
-                          entry.icon,
-                          color: AppColors.green,
-                          size: 18,
+                      const Icon(Icons.waving_hand, color: amber, size: 26),
+                      const SizedBox(width: 8),
+                      Flexible(
+                        child: Text(
+                          'Bonjour, ${widget.roleName}',
+                          style: const TextStyle(
+                            fontWeight: FontWeight.w800,
+                            fontSize: 19,
+                          ),
                         ),
                       ),
-                      const SizedBox(width: 8),
-                      Expanded(
-                        child: Text(
-                          entry.label,
-                          style: const TextStyle(
-                            fontWeight: FontWeight.w600,
-                            fontSize: 13.5,
+                      if (widget.roleName == 'Super Administrateur') ...[
+                        const SizedBox(width: 6),
+                        const Icon(Icons.workspace_premium, color: amber, size: 24),
+                      ],
+                    ],
+                  ),
+                  const SizedBox(height: 4),
+                  Row(
+                    children: [
+                      const Icon(
+                        Icons.calendar_today_outlined,
+                        size: 16,
+                        color: AppColors.greenDark,
+                      ),
+                      const SizedBox(width: 6),
+                      Flexible(
+                        child: InkWell(
+                          onTap: _pickDates,
+                          child: Row(
+                            mainAxisSize: MainAxisSize.min,
+                            children: [
+                              Flexible(
+                                child: Text(
+                                  _dateFilterLabel,
+                                  style: const TextStyle(
+                                    color: AppColors.greenDark,
+                                    fontSize: 14.5,
+                                    fontWeight: FontWeight.w600,
+                                  ),
+                                ),
+                              ),
+                              const Icon(
+                                Icons.expand_more,
+                                size: 20,
+                                color: AppColors.greenDark,
+                              ),
+                            ],
                           ),
-                          overflow: TextOverflow.ellipsis,
                         ),
                       ),
                     ],
                   ),
+                ],
+              ),
+            ),
+            if (constraints.maxWidth >= 420) ...[
+              const SizedBox(width: 8),
+              const Text(
+                'Bon appétit',
+                style: TextStyle(
+                  fontFamily: 'cursive',
+                  fontStyle: FontStyle.italic,
+                  fontWeight: FontWeight.w600,
+                  fontSize: 24,
+                  color: AppColors.greenDark,
                 ),
               ),
-            );
-          },
+            ],
+          ],
         ),
-        const SizedBox(height: 20),
-      ],
+      ),
     );
   }
 
@@ -904,13 +766,15 @@ class _HomeDashboardState extends State<HomeDashboard> {
     return Scaffold(
       appBar: AppBar(
         automaticallyImplyLeading: false,
+        backgroundColor: AppColors.greenDark,
+        foregroundColor: Colors.white,
         titleSpacing: 12,
         title: Row(
           children: [
             Container(
               padding: const EdgeInsets.all(3),
               decoration: const BoxDecoration(
-                color: AppColors.orangeLight,
+                color: Colors.white,
                 shape: BoxShape.circle,
               ),
               child: ClipOval(
@@ -930,14 +794,15 @@ class _HomeDashboardState extends State<HomeDashboard> {
                 children: [
                   Text(
                     'Chez Yasmine',
-                    style: TextStyle(fontWeight: FontWeight.bold, fontSize: 17),
+                    style: TextStyle(
+                      fontWeight: FontWeight.bold,
+                      fontSize: 18,
+                      color: Colors.white,
+                    ),
                   ),
                   Text(
                     'Gestion du maquis',
-                    style: TextStyle(
-                      fontSize: 11,
-                      color: AppColors.textSecondary,
-                    ),
+                    style: TextStyle(fontSize: 12, color: Colors.white70),
                   ),
                 ],
               ),
@@ -1063,273 +928,272 @@ class _HomeDashboardState extends State<HomeDashboard> {
               final breakdown = data.breakdown;
 
               return ListView(
-                padding: const EdgeInsets.fromLTRB(16, 16, 16, 24),
+                padding: EdgeInsets.zero,
                 children: [
-                  if (loading)
-                    const Padding(
-                      padding: EdgeInsets.only(bottom: 12),
-                      child: LinearProgressIndicator(minHeight: 2),
-                    ),
-                  Row(
-                    children: [
-                      Flexible(
-                        child: Text(
-                          'Bonjour, ${widget.roleName}',
-                          style: const TextStyle(
-                            fontWeight: FontWeight.bold,
-                            fontSize: 20,
+                  if (loading) const LinearProgressIndicator(minHeight: 2),
+                  _greetingHeader(),
+                  Padding(
+                    padding: const EdgeInsets.fromLTRB(16, 14, 16, 24),
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.stretch,
+                      children: [
+                        if (breakdown != null && !_isServeur) ...[
+                          DashStatCard(
+                            large: true,
+                            tone: DashTone.green,
+                            icon: Icons.trending_up,
+                            label: 'Total ventes $_periodPhrase',
+                            labelSuffixIcon: Icons.north_east,
+                            value: '${formatAmount(breakdown.totalRevenue)} F',
+                            watermark: Icons.payments_rounded,
                           ),
+                          const SizedBox(height: 10),
+                          _cardGrid([
+                            DashStatCard(
+                              tone: DashTone.green,
+                              icon: Icons.payments_outlined,
+                              label: 'Espèces',
+                              value: '${formatAmount(breakdown.cashRevenue)} F',
+                              images: const ['assets/home_icon_2.jpg'],
+                            ),
+                            DashStatCard(
+                              tone: DashTone.blue,
+                              icon: Icons.phone_iphone_outlined,
+                              label: 'Mobile Money',
+                              value:
+                                  '${formatAmount(breakdown.mobileMoneyRevenue)} F',
+                              images: const ['assets/home_icon_3.jpg'],
+                            ),
+                          ]),
+                          SizedBox(height: summary != null ? 10 : 20),
+                        ],
+                        if (summary != null && !_isServeur) ...[
+                          _cardGrid([
+                            DashStatCard(
+                              tone: DashTone.orange,
+                              icon: Icons.receipt_long_outlined,
+                              label: 'Commandes $_periodPhrase',
+                              value: '${summary.salesCount}',
+                              watermark: Icons.room_service_outlined,
+                            ),
+                            DashStatCard(
+                              tone: summary.lowStockCount > 0
+                                  ? DashTone.red
+                                  : DashTone.green,
+                              icon: Icons.warning_amber_rounded,
+                              label: 'Alertes stock',
+                              value: '${summary.lowStockCount}',
+                              watermark: Icons.inventory_2_outlined,
+                            ),
+                          ]),
+                          const SizedBox(height: 20),
+                        ],
+                        if (breakdown != null) ...[
+                          DashSectionTitle(
+                            icon: Icons.restaurant,
+                            title: _isToday
+                                ? 'RECETTES DU JOUR'
+                                : 'RECETTES ${_periodPhrase.toUpperCase()}',
+                          ),
+                          const SizedBox(height: 10),
+                          Builder(
+                            builder: (context) {
+                              final cards = <Widget>[
+                                DashStatCard(
+                                  compact: true,
+                                  tone: DashTone.green,
+                                  icon: Icons.sports_bar_outlined,
+                                  label:
+                                      'Recettes boissons sans Gbêlê $_periodPhrase',
+                                  value:
+                                      '${formatAmount(breakdown.boissonsSansGbeleRevenue)} F',
+                                  images: const ['assets/malta.jpg'],
+                                ),
+                                // Isolée de "Recettes boissons" le 2026-09-24
+                                // (demande utilisateur) — visible aussi au
+                                // Serveur, comme la carte ci-dessus.
+                                DashStatCard(
+                                  compact: true,
+                                  tone: DashTone.purple,
+                                  icon: Icons.local_drink_outlined,
+                                  label: 'Recettes Gbêlê $_periodPhrase',
+                                  value:
+                                      '${formatAmount(breakdown.gbeleRevenue)} F',
+                                  images: const ['assets/gbele.jpg'],
+                                ),
+                                if (!_isServeur)
+                                  DashStatCard(
+                                    compact: true,
+                                    tone: DashTone.orange,
+                                    icon: Icons.restaurant_outlined,
+                                    label: 'Recettes plats $_periodPhrase',
+                                    value:
+                                        '${formatAmount(breakdown.platsRevenue)} F',
+                                    images: const ['assets/kedjenou_poulet.jpg'],
+                                  ),
+                              ];
+                              return _cardGrid(
+                                cards,
+                                columns: _columnsFor(cards.length),
+                              );
+                            },
+                          ),
+                          const SizedBox(height: 20),
+                          const DashSectionTitle(
+                            icon: Icons.account_balance_wallet,
+                            title: 'DÉTAIL PAR MODE DE PAIEMENT',
+                          ),
+                          const SizedBox(height: 10),
+                          Builder(
+                            builder: (context) {
+                              final cards = <Widget>[
+                                DashStatCard(
+                                  compact: true,
+                                  tone: DashTone.green,
+                                  icon: Icons.payments_outlined,
+                                  label: 'Boissons sans Gbêlê - Espèces',
+                                  value:
+                                      '${formatAmount(breakdown.boissonsSansGbeleCash)} F',
+                                  images: const [
+                                    'assets/home_icon_2.jpg',
+                                    'assets/malta.jpg',
+                                  ],
+                                ),
+                                DashStatCard(
+                                  compact: true,
+                                  tone: DashTone.green,
+                                  icon: Icons.phone_iphone_outlined,
+                                  label: 'Boissons sans Gbêlê - Mobile Money',
+                                  value:
+                                      '${formatAmount(breakdown.boissonsSansGbeleMobileMoney)} F',
+                                  images: const [
+                                    'assets/home_icon_3.jpg',
+                                    'assets/malta.jpg',
+                                  ],
+                                ),
+                                DashStatCard(
+                                  compact: true,
+                                  tone: DashTone.purple,
+                                  icon: Icons.payments_outlined,
+                                  label: 'Gbêlê - Espèces',
+                                  value:
+                                      '${formatAmount(breakdown.gbeleCash)} F',
+                                  images: const [
+                                    'assets/home_icon_2.jpg',
+                                    'assets/gbele.jpg',
+                                  ],
+                                ),
+                                DashStatCard(
+                                  compact: true,
+                                  tone: DashTone.purple,
+                                  icon: Icons.phone_iphone_outlined,
+                                  label: 'Gbêlê - Mobile Money',
+                                  value:
+                                      '${formatAmount(breakdown.gbeleMobileMoney)} F',
+                                  images: const [
+                                    'assets/home_icon_3.jpg',
+                                    'assets/gbele.jpg',
+                                  ],
+                                ),
+                                if (!_isServeur) ...[
+                                  DashStatCard(
+                                    compact: true,
+                                    tone: DashTone.orange,
+                                    icon: Icons.payments_outlined,
+                                    label: 'Plats - Espèces',
+                                    value:
+                                        '${formatAmount(breakdown.platsCash)} F',
+                                    images: const [
+                                      'assets/home_icon_2.jpg',
+                                      'assets/kedjenou_poulet.jpg',
+                                    ],
+                                  ),
+                                  DashStatCard(
+                                    compact: true,
+                                    tone: DashTone.orange,
+                                    icon: Icons.phone_iphone_outlined,
+                                    label: 'Plats - Mobile Money',
+                                    value:
+                                        '${formatAmount(breakdown.platsMobileMoney)} F',
+                                    images: const [
+                                      'assets/home_icon_3.jpg',
+                                      'assets/kedjenou_poulet.jpg',
+                                    ],
+                                  ),
+                                ],
+                              ];
+                              return _cardGrid(
+                                cards,
+                                columns: _columnsFor(cards.length),
+                              );
+                            },
+                          ),
+                          const SizedBox(height: 20),
+                        ],
+                        const DashSectionTitle(
+                          icon: Icons.flash_on,
+                          title: 'ACTIONS RAPIDES',
                         ),
-                      ),
-                      const SizedBox(width: 6),
-                      const Icon(
-                        Icons.waving_hand_outlined,
-                        color: AppColors.orange,
-                        size: 20,
-                      ),
-                    ],
-                  ),
-                  const SizedBox(height: 2),
-                  Row(
-                    children: [
-                      const Icon(
-                        Icons.calendar_today_outlined,
-                        size: 14,
-                        color: AppColors.textSecondary,
-                      ),
-                      const SizedBox(width: 6),
-                      InkWell(
-                        onTap: _pickDates,
-                        child: Row(
-                          mainAxisSize: MainAxisSize.min,
-                          children: [
-                            Text(
-                              _dateFilterLabel,
-                              style: const TextStyle(
-                                color: AppColors.textSecondary,
-                                fontSize: 14,
+                        const SizedBox(height: 10),
+                        _tileGrid([
+                          DashTile(
+                            tone: DashTone.green,
+                            icon: Icons.room_service_outlined,
+                            label: 'Commande',
+                            onTap: () => _openPage(
+                              (_) => FloorPlanPage(
+                                establishmentId: widget.establishmentId,
+                                roleName: widget.roleName,
                               ),
                             ),
-                            const Icon(
-                              Icons.expand_more,
-                              size: 18,
-                              color: AppColors.textSecondary,
+                          ),
+                          DashTile(
+                            tone: DashTone.blue,
+                            icon: Icons.table_restaurant_outlined,
+                            label: 'Tables',
+                            onTap: () => _openPage(
+                              (_) => FloorPlanPage(
+                                establishmentId: widget.establishmentId,
+                                roleName: widget.roleName,
+                              ),
                             ),
-                          ],
-                        ),
-                      ),
-                    ],
-                  ),
-                  const SizedBox(height: 18),
-                  if (breakdown != null && !_isServeur) ...[
-                    _salesSummaryCard(breakdown),
-                    const SizedBox(height: 10),
-                  ],
-                  if (summary != null && !_isServeur) ...[
-                    _statCardGrid([
-                        _statCard(
-                          icon: Icons.receipt_long_outlined,
-                          label: 'Commandes $_periodPhrase',
-                          value: '${summary.salesCount}',
-                          color: AppColors.orange,
-                        ),
-                        _statCard(
-                          icon: Icons.warning_amber_outlined,
-                          label: 'Alertes stock',
-                          value: '${summary.lowStockCount}',
-                          color: summary.lowStockCount > 0
-                              ? AppColors.alert
-                              : AppColors.green,
-                        ),
-                      ]),
-                    const SizedBox(height: 20),
-                  ],
-                  if (breakdown != null) ...[
-                    Text(
-                      _isToday
-                          ? 'RECETTES DU JOUR'
-                          : 'RECETTES ${_periodPhrase.toUpperCase()}',
-                      style: const TextStyle(
-                        fontWeight: FontWeight.bold,
-                        fontSize: 13,
-                        color: AppColors.textSecondary,
-                        letterSpacing: 0.5,
-                      ),
-                    ),
-                    const SizedBox(height: 10),
-                    _statCardGrid([
-                        _statCard(
-                          icon: Icons.sports_bar_outlined,
-                          label: 'Recettes boissons sans Gbêlê $_periodPhrase',
-                          value: '${formatAmount(breakdown.boissonsSansGbeleRevenue)} F',
-                          color: AppColors.green,
-                          iconAssets: const ['assets/malta.jpg'],
-                        ),
-                        // Isolée de "Recettes boissons" le 2026-09-24 (demande
-                        // utilisateur) — visible aussi au Serveur, comme la
-                        // carte ci-dessus dont elle reprend une partie.
-                        _statCard(
-                          icon: Icons.local_drink_outlined,
-                          label: 'Recettes Gbêlê $_periodPhrase',
-                          value: '${formatAmount(breakdown.gbeleRevenue)} F',
-                          color: AppColors.green,
-                          iconAssets: const ['assets/gbele.jpg'],
-                        ),
-                        if (!_isServeur)
-                          _statCard(
-                            icon: Icons.restaurant_outlined,
-                            label: 'Recettes plats $_periodPhrase',
-                            value: '${formatAmount(breakdown.platsRevenue)} F',
-                            color: AppColors.orange,
-                            iconAssets: const ['assets/kedjenou_poulet.jpg'],
                           ),
-                      ]),
-                    const SizedBox(height: 20),
-                    const Text(
-                      'DÉTAIL PAR MODE DE PAIEMENT',
-                      style: TextStyle(
-                        fontWeight: FontWeight.bold,
-                        fontSize: 13,
-                        color: AppColors.textSecondary,
-                        letterSpacing: 0.5,
-                      ),
-                    ),
-                    const SizedBox(height: 10),
-                    _statCardGrid([
-                        _statCard(
-                          icon: Icons.payments_outlined,
-                          label: 'Boissons sans Gbêlê · Espèces',
-                          value: '${formatAmount(breakdown.boissonsSansGbeleCash)} F',
-                          color: AppColors.green,
-                          iconAssets: const [
-                            'assets/home_icon_2.jpg',
-                            'assets/malta.jpg',
-                          ],
-                        ),
-                        _statCard(
-                          icon: Icons.phone_iphone_outlined,
-                          label: 'Boissons sans Gbêlê · Mobile Money',
-                          value:
-                              '${formatAmount(breakdown.boissonsSansGbeleMobileMoney)} F',
-                          color: AppColors.green,
-                          iconAssets: const [
-                            'assets/home_icon_3.jpg',
-                            'assets/malta.jpg',
-                          ],
-                        ),
-                        _statCard(
-                          icon: Icons.payments_outlined,
-                          label: 'Gbêlê · Espèces',
-                          value: '${formatAmount(breakdown.gbeleCash)} F',
-                          color: AppColors.green,
-                          iconAssets: const [
-                            'assets/gbele.jpg',
-                            'assets/home_icon_2.jpg',
-                          ],
-                        ),
-                        _statCard(
-                          icon: Icons.phone_iphone_outlined,
-                          label: 'Gbêlê · Mobile Money',
-                          value: '${formatAmount(breakdown.gbeleMobileMoney)} F',
-                          color: AppColors.green,
-                          iconAssets: const [
-                            'assets/gbele.jpg',
-                            'assets/home_icon_3.jpg',
-                          ],
-                        ),
-                        if (!_isServeur) ...[
-                          _statCard(
-                            icon: Icons.payments_outlined,
-                            label: 'Plats · Espèces',
-                            value: '${formatAmount(breakdown.platsCash)} F',
-                            color: AppColors.orange,
-                            iconAssets: const [
-                              'assets/home_icon_2.jpg',
-                              'assets/kedjenou_poulet.jpg',
-                            ],
+                          DashTile(
+                            tone: DashTone.purple,
+                            icon: Icons.point_of_sale_outlined,
+                            label: 'Caisse',
+                            onTap: () => _openPage(
+                              (_) => PosPage(
+                                establishmentId: widget.establishmentId,
+                                roleName: widget.roleName,
+                              ),
+                            ),
                           ),
-                          _statCard(
-                            icon: Icons.phone_iphone_outlined,
-                            label: 'Plats · Mobile Money',
-                            value:
-                                '${formatAmount(breakdown.platsMobileMoney)} F',
-                            color: AppColors.orange,
-                            iconAssets: const [
-                              'assets/home_icon_3.jpg',
-                              'assets/kedjenou_poulet.jpg',
-                            ],
+                          DashTile(
+                            tone: DashTone.red,
+                            icon: Icons.inventory_2_outlined,
+                            label: 'Stock',
+                            onTap: () => _openPage(
+                              (_) => StockPage(
+                                establishmentId: widget.establishmentId,
+                                roleName: widget.roleName,
+                              ),
+                            ),
                           ),
-                        ],
-                      ]),
-                    const SizedBox(height: 20),
-                  ],
-                  const Text(
-                    'ACTIONS RAPIDES',
-                    style: TextStyle(
-                      fontWeight: FontWeight.bold,
-                      fontSize: 13,
-                      color: AppColors.textSecondary,
-                      letterSpacing: 0.5,
+                        ], columns: 4),
+                        const SizedBox(height: 22),
+                        _moduleSection('OPÉRATIONS', Icons.sell_outlined, _operations),
+                        _moduleSection('GESTION', Icons.business_center_outlined, _gestion),
+                        _moduleSection('PILOTAGE', Icons.insights_outlined, _pilotage),
+                        if (_administration.isNotEmpty)
+                          _moduleSection(
+                            'ADMINISTRATION',
+                            Icons.admin_panel_settings_outlined,
+                            _administration,
+                          ),
+                      ],
                     ),
                   ),
-                  const SizedBox(height: 10),
-                  GridView(
-                    shrinkWrap: true,
-                    physics: const NeverScrollableScrollPhysics(),
-                    gridDelegate:
-                        const SliverGridDelegateWithFixedCrossAxisCount(
-                          crossAxisCount: 2,
-                          crossAxisSpacing: 10,
-                          mainAxisSpacing: 10,
-                          mainAxisExtent: 56,
-                        ),
-                    children: [
-                      _quickActionButton(
-                        icon: Icons.add_circle_outline,
-                        label: 'Commande',
-                        onTap: () => _openPage(
-                          (_) => FloorPlanPage(
-                            establishmentId: widget.establishmentId,
-                            roleName: widget.roleName,
-                          ),
-                        ),
-                      ),
-                      _quickActionButton(
-                        icon: Icons.table_restaurant_outlined,
-                        label: 'Tables',
-                        onTap: () => _openPage(
-                          (_) => FloorPlanPage(
-                            establishmentId: widget.establishmentId,
-                            roleName: widget.roleName,
-                          ),
-                        ),
-                      ),
-                      _quickActionButton(
-                        icon: Icons.point_of_sale_outlined,
-                        label: 'Caisse',
-                        onTap: () => _openPage(
-                          (_) =>
-                              PosPage(establishmentId: widget.establishmentId, roleName: widget.roleName),
-                        ),
-                      ),
-                      _quickActionButton(
-                        icon: Icons.inventory_2_outlined,
-                        label: 'Stock',
-                        onTap: () => _openPage(
-                          (_) => StockPage(
-                            establishmentId: widget.establishmentId,
-                            roleName: widget.roleName,
-                          ),
-                        ),
-                      ),
-                    ],
-                  ),
-                  const SizedBox(height: 24),
-                  _moduleSection('OPÉRATIONS', _operations),
-                  _moduleSection('GESTION', _gestion),
-                  _moduleSection('PILOTAGE', _pilotage),
-                  if (_administration.isNotEmpty)
-                    _moduleSection('ADMINISTRATION', _administration),
                 ],
               );
             },

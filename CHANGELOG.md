@@ -2,6 +2,11 @@
 
 ## [Unreleased]
 
+### Modifié (2026-10-07) — Nouveau tableau de bord
+- **Accueil** repensé d'après la maquette : barre d'en-tête vert foncé, bandeau crème (« Bonjour, <rôle> » avec couronne pour le Super Administrateur, filtre de date, « Bon appétit »), **Total ventes** en grande carte, cartes **Espèces / Mobile Money** puis **Commandes / Alertes stock**, rubriques **Recettes du jour** et **Détail par mode de paiement** en cartes dégradées (3 par ligne), **Actions rapides** et modules en tuiles colorées avec pastille d'icône (nouveau fichier `lib/home/dashboard_widgets.dart`).
+- Inchangés : les données et règles d'affichage par rôle (Serveur), le filtre de date, les actions des tuiles et **la barre de navigation du bas** (Accueil · Caisse · Action · Achats · Menu). Libellés « Boissons sans Gbêlê - Espèces » etc. avec « - » comme sur la maquette. Aucun changement d'API.
+- Tests : 5 Flutter (rendu avec données à 360/412/1200 px sans débordement, barre du bas, Serveur).
+
 ### Modifié (2026-10-07) — Pertes en « Lot (1) » ; Action rapide « Vérifier le Stock »
 - **Pertes** : même règle qu'en Caisse/Tables — un produit dont le lot ne contient qu'une unité (`Product.unit` = « 1 ») n'affiche plus le choix Lot/Unité et la perte est valorisée à l'unité (`sellAsUnit`). Un vrai lot garde le choix.
 - **Accueil → Action rapide** : « Enregistrer une dépense » est remplacé par **« Vérifier le Stock »**, qui ouvre le module Stock (le module Dépenses reste accessible par la grille des modules).
