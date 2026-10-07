@@ -90,7 +90,10 @@ class _PosPageState extends State<PosPage> {
     // vendues par lot à un prix, aussi disponibles à l'unité à un prix
     // différent — `product.unitSalePrice`, voir docs/api/pos.md).
     var sellAsUnit = false;
-    if (product.unitSalePrice != null) {
+    if (product.isSoldAsSingleUnitOnly) {
+      // « Lot (1) » = « Unité » : rien à demander, on vend à l'unité.
+      sellAsUnit = true;
+    } else if (product.unitSalePrice != null) {
       final choice = await _promptPackOrUnit(product);
       if (choice == null) return;
       sellAsUnit = choice;

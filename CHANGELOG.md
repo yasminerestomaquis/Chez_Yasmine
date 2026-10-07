@@ -2,6 +2,10 @@
 
 ## [Unreleased]
 
+### Corrigé (2026-10-07) — Caisse et Tables : produit en « Lot (1) »
+- Un produit à prix à l'unité dont le lot ne contient qu'**une** unité (`Product.unit` = « 1 », ex. Cody's Energy : « Lot (1) — 600 » / « Unité — 600 ») ne déclenche plus la question « Comment vendre ce produit ? » : il est ajouté directement, vendu à l'unité (`sellAsUnit`), en Caisse comme dans l'Addition d'une table. Un vrai lot (3, 12…) ou une taille de lot non renseignée garde le choix Lot/Unité. Les Pertes ne sont pas concernées. Aucun changement d'API.
+- Tests : 5 Flutter.
+
 ### Modifié (2026-10-06) — Historique des paies : distinction nette de chaque paie
 - Chaque paie porte un titre lisible : **« Semaine 41 »** (numéro ISO, pour une semaine lundi→dimanche) ou **« Septembre 2026 »** (paie mensuelle sur un mois entier), une pastille de type (**Hebdo** en vert / **Mensuelle** en orange, avec bandeau d'accent à gauche de la carte), un repère relatif (Semaine en cours / dernière, Mois en cours / dernier), les dates exactes et le nombre d'employés. Une période modifiée à la main s'affiche « Période personnalisée ».
 - Statuts en pastilles colorées (Préparée orange, Validée bleu, Payée vert, Annulée rouge, carte atténuée) ; paies **regroupées par mois** avec en-tête et sous-total (paies non annulées). Mêmes titres et pastilles dans « Préparer la paie ». Aucun changement d'API.

@@ -84,6 +84,17 @@ class Product {
   final String? reference;
   final String? barcode;
   final String? unit;
+
+  /// Taille du lot lue dans [unit] (« 3 » pour « Lot (3) ») ; `null` si absente
+  /// ou illisible (le serveur la traite alors comme 1).
+  int? get lotSize => int.tryParse((unit ?? '').trim());
+
+  /// Produit à prix à l'unité dont le lot ne contient qu'UNE unité (ex. Cody's
+  /// Energy, « Lot (1) » = « Unité ») : lot et unité sont la même chose, la
+  /// Caisse et les Tables ne demandent donc pas « Comment vendre ce produit ? »
+  /// et vendent à l'unité (demande du 2026-10-07).
+  bool get isSoldAsSingleUnitOnly => unitSalePrice != null && lotSize == 1;
+
   /// Libellé UI "Prix d'achat par bouteille".
   final double? purchasePrice;
   /// Nul quand `category.hasVariablePricing` est vrai, ou quand

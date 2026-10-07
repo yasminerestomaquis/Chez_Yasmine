@@ -356,7 +356,10 @@ class _TableOrderPageState extends State<TableOrderPage> {
     // Vente à l'unité en plus du tarif normal (ex. Heineken 33/Despé 33) —
     // même mécanisme qu'en Caisse (`pos_page.dart`).
     var sellAsUnit = false;
-    if (product.unitSalePrice != null) {
+    if (product.isSoldAsSingleUnitOnly) {
+      // « Lot (1) » = « Unité » : rien à demander, on vend à l'unité.
+      sellAsUnit = true;
+    } else if (product.unitSalePrice != null) {
       final choice = await _promptPackOrUnit(product);
       if (choice == null) return;
       sellAsUnit = choice;
