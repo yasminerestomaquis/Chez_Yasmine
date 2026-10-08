@@ -2,6 +2,10 @@
 
 ## [Unreleased]
 
+### Corrigé (2026-10-08) — Calendriers et composants Material en français
+- Tous les calendriers (jour, période), le sélecteur d'heure et les boutons standards (OK, Annuler, Enregistrer…) s'affichaient en anglais (« Mon, Oct 5 », « October 2026 »). L'application est désormais configurée en français (`locale: fr`, `flutter_localizations`) : mois et jours en français, semaine commençant le lundi, heure sur 24 h. `<html lang="fr">` côté web. Aucun changement d'API.
+- Tests : 1 Flutter (`french_locale_test.dart`).
+
 ### Modifié (2026-10-07) — Nouveau tableau de bord
 - **Accueil** repensé d'après la maquette : barre d'en-tête vert foncé, bandeau crème (« Bonjour, <rôle> » avec couronne pour le Super Administrateur, filtre de date, « Bon appétit »), **Total ventes** en grande carte, cartes **Espèces / Mobile Money** puis **Commandes / Alertes stock**, rubriques **Recettes du jour** et **Détail par mode de paiement** en cartes dégradées (3 par ligne), **Actions rapides** et modules en tuiles colorées avec pastille d'icône (nouveau fichier `lib/home/dashboard_widgets.dart`).
 - Inchangés : les données et règles d'affichage par rôle (Serveur), le filtre de date, les actions des tuiles et **la barre de navigation du bas** (Accueil · Caisse · Action · Achats · Menu). Libellés « Boissons sans Gbêlê - Espèces » etc. avec « - » comme sur la maquette. Aucun changement d'API.

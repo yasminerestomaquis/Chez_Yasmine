@@ -1,6 +1,7 @@
 import 'dart:async';
 
 import 'package:flutter/material.dart';
+import 'package:flutter_localizations/flutter_localizations.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 
 import 'api/api_client.dart';
@@ -45,6 +46,13 @@ class ChezYasmineApp extends StatelessWidget {
       navigatorKey: GlobalSyncContext.navigatorKey,
       title: 'Chez Yasmine',
       theme: buildAppTheme(),
+      // Application entièrement en français (demande du 2026-10-08) : sans
+      // ces réglages, les composants Material (calendriers, sélecteur
+      // d'heure, boutons OK/Annuler, copier/coller…) s'affichent en anglais
+      // (« Mon, Oct 5 », « October 2026 », « Select date »…).
+      locale: const Locale('fr'),
+      supportedLocales: const [Locale('fr')],
+      localizationsDelegates: GlobalMaterialLocalizations.delegates,
       home: LinkConfirmationGate(
         child: AuthGate(authenticated: (context) => const HomePage()),
       ),
