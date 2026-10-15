@@ -18,6 +18,27 @@ class ReportsRepository {
     return (json['permissions'] as List<dynamic>).cast<String>().toSet();
   }
 
+  /// Rubriques de l'Accueil (`home.*`) que l'appelant a le droit de voir —
+  /// demande utilisateur du 2026-10-15, voir « Gestion des permissions > Accueil ».
+  Future<Set<String>> getHomePermissions() async {
+    final json = await _api.get('$_base/home-permissions') as Map<String, dynamic>;
+    return (json['permissions'] as List<dynamic>).cast<String>().toSet();
+  }
+
+  /// Cartes « Commandes » / « Alertes stock » de l'Accueil, sans exiger
+  /// `reports.view` : le serveur ne renvoie que les chiffres accordés.
+  Future<HomeSummary> getHomeSummary({String? period, String? from, String? to}) async {
+    final json = await _api.get(
+      '$_base/home-summary',
+      query: {
+        if (from == null && to == null) 'period': period ?? 'day',
+        'from': ?from,
+        'to': ?to,
+      },
+    ) as Map<String, dynamic>;
+    return HomeSummary.fromJson(json);
+  }
+
   /// [period] est ignoré si [from]/[to] sont fournis (même priorité que
   /// côté serveur, voir `ReportsService.resolveRange`) — utilisé par
   /// `ReportsPage` pour recalculer la période de comparaison précédente

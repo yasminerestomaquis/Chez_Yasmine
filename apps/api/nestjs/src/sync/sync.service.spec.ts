@@ -262,13 +262,21 @@ describe('SyncService.processBatch', () => {
         },
       ]);
 
-      expect(orders.addItemWithId).toHaveBeenCalledWith('est-1', ORDER, ITEM, {
-        productId: PRODUCT,
-        quantity: 2,
-        unitPrice: undefined,
-        amountPaid: undefined,
-        sellAsUnit: true,
-      });
+      // Le dernier argument est l'auteur : il sert au contrôle `pos.sell_*` du
+      // groupe de recettes du produit (voir pos/sell-groups.ts).
+      expect(orders.addItemWithId).toHaveBeenCalledWith(
+        'est-1',
+        ORDER,
+        ITEM,
+        {
+          productId: PRODUCT,
+          quantity: 2,
+          unitPrice: undefined,
+          amountPaid: undefined,
+          sellAsUnit: true,
+        },
+        'user-1',
+      );
     });
 
     it('order_item_set et order_item_remove : relaient la quantité vue et la quantité visée', async () => {

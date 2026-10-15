@@ -133,6 +133,55 @@ describe('PurchasesService.create', () => {
     expect(prisma.product.update).not.toHaveBeenCalled();
   });
 
+  describe('garde anti-doublon (double appui sur « Créer la commande », 2026-10-15)', () => {
+    const existingDuplicate = (over: Partial<{ total: number; quantity: number }> = {}) => ({
+      id: 'purchase-1',
+      orderNumber: 3,
+      total: new Decimal(over.total ?? 39000),
+      supplier: null,
+      items: [{ productId: 'p1', quantity: new Decimal(over.quantity ?? 24) }],
+    });
+
+    it('renvoie la commande identique créée à l’instant, sans nouvelle entrée de stock', async () => {
+      (prisma.product as any).findMany.mockResolvedValue([caseProduct({ bottlesPerCase: 12, purchasePricePerCase: 19500 })]);
+      (prisma.purchase as any).findFirst.mockResolvedValue(existingDuplicate());
+
+      const result = await service.create('est-1', 'user-1', {
+        id: 'autre-uuid',
+        orderNumber: 3,
+        items: [{ productId: 'p1', casesOrdered: 2 }],
+      });
+
+      expect(result).toMatchObject({ id: 'purchase-1' });
+      expect(prisma.purchase.create).not.toHaveBeenCalled();
+      expect(prisma.product.update).not.toHaveBeenCalled();
+      expect(prisma.stockMovement.create).not.toHaveBeenCalled();
+      expect(activityNotifierMock.notify).not.toHaveBeenCalled();
+    });
+
+    it('ne cherche le doublon que dans la dernière minute, pour le même fournisseur, N° et statut', async () => {
+      (prisma.product as any).findMany.mockResolvedValue([caseProduct()]);
+      (prisma.purchase as any).findFirst.mockResolvedValue(null);
+      (prisma.purchase as any).create.mockResolvedValue({ id: 'p', supplier: null, items: [] });
+
+      await service.create('est-1', 'user-1', { supplierId: undefined, orderNumber: 3, items: [{ productId: 'p1', casesOrdered: 2 }] });
+
+      const where = (prisma.purchase as any).findFirst.mock.calls[0][0].where;
+      expect(where).toMatchObject({ establishmentId: 'est-1', supplierId: null, orderNumber: 3, status: 'received' });
+      expect(Date.now() - where.createdAt.gte.getTime()).toBeLessThan(61_000);
+    });
+
+    it('une commande récente de même N° mais de lignes différentes n’est PAS un doublon', async () => {
+      (prisma.product as any).findMany.mockResolvedValue([caseProduct({ bottlesPerCase: 12, purchasePricePerCase: 19500 })]);
+      (prisma.purchase as any).findFirst.mockResolvedValue(existingDuplicate({ quantity: 12, total: 19500 }));
+      (prisma.purchase as any).create.mockResolvedValue({ id: 'new', supplier: null, items: [] });
+
+      await service.create('est-1', 'user-1', { orderNumber: 3, items: [{ productId: 'p1', casesOrdered: 2 }] });
+
+      expect(prisma.purchase.create).toHaveBeenCalled();
+    });
+  });
+
   it('increments stock immediately (no separate reception step) and notifies', async () => {
     (prisma.product as any).findMany.mockResolvedValue([caseProduct()]);
     (prisma.purchase as any).create.mockResolvedValue({

@@ -92,6 +92,21 @@ class PaymentCategoryBreakdown {
       );
 }
 
+/// Chiffres des cartes « Commandes » et « Alertes stock » de l'Accueil
+/// (`GET .../reports/home-summary`) — déjà filtrés côté serveur selon les
+/// rubriques accordées (`home.orders`, `home.stock_alerts`) : 0 sinon.
+class HomeSummary {
+  const HomeSummary({required this.salesCount, required this.lowStockCount});
+
+  final int salesCount;
+  final int lowStockCount;
+
+  factory HomeSummary.fromJson(Map<String, dynamic> json) => HomeSummary(
+        salesCount: (json['salesCount'] as num).toInt(),
+        lowStockCount: (json['lowStockCount'] as num).toInt(),
+      );
+}
+
 class ReportSummary {
   ReportSummary({
     required this.from,

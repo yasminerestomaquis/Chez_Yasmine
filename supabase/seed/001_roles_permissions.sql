@@ -49,7 +49,24 @@ insert into permissions (code, description) values
   ('reports.beverages_sold', 'Bouton Boissons vendues dans le module Rapports'),
   ('reports.plats_sold', 'Bouton Plats vendus dans le module Rapports'),
   ('reports.export', 'Bouton Exporter (CSV, commande d''achat) dans le module Rapports'),
-  ('charts.profit_meals_listing', 'Listing Repas (bénéfice généré) dans Graphiques > Bénéfices')
+  ('charts.profit_meals_listing', 'Listing Repas (bénéfice généré) dans Graphiques > Bénéfices'),
+  ('home.total_sales',            'Accueil : carte « Total ventes »'),
+  ('home.cash',                   'Accueil : carte « Espèces »'),
+  ('home.mobile_money',           'Accueil : carte « Mobile Money »'),
+  ('home.orders',                 'Accueil : carte « Commandes »'),
+  ('home.stock_alerts',           'Accueil : carte « Alertes stock »'),
+  ('home.revenue_beverages',      'Accueil, RECETTES DU JOUR : Recettes boissons sans Gbêlê'),
+  ('home.revenue_gbele',          'Accueil, RECETTES DU JOUR : Recettes Gbêlê'),
+  ('home.revenue_plats',          'Accueil, RECETTES DU JOUR : Recettes plats'),
+  ('home.detail_beverages_cash',  'Accueil, DÉTAIL PAR MODE DE PAIEMENT : Boissons sans Gbêlê — Espèces'),
+  ('home.detail_beverages_mobile','Accueil, DÉTAIL PAR MODE DE PAIEMENT : Boissons sans Gbêlê — Mobile Money'),
+  ('home.detail_gbele_cash',      'Accueil, DÉTAIL PAR MODE DE PAIEMENT : Gbêlê — Espèces'),
+  ('home.detail_gbele_mobile',    'Accueil, DÉTAIL PAR MODE DE PAIEMENT : Gbêlê — Mobile Money'),
+  ('home.detail_plats_cash',      'Accueil, DÉTAIL PAR MODE DE PAIEMENT : Plats — Espèces'),
+  ('home.detail_plats_mobile',    'Accueil, DÉTAIL PAR MODE DE PAIEMENT : Plats — Mobile Money'),
+  ('pos.sell_beverages',          'Saisir des ventes de boissons sans Gbêlê (Caisse et Tables)'),
+  ('pos.sell_gbele',              'Saisir des ventes de Gbêlê (Caisse et Tables)'),
+  ('pos.sell_plats',              'Saisir des ventes de plats (Caisse et Tables)')
 on conflict (code) do nothing;
 
 insert into roles (organization_id, name, is_system) values
@@ -277,4 +294,39 @@ from role_permissions rp
 join permissions v on v.id = rp.permission_id and v.code = 'reports.view'
 cross join permissions c
 where c.code in ('reports.beverages_sold', 'reports.plats_sold', 'reports.export')
+on conflict do nothing;
+
+-- Accueil (2026-10-15) : une permission d'affichage par carte (`home.*`, voir
+-- apps/api/nestjs/src/reports/home-permissions.ts). Tout rôle qui porte
+-- `reports.view` reçoit les 14 — sauf le Serveur, qui garde exactement ce qu'il
+-- voyait déjà (recettes boissons sans Gbêlê / Gbêlê et leur détail par mode de
+-- paiement). Rien ne change tant qu'une carte n'est pas refusée dans « Gestion
+-- des permissions ». À exécuter après toutes les attributions de reports.view.
+insert into role_permissions (role_id, permission_id)
+select rp.role_id, c.id
+from role_permissions rp
+join permissions v on v.id = rp.permission_id and v.code = 'reports.view'
+join roles r on r.id = rp.role_id
+cross join permissions c
+where c.code like 'home.%'
+  and (
+    r.name <> 'Serveur'
+    or c.code in (
+      'home.revenue_beverages', 'home.revenue_gbele',
+      'home.detail_beverages_cash', 'home.detail_beverages_mobile',
+      'home.detail_gbele_cash', 'home.detail_gbele_mobile'
+    )
+  )
+on conflict do nothing;
+
+-- Saisie des recettes par groupe (2026-10-15) : vendre en Caisse/Tables des
+-- boissons sans Gbêlê, du Gbêlê ou des plats (voir apps/api/nestjs/src/pos/
+-- sell-groups.ts). Tout rôle qui porte `pos.sell` reçoit les trois — rien ne
+-- change tant qu'un groupe n'est pas refusé à un rôle.
+insert into role_permissions (role_id, permission_id)
+select rp.role_id, c.id
+from role_permissions rp
+join permissions s on s.id = rp.permission_id and s.code = 'pos.sell'
+cross join permissions c
+where c.code in ('pos.sell_beverages', 'pos.sell_gbele', 'pos.sell_plats')
 on conflict do nothing;

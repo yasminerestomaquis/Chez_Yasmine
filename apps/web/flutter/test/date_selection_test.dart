@@ -19,23 +19,9 @@ PaymentCategoryBreakdown _b(double cash, double mm, double boissons, double plat
       platsMobileMoney: plats,
     );
 
-ReportSummary _s(int sales, int lowStock) => ReportSummary(
-      from: DateTime(2026, 9, 20),
-      to: DateTime(2026, 9, 20),
-      revenue: 0,
-      salesCount: sales,
-      discountTotal: 0,
-      cogs: 0,
-      grossMargin: 0,
-      expenses: 0,
-      losses: 0,
-      netProfit: 0,
-      receivables: 0,
-      lowStockCount: lowStock,
-      topProducts: const [],
-      productProfitability: const [],
-      serverPerformance: const [],
-    );
+// Chiffres des cartes « Commandes » / « Alertes stock » (`GET .../home-summary`).
+HomeSummary _s(int sales, int lowStock) =>
+    HomeSummary(salesCount: sales, lowStockCount: lowStock);
 
 void main() {
   final today = DateTime(2026, 9, 20);

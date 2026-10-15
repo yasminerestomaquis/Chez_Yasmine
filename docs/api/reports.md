@@ -189,3 +189,10 @@ Les libellés « Total ventes aujourd'hui », « Commandes aujourd'hui », « Re
 **Bug latent corrigé au passage** (découvert en écrivant les tests du filtre — premiers à exercer `_reload()` dans `flutter test`) : `setState(() => _future = next)` renvoyait la valeur de l'affectation (le `Future` lui-même) comme résultat de la closure, que `setState` rejette avec une assertion (« callback argument returned a Future ») — silencieuse en release (les `assert` y sont supprimés), mais bloquante en debug/test. Corrigé en entourant l'affectation d'accolades, comportement fonctionnel inchangé.
 
 Vérifié : `flutter analyze`/`test`/`build web` ✅ (75/75 tests Flutter, 2 nouveaux — sélection par défaut sur « Aujourd'hui », sélection d'une date passée qui fait disparaître « aujourd'hui » des libellés).
+
+## Accueil : une permission d'affichage par carte (2026-10-15)
+
+14 permissions `home.*` (`reports/home-permissions.ts`), regroupées dans le module **Accueil** de « Gestion des permissions » : Résumé (`home.total_sales`, `home.cash`, `home.mobile_money`, `home.orders`, `home.stock_alerts`), Recettes du jour (`home.revenue_beverages|gbele|plats`), Détail par mode de paiement (`home.detail_{beverages|gbele|plats}_{cash|mobile}`).
+- `GET .../reports/home-permissions` : les `home.*` accordés à l'appelant. `GET .../reports/home-summary` : `{ salesCount, lowStockCount }`, chacun à 0 si `home.orders` / `home.stock_alerts` n'est pas accordé. `payment-category-breakdown` : chaque champ non accordé est mis à 0 (`maskBreakdown`). Ces trois routes exigent `reports.view` **ou** au moins une rubrique `home.*` (`@RequirePermissions()` vide + contrôle dans le contrôleur) : un rôle peut voir une carte sans accéder au module Rapports. `summary` reste réservée à `reports.view`.
+- Flutter : `HomeDashboard._indicatorSections` n'affiche que les cartes accordées ; une section sans carte disparaît avec son titre. Droits illisibles (hors ligne) : repli sur les défauts historiques (le Serveur ne voit que les boissons).
+- Défauts : `reports.view` ⇒ les 14, sauf le Serveur (6 rubriques boissons sans Gbêlê / Gbêlê).

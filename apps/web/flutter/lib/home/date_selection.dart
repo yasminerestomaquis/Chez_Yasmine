@@ -81,7 +81,7 @@ PaymentCategoryBreakdown mergeBreakdowns(List<PaymentCategoryBreakdown> items) {
 
 /// Nombre de commandes cumulé sur les dates sélectionnées, et alertes stock
 /// (état courant du stock, indépendant de la date : jamais additionné).
-({int salesCount, int lowStockCount}) mergeSummaries(List<ReportSummary> items) => (
+({int salesCount, int lowStockCount}) mergeSummaries(List<HomeSummary> items) => (
       salesCount: items.fold(0, (total, s) => total + s.salesCount),
       lowStockCount: items.fold(0, (max, s) => s.lowStockCount > max ? s.lowStockCount : max),
     );

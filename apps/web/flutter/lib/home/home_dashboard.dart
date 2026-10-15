@@ -80,7 +80,13 @@ class _DashboardData {
     required this.summary,
     required this.breakdown,
     required this.unreadCount,
+    this.homePermissions,
   });
+  // Rubriques de l'Accueil accordées au rôle (`home.*`, « Gestion des
+  // permissions > Accueil », demande du 2026-10-15). `null` : lecture
+  // impossible (coupure) — on retombe alors sur les défauts historiques par
+  // rôle, voir `_canShow`.
+  final Set<String>? homePermissions;
   // Nullable : un rôle sans la permission `reports.view` (ex. Serveur,
   // Magasinier — voir supabase/seed/001_roles_permissions.sql) n'a pas accès
   // à ces indicateurs. On l'affiche sans eux plutôt que de bloquer tout
@@ -404,13 +410,18 @@ class _HomeDashboardState extends State<HomeDashboard> {
               ),
           ];
 
+    // `home-summary` (et non `summary`) : ne renvoie que les chiffres des cartes
+    // « Commandes » / « Alertes stock » accordés au rôle, sans exiger `reports.view`.
     final summaryFuture = Future.wait([
       for (final r in ranges)
-        _reports.getSummary(
+        _reports.getHomeSummary(
           from: r.from.toIso8601String(),
           to: r.to.toIso8601String(),
         ),
     ]);
+    // Erreur capturée dès la création : attendue seulement plus bas, une panne
+    // survenue entre-temps resterait sinon une exception non gérée.
+    final permissionsFuture = _reports.getHomePermissions().then<Set<String>?>((v) => v, onError: (_) => null);
     final breakdownFuture = Future.wait([
       for (final r in ranges)
         _reports.getPaymentCategoryBreakdown(
@@ -442,11 +453,15 @@ class _HomeDashboardState extends State<HomeDashboard> {
     } catch (_) {
       // ignore
     }
+    // Rubriques accordées : un échec (coupure) laisse `null` et l'écran retombe
+    // sur les défauts historiques par rôle (`_canShow`).
+    final homePermissions = await permissionsFuture;
 
     return _DashboardData(
       summary: summary,
       breakdown: breakdown,
       unreadCount: unreadCount,
+      homePermissions: homePermissions,
     );
   }
 
@@ -761,6 +776,213 @@ class _HomeDashboardState extends State<HomeDashboard> {
     );
   }
 
+  /// Rubriques que le Serveur voyait avant les permissions `home.*` : recettes
+  /// boissons sans Gbêlê / Gbêlê et leur détail par mode de paiement. Sert de repli
+  /// quand les droits n'ont pas pu être lus (hors ligne).
+  static const _serveurDefaultCodes = {
+    'home.revenue_beverages',
+    'home.revenue_gbele',
+    'home.detail_beverages_cash',
+    'home.detail_beverages_mobile',
+    'home.detail_gbele_cash',
+    'home.detail_gbele_mobile',
+  };
+
+  /// Droit d'afficher une rubrique : celui du rôle (`home.*`, « Gestion des
+  /// permissions > Accueil ») ; si les droits sont inconnus, le comportement
+  /// historique (le Serveur ne voit que les boissons, les autres tout).
+  bool _canShow(Set<String>? permissions, String code) =>
+      permissions != null ? permissions.contains(code) : (!_isServeur || _serveurDefaultCodes.contains(code));
+
+  /// Cartes de l'Accueil, rubrique par rubrique selon les droits d'affichage
+  /// (demande utilisateur du 2026-10-15) : Total ventes, Espèces, Mobile Money,
+  /// Commandes, Alertes stock, RECETTES DU JOUR (3) et DÉTAIL PAR MODE DE
+  /// PAIEMENT (6). Une section dont aucune carte n'est accordée disparaît, titre compris.
+  List<Widget> _indicatorSections(
+    ({int salesCount, int lowStockCount})? summary,
+    PaymentCategoryBreakdown? breakdown,
+    Set<String>? permissions,
+  ) {
+    bool can(String code) => _canShow(permissions, code);
+    final widgets = <Widget>[];
+
+    // Haut de page : total, modes de paiement, commandes/alertes — espacés de 10, puis 20 après le dernier bloc.
+    final top = <Widget>[];
+    if (breakdown != null && can('home.total_sales')) {
+      top.add(
+        DashStatCard(
+          large: true,
+          tone: DashTone.green,
+          icon: Icons.trending_up,
+          label: 'Total ventes $_periodPhrase',
+          labelSuffixIcon: Icons.north_east,
+          value: '${formatAmount(breakdown.totalRevenue)} F',
+          watermark: Icons.payments_rounded,
+        ),
+      );
+    }
+    if (breakdown != null) {
+      final pay = <Widget>[
+        if (can('home.cash'))
+          DashStatCard(
+            tone: DashTone.green,
+            icon: Icons.payments_outlined,
+            label: 'Espèces',
+            value: '${formatAmount(breakdown.cashRevenue)} F',
+            images: const ['assets/home_icon_2.jpg'],
+          ),
+        if (can('home.mobile_money'))
+          DashStatCard(
+            tone: DashTone.blue,
+            icon: Icons.phone_iphone_outlined,
+            label: 'Mobile Money',
+            value: '${formatAmount(breakdown.mobileMoneyRevenue)} F',
+            images: const ['assets/home_icon_3.jpg'],
+          ),
+      ];
+      if (pay.isNotEmpty) top.add(_cardGrid(pay));
+    }
+    if (summary != null) {
+      final counters = <Widget>[
+        if (can('home.orders'))
+          DashStatCard(
+            tone: DashTone.orange,
+            icon: Icons.receipt_long_outlined,
+            label: 'Commandes $_periodPhrase',
+            value: '${summary.salesCount}',
+            watermark: Icons.room_service_outlined,
+          ),
+        if (can('home.stock_alerts'))
+          DashStatCard(
+            tone: summary.lowStockCount > 0 ? DashTone.red : DashTone.green,
+            icon: Icons.warning_amber_rounded,
+            label: 'Alertes stock',
+            value: '${summary.lowStockCount}',
+            watermark: Icons.inventory_2_outlined,
+          ),
+      ];
+      if (counters.isNotEmpty) top.add(_cardGrid(counters));
+    }
+    for (var i = 0; i < top.length; i++) {
+      if (i > 0) widgets.add(const SizedBox(height: 10));
+      widgets.add(top[i]);
+    }
+    if (top.isNotEmpty) widgets.add(const SizedBox(height: 20));
+
+    if (breakdown == null) return widgets;
+
+    final revenue = <Widget>[
+      if (can('home.revenue_beverages'))
+        DashStatCard(
+          compact: true,
+          tone: DashTone.green,
+          icon: Icons.sports_bar_outlined,
+          label: 'Recettes boissons sans Gbêlê $_periodPhrase',
+          value: '${formatAmount(breakdown.boissonsSansGbeleRevenue)} F',
+          images: const ['assets/malta.jpg'],
+        ),
+      // Isolée de « Recettes boissons » le 2026-09-24 (demande utilisateur).
+      if (can('home.revenue_gbele'))
+        DashStatCard(
+          compact: true,
+          tone: DashTone.purple,
+          icon: Icons.local_drink_outlined,
+          label: 'Recettes Gbêlê $_periodPhrase',
+          value: '${formatAmount(breakdown.gbeleRevenue)} F',
+          images: const ['assets/gbele.jpg'],
+        ),
+      if (can('home.revenue_plats'))
+        DashStatCard(
+          compact: true,
+          tone: DashTone.orange,
+          icon: Icons.restaurant_outlined,
+          label: 'Recettes plats $_periodPhrase',
+          value: '${formatAmount(breakdown.platsRevenue)} F',
+          images: const ['assets/kedjenou_poulet.jpg'],
+        ),
+    ];
+    if (revenue.isNotEmpty) {
+      widgets.addAll([
+        DashSectionTitle(
+          icon: Icons.restaurant,
+          title: _isToday ? 'RECETTES DU JOUR' : 'RECETTES ${_periodPhrase.toUpperCase()}',
+        ),
+        const SizedBox(height: 10),
+        _cardGrid(revenue, columns: _columnsFor(revenue.length)),
+        const SizedBox(height: 20),
+      ]);
+    }
+
+    final detail = <Widget>[
+      if (can('home.detail_beverages_cash'))
+        DashStatCard(
+          compact: true,
+          tone: DashTone.green,
+          icon: Icons.payments_outlined,
+          label: 'Boissons sans Gbêlê - Espèces',
+          value: '${formatAmount(breakdown.boissonsSansGbeleCash)} F',
+          images: const ['assets/home_icon_2.jpg', 'assets/malta.jpg'],
+        ),
+      if (can('home.detail_beverages_mobile'))
+        DashStatCard(
+          compact: true,
+          tone: DashTone.green,
+          icon: Icons.phone_iphone_outlined,
+          label: 'Boissons sans Gbêlê - Mobile Money',
+          value: '${formatAmount(breakdown.boissonsSansGbeleMobileMoney)} F',
+          images: const ['assets/home_icon_3.jpg', 'assets/malta.jpg'],
+        ),
+      if (can('home.detail_gbele_cash'))
+        DashStatCard(
+          compact: true,
+          tone: DashTone.purple,
+          icon: Icons.payments_outlined,
+          label: 'Gbêlê - Espèces',
+          value: '${formatAmount(breakdown.gbeleCash)} F',
+          images: const ['assets/home_icon_2.jpg', 'assets/gbele.jpg'],
+        ),
+      if (can('home.detail_gbele_mobile'))
+        DashStatCard(
+          compact: true,
+          tone: DashTone.purple,
+          icon: Icons.phone_iphone_outlined,
+          label: 'Gbêlê - Mobile Money',
+          value: '${formatAmount(breakdown.gbeleMobileMoney)} F',
+          images: const ['assets/home_icon_3.jpg', 'assets/gbele.jpg'],
+        ),
+      if (can('home.detail_plats_cash'))
+        DashStatCard(
+          compact: true,
+          tone: DashTone.orange,
+          icon: Icons.payments_outlined,
+          label: 'Plats - Espèces',
+          value: '${formatAmount(breakdown.platsCash)} F',
+          images: const ['assets/home_icon_2.jpg', 'assets/kedjenou_poulet.jpg'],
+        ),
+      if (can('home.detail_plats_mobile'))
+        DashStatCard(
+          compact: true,
+          tone: DashTone.orange,
+          icon: Icons.phone_iphone_outlined,
+          label: 'Plats - Mobile Money',
+          value: '${formatAmount(breakdown.platsMobileMoney)} F',
+          images: const ['assets/home_icon_3.jpg', 'assets/kedjenou_poulet.jpg'],
+        ),
+    ];
+    if (detail.isNotEmpty) {
+      widgets.addAll([
+        const DashSectionTitle(
+          icon: Icons.account_balance_wallet,
+          title: 'DÉTAIL PAR MODE DE PAIEMENT',
+        ),
+        const SizedBox(height: 10),
+        _cardGrid(detail, columns: _columnsFor(detail.length)),
+        const SizedBox(height: 20),
+      ]);
+    }
+    return widgets;
+  }
+
   @override
   Widget build(BuildContext context) {
     return Scaffold(
@@ -937,199 +1159,7 @@ class _HomeDashboardState extends State<HomeDashboard> {
                     child: Column(
                       crossAxisAlignment: CrossAxisAlignment.stretch,
                       children: [
-                        if (breakdown != null && !_isServeur) ...[
-                          DashStatCard(
-                            large: true,
-                            tone: DashTone.green,
-                            icon: Icons.trending_up,
-                            label: 'Total ventes $_periodPhrase',
-                            labelSuffixIcon: Icons.north_east,
-                            value: '${formatAmount(breakdown.totalRevenue)} F',
-                            watermark: Icons.payments_rounded,
-                          ),
-                          const SizedBox(height: 10),
-                          _cardGrid([
-                            DashStatCard(
-                              tone: DashTone.green,
-                              icon: Icons.payments_outlined,
-                              label: 'Espèces',
-                              value: '${formatAmount(breakdown.cashRevenue)} F',
-                              images: const ['assets/home_icon_2.jpg'],
-                            ),
-                            DashStatCard(
-                              tone: DashTone.blue,
-                              icon: Icons.phone_iphone_outlined,
-                              label: 'Mobile Money',
-                              value:
-                                  '${formatAmount(breakdown.mobileMoneyRevenue)} F',
-                              images: const ['assets/home_icon_3.jpg'],
-                            ),
-                          ]),
-                          SizedBox(height: summary != null ? 10 : 20),
-                        ],
-                        if (summary != null && !_isServeur) ...[
-                          _cardGrid([
-                            DashStatCard(
-                              tone: DashTone.orange,
-                              icon: Icons.receipt_long_outlined,
-                              label: 'Commandes $_periodPhrase',
-                              value: '${summary.salesCount}',
-                              watermark: Icons.room_service_outlined,
-                            ),
-                            DashStatCard(
-                              tone: summary.lowStockCount > 0
-                                  ? DashTone.red
-                                  : DashTone.green,
-                              icon: Icons.warning_amber_rounded,
-                              label: 'Alertes stock',
-                              value: '${summary.lowStockCount}',
-                              watermark: Icons.inventory_2_outlined,
-                            ),
-                          ]),
-                          const SizedBox(height: 20),
-                        ],
-                        if (breakdown != null) ...[
-                          DashSectionTitle(
-                            icon: Icons.restaurant,
-                            title: _isToday
-                                ? 'RECETTES DU JOUR'
-                                : 'RECETTES ${_periodPhrase.toUpperCase()}',
-                          ),
-                          const SizedBox(height: 10),
-                          Builder(
-                            builder: (context) {
-                              final cards = <Widget>[
-                                DashStatCard(
-                                  compact: true,
-                                  tone: DashTone.green,
-                                  icon: Icons.sports_bar_outlined,
-                                  label:
-                                      'Recettes boissons sans Gbêlê $_periodPhrase',
-                                  value:
-                                      '${formatAmount(breakdown.boissonsSansGbeleRevenue)} F',
-                                  images: const ['assets/malta.jpg'],
-                                ),
-                                // Isolée de "Recettes boissons" le 2026-09-24
-                                // (demande utilisateur) — visible aussi au
-                                // Serveur, comme la carte ci-dessus.
-                                DashStatCard(
-                                  compact: true,
-                                  tone: DashTone.purple,
-                                  icon: Icons.local_drink_outlined,
-                                  label: 'Recettes Gbêlê $_periodPhrase',
-                                  value:
-                                      '${formatAmount(breakdown.gbeleRevenue)} F',
-                                  images: const ['assets/gbele.jpg'],
-                                ),
-                                if (!_isServeur)
-                                  DashStatCard(
-                                    compact: true,
-                                    tone: DashTone.orange,
-                                    icon: Icons.restaurant_outlined,
-                                    label: 'Recettes plats $_periodPhrase',
-                                    value:
-                                        '${formatAmount(breakdown.platsRevenue)} F',
-                                    images: const ['assets/kedjenou_poulet.jpg'],
-                                  ),
-                              ];
-                              return _cardGrid(
-                                cards,
-                                columns: _columnsFor(cards.length),
-                              );
-                            },
-                          ),
-                          const SizedBox(height: 20),
-                          const DashSectionTitle(
-                            icon: Icons.account_balance_wallet,
-                            title: 'DÉTAIL PAR MODE DE PAIEMENT',
-                          ),
-                          const SizedBox(height: 10),
-                          Builder(
-                            builder: (context) {
-                              final cards = <Widget>[
-                                DashStatCard(
-                                  compact: true,
-                                  tone: DashTone.green,
-                                  icon: Icons.payments_outlined,
-                                  label: 'Boissons sans Gbêlê - Espèces',
-                                  value:
-                                      '${formatAmount(breakdown.boissonsSansGbeleCash)} F',
-                                  images: const [
-                                    'assets/home_icon_2.jpg',
-                                    'assets/malta.jpg',
-                                  ],
-                                ),
-                                DashStatCard(
-                                  compact: true,
-                                  tone: DashTone.green,
-                                  icon: Icons.phone_iphone_outlined,
-                                  label: 'Boissons sans Gbêlê - Mobile Money',
-                                  value:
-                                      '${formatAmount(breakdown.boissonsSansGbeleMobileMoney)} F',
-                                  images: const [
-                                    'assets/home_icon_3.jpg',
-                                    'assets/malta.jpg',
-                                  ],
-                                ),
-                                DashStatCard(
-                                  compact: true,
-                                  tone: DashTone.purple,
-                                  icon: Icons.payments_outlined,
-                                  label: 'Gbêlê - Espèces',
-                                  value:
-                                      '${formatAmount(breakdown.gbeleCash)} F',
-                                  images: const [
-                                    'assets/home_icon_2.jpg',
-                                    'assets/gbele.jpg',
-                                  ],
-                                ),
-                                DashStatCard(
-                                  compact: true,
-                                  tone: DashTone.purple,
-                                  icon: Icons.phone_iphone_outlined,
-                                  label: 'Gbêlê - Mobile Money',
-                                  value:
-                                      '${formatAmount(breakdown.gbeleMobileMoney)} F',
-                                  images: const [
-                                    'assets/home_icon_3.jpg',
-                                    'assets/gbele.jpg',
-                                  ],
-                                ),
-                                if (!_isServeur) ...[
-                                  DashStatCard(
-                                    compact: true,
-                                    tone: DashTone.orange,
-                                    icon: Icons.payments_outlined,
-                                    label: 'Plats - Espèces',
-                                    value:
-                                        '${formatAmount(breakdown.platsCash)} F',
-                                    images: const [
-                                      'assets/home_icon_2.jpg',
-                                      'assets/kedjenou_poulet.jpg',
-                                    ],
-                                  ),
-                                  DashStatCard(
-                                    compact: true,
-                                    tone: DashTone.orange,
-                                    icon: Icons.phone_iphone_outlined,
-                                    label: 'Plats - Mobile Money',
-                                    value:
-                                        '${formatAmount(breakdown.platsMobileMoney)} F',
-                                    images: const [
-                                      'assets/home_icon_3.jpg',
-                                      'assets/kedjenou_poulet.jpg',
-                                    ],
-                                  ),
-                                ],
-                              ];
-                              return _cardGrid(
-                                cards,
-                                columns: _columnsFor(cards.length),
-                              );
-                            },
-                          ),
-                          const SizedBox(height: 20),
-                        ],
+                        ..._indicatorSections(summary, breakdown, data.homePermissions),
                         const DashSectionTitle(
                           icon: Icons.flash_on,
                           title: 'ACTIONS RAPIDES',

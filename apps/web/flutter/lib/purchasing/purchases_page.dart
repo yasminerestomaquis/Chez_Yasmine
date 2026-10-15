@@ -196,7 +196,23 @@ class _PurchasesPageState extends State<PurchasesPage>
   void _removeDraftLine(_DraftLine line) =>
       setState(() => _draftLines.remove(line));
 
+  /// Envoi en cours : un double appui sur « Créer la commande » (l'API met parfois
+  /// plusieurs secondes à répondre) envoyait deux commandes identiques — et le
+  /// stock entrait deux fois (constaté le 2026-10-13 sur Eau Bassam). Le bouton
+  /// est désactivé et un second appel est ignoré tant que le premier n'est pas fini.
+  bool _isSubmittingOrder = false;
+
   Future<void> _submitOrder({bool pending = false}) async {
+    if (_isSubmittingOrder) return;
+    setState(() => _isSubmittingOrder = true);
+    try {
+      await _submitOrderOnce(pending: pending);
+    } finally {
+      if (mounted) setState(() => _isSubmittingOrder = false);
+    }
+  }
+
+  Future<void> _submitOrderOnce({bool pending = false}) async {
     if (_draftLines.isEmpty) return;
     final orderNumber = int.tryParse(_orderNumberController.text.trim());
     if (orderNumber == null) {
@@ -651,14 +667,14 @@ class _PurchasesPageState extends State<PurchasesPage>
                 children: [
                   Expanded(
                     child: OutlinedButton(
-                      onPressed: _draftLines.isEmpty ? null : () => _submitOrder(pending: true),
+                      onPressed: _draftLines.isEmpty || _isSubmittingOrder ? null : () => _submitOrder(pending: true),
                       child: const Text('En attente'),
                     ),
                   ),
                   const SizedBox(width: 12),
                   Expanded(
                     child: FilledButton(
-                      onPressed: _draftLines.isEmpty ? null : () => _submitOrder(),
+                      onPressed: _draftLines.isEmpty || _isSubmittingOrder ? null : () => _submitOrder(),
                       child: const Text('Créer la commande'),
                     ),
                   ),

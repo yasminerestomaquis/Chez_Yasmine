@@ -32,6 +32,8 @@ PendingOperation operation(String type, Map<String, dynamic> payload, {String id
     );
 
 void main() {
+  lotStockTests();
+
   group('stockUsedByLine (miroir de SalesService.create)', () {
     test('produit à prix fixe : la quantité demandée', () {
       expect(stockUsedByLine(product('p1', 'Celtia'), quantity: 3), 3);
@@ -258,4 +260,30 @@ String _encode(PendingOperation o) {
   return '{"id":"${o.id}","entityType":"${o.entityType}","deviceId":"${o.deviceId}",'
       '"payload":{"payments":[{"method":"cash","amount":1000}]},'
       '"createdAt":"${o.createdAt.toIso8601String()}","attemptCount":1,"lastError":"${o.lastError}"}';
+}
+
+/// Correctif du 2026-10-15 : un lot de 3 retirait 1 bouteille du stock au lieu de 3
+/// (Despé 33, Heineken 33) — le décompte local hors ligne reprend la règle du serveur.
+void lotStockTests() {
+  Product lot({String unit = '3', double? unitPrice = 700}) => Product(
+        id: 'p1',
+        name: 'Despé 33',
+        status: 'active',
+        stockQuantity: 30,
+        salePrice: 2000,
+        unitSalePrice: unitPrice,
+        unit: unit,
+      );
+
+  group('stockUsedByLine — lot / unité (2026-10-15)', () {
+    test('2 lots de 3 consomment 6 bouteilles, 2 unités en consomment 2', () {
+      expect(stockUsedByLine(lot(), quantity: 2), 6);
+      expect(stockUsedByLine(lot(), quantity: 2, sellAsUnit: true), 2);
+    });
+
+    test('sans prix à l’unité, ou lot de 1, la quantité est déjà en bouteilles', () {
+      expect(stockUsedByLine(lot(unitPrice: null), quantity: 2), 2);
+      expect(stockUsedByLine(lot(unit: '1'), quantity: 4), 4);
+    });
+  });
 }

@@ -3,6 +3,8 @@ import 'package:chez_yasmine/users/permission_grouping.dart';
 import 'package:chez_yasmine/users/user_models.dart';
 
 void main() {
+  accueilGroupingTests();
+
   group('moduleNameFor / subModuleNameFor', () {
     test('maps known prefixes to their French module/sub-module labels', () {
       expect(moduleNameFor('products.manage'), 'Catalogue');
@@ -185,6 +187,53 @@ void main() {
         'charts.revenue_top',
         'charts.revenue_monthly',
       ]);
+    });
+  });
+}
+
+/// Demande du 2026-10-15 : module « Accueil » dans la gestion des permissions,
+/// une permission d'affichage par carte, en trois sections.
+void accueilGroupingTests() {
+  PermissionInfo p(String code) => PermissionInfo(code: code, description: code);
+
+  group('module Accueil (2026-10-15)', () {
+    final codes = [
+      'home.detail_plats_mobile',
+      'home.cash',
+      'home.revenue_plats',
+      'home.total_sales',
+      'home.detail_beverages_cash',
+      'home.stock_alerts',
+      'home.revenue_beverages',
+      'home.mobile_money',
+      'home.orders',
+    ];
+
+    test('les codes home.* forment le module Accueil, trois sections, en tête du tableau', () {
+      final groups = groupPermissionsByModule([p('tables.manage'), for (final c in codes) p(c)]);
+
+      expect(groups.first.name, 'Accueil');
+      expect(groups.first.subModules.map((s) => s.name).toList(), [
+        'Résumé',
+        'Recettes du jour',
+        'Détail par mode de paiement',
+      ]);
+      expect(groups.map((g) => g.name).toList(), ['Accueil', 'Tables']);
+    });
+
+    test('les cartes suivent l ordre de l écran, pas l ordre alphabétique', () {
+      final groups = groupPermissionsByModule([for (final c in codes) p(c)]);
+      final byName = {for (final s in groups.single.subModules) s.name: s.permissions.map((x) => x.code).toList()};
+
+      expect(byName['Résumé'], ['home.total_sales', 'home.cash', 'home.mobile_money', 'home.orders', 'home.stock_alerts']);
+      expect(byName['Recettes du jour'], ['home.revenue_beverages', 'home.revenue_plats']);
+      expect(byName['Détail par mode de paiement'], ['home.detail_beverages_cash', 'home.detail_plats_mobile']);
+    });
+
+    test('les permissions de saisie des recettes (pos.sell_*) restent dans le module Caisse', () {
+      expect(moduleNameFor('pos.sell_beverages'), 'Caisse');
+      expect(moduleNameFor('pos.sell_gbele'), 'Caisse');
+      expect(moduleNameFor('pos.sell_plats'), 'Caisse');
     });
   });
 }

@@ -15,6 +15,7 @@ import '../pos/category_sold_items_page.dart';
 import '../pos/payment_dialog.dart';
 import '../pos/pos_repository.dart';
 import '../pos/product_grid.dart';
+import '../pos/sell_groups.dart';
 import '../pos/receipt_page.dart';
 import '../sync/connectivity_status.dart';
 import '../sync/device_id.dart';
@@ -128,7 +129,15 @@ class _TableOrderPageState extends State<TableOrderPage> {
       } catch (_) {
         // Stockage indisponible : le catalogue en ligne reste valable.
       }
-      return (categories, products);
+      // Produits dont le groupe de recettes n'est pas saisissable par ce rôle
+      // (`pos.sell_*`) : masqués ; le serveur refuse de toute façon (403).
+      // Échec de la lecture des droits (hors ligne) : rien n'est masqué.
+      try {
+        final allowed = await PosRepository(ApiClient(), widget.establishmentId).getMySellPermissions();
+        return (categories, sellableProducts(products, allowed));
+      } catch (_) {
+        return (categories, products);
+      }
     } catch (error) {
       // Serveur injoignable : dernier catalogue connu (même copie que la
       // Caisse), jamais pour un rejet métier du serveur.
@@ -571,7 +580,16 @@ class _TableOrderPageState extends State<TableOrderPage> {
     // l'appareil, à titre provisoire.
     await CatalogCache(widget.repository.establishmentId).applyStockDecrements(
       stockNeeded(
-        order.items.map((i) => (productId: i.productId, quantity: i.quantity)),
+        order.items.map((i) {
+          final product = _allProducts.where((p) => p.id == i.productId).firstOrNull;
+          return (
+            productId: i.productId,
+            // En bouteilles : un lot de 3 en retire 3 (comme le serveur).
+            quantity: product == null
+                ? i.quantity
+                : stockUsedByLine(product, quantity: i.quantity, sellAsUnit: i.sellAsUnit),
+          );
+        }),
       ),
     );
     // Addition retirée de la copie locale (et table mise à jour) : sinon

@@ -51,11 +51,12 @@ export class OrdersController {
 
   @Post('orders/:orderId/items')
   addItem(
+    @Req() request: Request,
     @Param('establishmentId') establishmentId: string,
     @Param('orderId') orderId: string,
     @Body() dto: AddOrderItemDto,
   ) {
-    return this.orders.addItem(establishmentId, orderId, dto);
+    return this.orders.addItem(establishmentId, orderId, dto, request.user!.sub);
   }
 
   @Patch('orders/:orderId/items/:itemId')

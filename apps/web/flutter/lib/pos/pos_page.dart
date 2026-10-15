@@ -16,6 +16,7 @@ import 'category_sold_items_page.dart';
 import 'pos_models.dart';
 import 'pos_repository.dart';
 import 'product_grid.dart';
+import 'sell_groups.dart';
 import 'receipt_page.dart';
 
 /// Largeur en dessous de laquelle le panier passe en panneau inférieur
@@ -60,11 +61,22 @@ class _PosPageState extends State<PosPage> {
       final categories = await _catalog.listCategories();
       final products = await _catalog.listProducts();
       await _cache.save(categories, products);
-      return (categories, products);
+      return (categories, await _restrictToSellable(products));
     } catch (error) {
       final cached = await _cache.load();
       if (cached != null) return cached; // offline: fall back to the last known catalog (prompt maître §25).
       rethrow;
+    }
+  }
+
+  /// Masque les produits dont le groupe de recettes (boissons sans Gbêlê / Gbêlê /
+  /// plats) n'est pas saisissable par ce rôle (`pos.sell_*`) ; le serveur refuse de
+  /// toute façon (403). Échec de la lecture des droits (hors ligne) : rien n'est masqué.
+  Future<List<Product>> _restrictToSellable(List<Product> products) async {
+    try {
+      return sellableProducts(products, await _pos.getMySellPermissions());
+    } catch (_) {
+      return products;
     }
   }
 
@@ -296,6 +308,7 @@ class _PosPageState extends State<PosPage> {
                 l.product,
                 quantity: l.quantity.toDouble(),
                 manualAmount: l.manualUnitPrice,
+                sellAsUnit: l.sellAsUnit,
               ),
             ),
           )

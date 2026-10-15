@@ -5,11 +5,24 @@ import '../pos/pos_models.dart';
 /// règle que `SalesService.create` : un produit à prix fixe consomme la
 /// quantité demandée ; un produit à prix de référence variable (ex. Gbêlê) est
 /// saisi par MONTANT payé et le serveur en déduit la quantité
-/// (`resolveReferencePriceLine`, arrondie à 2 décimales).
-double stockUsedByLine(Product product, {required double quantity, double? manualAmount}) {
+/// (`resolveReferencePriceLine`, arrondie à 2 décimales). Un produit vendu par
+/// lot ET à l'unité (`unitSalePrice` renseigné) consomme, pour une ligne « Lot »,
+/// quantité × taille du lot (Lot (3) : 2 lots = 6 bouteilles) ; une ligne
+/// « Unité » ([sellAsUnit]) consomme la quantité — voir
+/// `apps/api/nestjs/src/pos/sale-stock-units.ts` (correctif du 2026-10-15).
+double stockUsedByLine(
+  Product product, {
+  required double quantity,
+  double? manualAmount,
+  bool sellAsUnit = false,
+}) {
   final reference = product.referenceSalePrice;
   if (product.salePrice == null && reference != null && reference > 0 && manualAmount != null) {
     return (manualAmount / reference * 100).round() / 100;
+  }
+  final lot = product.lotSize;
+  if (product.unitSalePrice != null && !sellAsUnit && lot != null && lot > 1) {
+    return quantity * lot;
   }
   return quantity;
 }

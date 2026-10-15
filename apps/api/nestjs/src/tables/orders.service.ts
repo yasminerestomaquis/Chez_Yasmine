@@ -1,8 +1,9 @@
-import { BadRequestException, ConflictException, Injectable, NotFoundException } from '@nestjs/common';
+import { BadRequestException, ConflictException, Injectable, NotFoundException, Optional } from '@nestjs/common';
 import type { Prisma, Product } from '@prisma/client';
 import { PrismaService } from '../prisma/prisma.service.js';
 import type { AddOrderItemDto, SplitOrderDto, TransferOrderDto } from './dto/order-operations.dto.js';
 import { resolveReferencePriceLine } from '../pos/reference-price.js';
+import { SellGroupsService } from '../pos/sell-groups.service.js';
 
 /** Les quantités sont en Decimal(12,2) : comparaison à la précision de la base. */
 function sameQuantity(a: number, b: number): boolean {
@@ -11,7 +12,20 @@ function sameQuantity(a: number, b: number): boolean {
 
 @Injectable()
 export class OrdersService {
-  constructor(private readonly prisma: PrismaService) {}
+  constructor(
+    private readonly prisma: PrismaService,
+    @Optional() private readonly sellGroups?: SellGroupsService,
+  ) {}
+
+  /** Refuse (403) l'ajout d'un produit dont le groupe de recettes (boissons hors Gbêlê / Gbêlê / plats) n'est pas saisissable par l'auteur — voir `pos/sell-groups.ts`. */
+  private async assertCanSellProduct(userId: string | undefined, establishmentId: string, productId: string) {
+    if (!userId || !this.sellGroups) return;
+    const product = await this.prisma.product.findFirst({
+      where: { id: productId, establishmentId },
+      select: { category: { select: { hasCasePricing: true, hasVariablePricing: true, isBeverage: true } } },
+    });
+    if (product) await this.sellGroups.assertCanSell(userId, establishmentId, [{ category: product.category ?? null }]);
+  }
 
   private async getOpenOrderOrThrow(establishmentId: string, orderId: string) {
     const order = await this.prisma.order.findFirst({ where: { id: orderId, establishmentId } });
@@ -182,8 +196,9 @@ export class OrdersService {
    * variable restent deux lignes distinctes (deux pièces vendues à des prix
    * différents le même jour).
    */
-  async addItem(establishmentId: string, orderId: string, dto: AddOrderItemDto) {
+  async addItem(establishmentId: string, orderId: string, dto: AddOrderItemDto, userId?: string) {
     const order = await this.getOpenOrderOrThrow(establishmentId, orderId);
+    await this.assertCanSellProduct(userId, establishmentId, dto.productId);
     const product = await this.prisma.product.findFirst({ where: { id: dto.productId, establishmentId } });
     if (!product) {
       throw new BadRequestException("Le produit indiqué n'appartient pas à cet établissement");
@@ -286,11 +301,12 @@ export class OrdersService {
    * une écriture de quantité) : c'est ce qui rend l'ajout idempotent — une
    * ligne dont l'identifiant existe déjà est simplement renvoyée.
    */
-  async addItemWithId(establishmentId: string, orderId: string, itemId: string, dto: AddOrderItemDto) {
+  async addItemWithId(establishmentId: string, orderId: string, itemId: string, dto: AddOrderItemDto, userId?: string) {
     const already = await this.prisma.orderItem.findFirst({ where: { id: itemId, orderId } });
     if (already) return already;
 
     const order = await this.getOpenOrderOrThrow(establishmentId, orderId);
+    await this.assertCanSellProduct(userId, establishmentId, dto.productId);
     const product = await this.prisma.product.findFirst({ where: { id: dto.productId, establishmentId } });
     if (!product) {
       throw new BadRequestException("Le produit indiqué n'appartient pas à cet établissement");

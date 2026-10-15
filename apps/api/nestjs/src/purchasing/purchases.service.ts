@@ -21,6 +21,9 @@ type Tx = Prisma.TransactionClient;
  */
 const PURCHASE_TRANSACTION_OPTIONS = { timeout: 30_000 };
 
+/** Fenêtre dans laquelle une commande strictement identique est considérée comme un double envoi. */
+const DUPLICATE_WINDOW_MS = 60_000;
+
 const purchaseInclude = {
   supplier: true,
   items: {
@@ -64,6 +67,38 @@ export class PurchasesService {
     return purchase;
   }
 
+  /** Commande identique créée depuis moins de `DUPLICATE_WINDOW_MS` — voir le commentaire de `create`. */
+  private async findRecentDuplicate(
+    establishmentId: string,
+    dto: CreatePurchaseDto,
+    lines: ResolvedLine[],
+    total: number,
+    isPending: boolean,
+  ) {
+    const recent = await this.prisma.purchase.findFirst({
+      where: {
+        establishmentId,
+        supplierId: dto.supplierId ?? null,
+        orderNumber: dto.orderNumber,
+        status: isPending ? 'pending' : 'received',
+        createdAt: { gte: new Date(Date.now() - DUPLICATE_WINDOW_MS) },
+      },
+      include: purchaseInclude,
+      orderBy: { createdAt: 'desc' },
+    });
+    if (!recent) return null;
+    if (Math.abs(recent.total.toNumber() - total) > 0.005) return null;
+    const signature = (items: { productId: string; quantity: number }[]) =>
+      items
+        .map((i) => `${i.productId}:${i.quantity}`)
+        .sort()
+        .join('|');
+    const sameLines =
+      signature(recent.items.map((i) => ({ productId: i.productId, quantity: i.quantity.toNumber() }))) ===
+      signature(lines.map((l) => ({ productId: l.productId, quantity: l.quantity })));
+    return sameLines ? recent : null;
+  }
+
   /**
    * Commande par casier (Bières, Vins, Sucreries — voir docs/api/purchasing.md) :
    * seuls les produits d'une catégorie hasCasePricing sont acceptés ;
@@ -97,6 +132,16 @@ export class PurchasesService {
     const lines = await this.resolveLines(establishmentId, dto.items);
     const total = lines.reduce((sum, l) => sum + l.casesOrdered * l.purchasePricePerCase, 0);
     const isPending = dto.status === 'pending';
+
+    // Garde anti-doublon (2026-10-15) : un double appui sur « Créer la commande »
+    // envoyait deux requêtes avec deux identifiants différents, donc deux
+    // commandes identiques et le stock entré deux fois (constaté en production
+    // sur Eau Bassam, commandes n°1 et n°3 : +48 et +60 bouteilles en trop).
+    // Une commande strictement identique (même fournisseur, même N°, mêmes
+    // lignes, même total) créée il y a moins d'une minute est la même saisie
+    // rejouée : on renvoie l'existante sans rien réécrire.
+    const duplicate = await this.findRecentDuplicate(establishmentId, dto, lines, total, isPending);
+    if (duplicate) return duplicate;
 
     const purchase = await this.prisma.$transaction(async (tx) => {
       const created = await tx.purchase.create({

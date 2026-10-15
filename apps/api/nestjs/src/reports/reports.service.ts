@@ -2,6 +2,7 @@ import { Injectable } from '@nestjs/common';
 import PDFDocument from 'pdfkit';
 import { PrismaService } from '../prisma/prisma.service.js';
 import { effectiveUnitCost } from '../catalog/product-cost.util.js';
+import { saleStockUnits } from '../pos/sale-stock-units.js';
 import { StockMovementsService } from '../stock/stock-movements.service.js';
 import type { ReportQueryDto } from './dto/report-query.dto.js';
 import { drawPdfTable, formatFcfa } from '../common/pdf-table.util.js';
@@ -117,6 +118,8 @@ export class ReportsService {
           where: { id: { in: productIds } },
           select: {
             id: true,
+            unit: true,
+            unitSalePrice: true,
             purchasePrice: true,
             bottlesPerCase: true,
             purchasePricePerCase: true,
@@ -125,6 +128,7 @@ export class ReportsService {
         })
       : [];
     const purchasePriceById = new Map(products.map((p) => [p.id, effectiveUnitCost(p)]));
+    const productById = new Map(products.map((p) => [p.id, p]));
 
     let cogs = 0;
     const productAgg = new Map<string, { name: string; quantity: number; revenue: number; cost: number }>();
@@ -132,7 +136,8 @@ export class ReportsService {
       for (const item of sale.items) {
         const quantity = item.quantity.toNumber();
         const unitPrice = item.unitPrice.toNumber();
-        const lineCost = quantity * (purchasePriceById.get(item.productId) ?? 0);
+        // Coût en unités de STOCK : un lot de 3 coûte 3 bouteilles (le prix d'achat est par bouteille).
+        const lineCost = saleStockUnits(productById.get(item.productId), quantity, item.sellAsUnit) * (purchasePriceById.get(item.productId) ?? 0);
         cogs += lineCost;
         const existing = productAgg.get(item.productId) ?? { name: item.name, quantity: 0, revenue: 0, cost: 0 };
         existing.quantity += quantity;

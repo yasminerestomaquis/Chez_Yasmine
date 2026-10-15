@@ -97,3 +97,7 @@ Tout montant/prix affiché dans l'application (pas seulement ce module) utilise 
 - `effectiveUnitCost` : testé via `ReportsService`/`ChartsService` — coût par casier utilisé pour une catégorie `hasCasePricing`, repli sur `purchasePrice` si les champs casier manquent.
 - UI Flutter : `flutter analyze`/`flutter test`/`flutter build web` ✅. Pas de test widget dédié pour les 3 sous-modules (écrans majoritairement des vues de données/formulaires déjà couverts côté logique métier par les tests backend).
 - **Non vérifié en conditions réelles** : round-trip HTTP complet — même limitation `DATABASE_URL` que les phases précédentes.
+
+## Garde anti-doublon à la création (2026-10-15)
+
+Un double appui sur « Créer la commande » créait deux commandes identiques (deux identifiants client) et entrait le stock deux fois (Eau Bassam, commandes n°1 et n°3). La page Achats (`purchases_page.dart`) désactive désormais les boutons « Créer la commande » / « En attente » tant que l'envoi n'est pas terminé, et `PurchasesService.create` renvoie sans rien écrire une commande **strictement identique** (même établissement, fournisseur, N°, statut, total et lignes) créée depuis moins d'une minute (`findRecentDuplicate`).

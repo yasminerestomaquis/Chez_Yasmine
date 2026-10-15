@@ -28,6 +28,9 @@ class PermissionModuleGroup {
 /// Utilisateurs, ce tableau de bord étant lui-même une fonctionnalité de ce
 /// module).
 const Map<String, String> _prefixToModule = {
+  'home.summary': 'Accueil',
+  'home.revenue': 'Accueil',
+  'home.detail': 'Accueil',
   'tables': 'Tables',
   'pos': 'Caisse',
   'stock': 'Stock',
@@ -51,6 +54,9 @@ const Map<String, String> _prefixToModule = {
 };
 
 const Map<String, String> _prefixToSubModule = {
+  'home.summary': 'Résumé',
+  'home.revenue': 'Recettes du jour',
+  'home.detail': 'Détail par mode de paiement',
   'tables': 'Plan de salle',
   'pos': 'Vente',
   'stock': 'Mouvements de stock',
@@ -76,6 +82,9 @@ const Map<String, String> _prefixToSubModule = {
 /// Ordre d'affichage des préfixes, pour un tableau de bord stable et
 /// prévisible plutôt que l'ordre alphabétique des codes renvoyé par l'API.
 const List<String> _prefixOrder = [
+  'home.summary',
+  'home.revenue',
+  'home.detail',
   'tables',
   'pos',
   'stock',
@@ -105,6 +114,14 @@ const List<String> _prefixOrder = [
 /// décision utilisateur du 2026-09-20.
 String modulePrefixOf(String code) {
   final prefix = code.split('.').first;
+  if (prefix == 'home') {
+    // Accueil (2026-10-15) : trois sections — Résumé (total, espèces, mobile
+    // money, commandes, alertes), Recettes du jour, Détail par mode de paiement.
+    final rest = code.length > 5 ? code.substring(5) : '';
+    if (rest.startsWith('revenue_')) return 'home.revenue';
+    if (rest.startsWith('detail_')) return 'home.detail';
+    return 'home.summary';
+  }
   if (prefix != 'charts') return prefix;
   final rest = code.length > 7 ? code.substring(7) : '';
   return 'charts.${rest.split('_').first}';
@@ -140,6 +157,33 @@ const List<String> _chartKindOrder = [
   'out',
 ];
 
+/// Ordre des cartes de l'Accueil, tel qu'à l'écran (haut en bas, gauche à droite).
+const List<String> _homeCodeOrder = [
+  'home.total_sales',
+  'home.cash',
+  'home.mobile_money',
+  'home.orders',
+  'home.stock_alerts',
+  'home.revenue_beverages',
+  'home.revenue_gbele',
+  'home.revenue_plats',
+  'home.detail_beverages_cash',
+  'home.detail_beverages_mobile',
+  'home.detail_gbele_cash',
+  'home.detail_gbele_mobile',
+  'home.detail_plats_cash',
+  'home.detail_plats_mobile',
+];
+
+List<PermissionInfo> _sortedHomePermissions(List<PermissionInfo> items) {
+  int rank(PermissionInfo p) {
+    final index = _homeCodeOrder.indexOf(p.code);
+    return index == -1 ? _homeCodeOrder.length : index;
+  }
+
+  return [...items]..sort((a, b) => rank(a).compareTo(rank(b)));
+}
+
 List<PermissionInfo> _sortedChartPermissions(List<PermissionInfo> items) {
   int rank(PermissionInfo p) {
     final kind = p.code.substring(p.code.indexOf('_') + 1);
@@ -173,6 +217,8 @@ List<PermissionModuleGroup> groupPermissionsByModule(
   for (final prefix in orderedPrefixes) {
     final modulePermissions = prefix.startsWith('charts.')
         ? _sortedChartPermissions(byPrefix[prefix]!)
+        : prefix.startsWith('home.')
+        ? _sortedHomePermissions(byPrefix[prefix]!)
         : byPrefix[prefix]!;
     final moduleName = _prefixToModule[prefix] ?? _capitalize(prefix);
     final subModuleName = _prefixToSubModule[prefix] ?? _capitalize(prefix);

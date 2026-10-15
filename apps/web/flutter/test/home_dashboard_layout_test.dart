@@ -29,8 +29,30 @@ void main() {
     headers: {'content-type': 'application/json'},
   );
 
-  MockClient backend() => MockClient((request) async {
+  const allHome = [
+    'home.total_sales',
+    'home.cash',
+    'home.mobile_money',
+    'home.orders',
+    'home.stock_alerts',
+    'home.revenue_beverages',
+    'home.revenue_gbele',
+    'home.revenue_plats',
+    'home.detail_beverages_cash',
+    'home.detail_beverages_mobile',
+    'home.detail_gbele_cash',
+    'home.detail_gbele_mobile',
+    'home.detail_plats_cash',
+    'home.detail_plats_mobile',
+  ];
+
+  // [permissions] : rubriques `home.*` accordées (toutes par défaut) ;
+  // [permissionsFail] : la lecture des droits échoue (repli sur les défauts par rôle).
+  MockClient makeBackend({List<String> permissions = allHome, bool permissionsFail = false}) => MockClient((request) async {
     final path = request.url.path;
+    if (path.endsWith('/home-permissions')) {
+      return permissionsFail ? http.Response('indisponible', 503) : json({'permissions': permissions});
+    }
     if (path.endsWith('/payment-category-breakdown')) {
       return json({
         'totalRevenue': 54950,
@@ -47,28 +69,14 @@ void main() {
         'platsMobileMoney': 5500,
       });
     }
-    if (path.endsWith('/summary')) {
-      return json({
-        'from': '2026-10-07T00:00:00.000Z',
-        'to': '2026-10-07T23:59:59.999Z',
-        'revenue': 54950,
-        'salesCount': 25,
-        'discountTotal': 0,
-        'cogs': 0,
-        'grossMargin': 0,
-        'expenses': 0,
-        'losses': 0,
-        'netProfit': 0,
-        'receivables': 0,
-        'lowStockCount': 8,
-        'topProducts': [],
-        'productProfitability': [],
-        'serverPerformance': [],
-      });
+    if (path.endsWith('/home-summary')) {
+      return json({'salesCount': 25, 'lowStockCount': 8});
     }
     if (path.endsWith('/unread-count')) return json(1);
     return json({});
   });
+
+  MockClient backend() => makeBackend();
 
   Future<void> open(
     WidgetTester tester, {
@@ -158,19 +166,87 @@ void main() {
     }, backend);
   });
 
-  testWidgets('Serveur : ni total des ventes, ni plats, ni commandes/alertes', (
-    tester,
-  ) async {
-    await http.runWithClient(() async {
-      await open(tester, size: const Size(360, 800), role: 'Serveur');
+  group('droits d’affichage de l’Accueil (home.*, 2026-10-15)', () {
+    const serveur = [
+      'home.revenue_beverages',
+      'home.revenue_gbele',
+      'home.detail_beverages_cash',
+      'home.detail_beverages_mobile',
+      'home.detail_gbele_cash',
+      'home.detail_gbele_mobile',
+    ];
 
-      expect(find.text("Total ventes aujourd'hui"), findsNothing);
-      expect(find.text('Alertes stock'), findsNothing);
-      expect(find.textContaining('Recettes plats'), findsNothing);
-      expect(find.text('Plats - Espèces'), findsNothing);
-      expect(find.textContaining('Recettes Gbêlê'), findsOneWidget);
-      expect(find.byIcon(Icons.workspace_premium), findsNothing);
-      expect(tester.takeException(), isNull);
-    }, backend);
+    testWidgets('droits par défaut du Serveur : seules les recettes boissons sans Gbêlê / Gbêlê', (tester) async {
+      await http.runWithClient(() async {
+        await open(tester, size: const Size(360, 800), role: 'Serveur');
+
+        expect(find.text("Total ventes aujourd'hui"), findsNothing);
+        expect(find.text('Espèces'), findsNothing);
+        expect(find.text('Mobile Money'), findsNothing);
+        expect(find.text('Alertes stock'), findsNothing);
+        expect(find.textContaining('Recettes plats'), findsNothing);
+        expect(find.text('Plats - Espèces'), findsNothing);
+        expect(find.textContaining('Recettes boissons sans Gbêlê'), findsOneWidget);
+        expect(find.textContaining('Recettes Gbêlê'), findsOneWidget);
+        expect(find.text('Gbêlê - Espèces'), findsOneWidget);
+        expect(find.byIcon(Icons.workspace_premium), findsNothing);
+        expect(tester.takeException(), isNull);
+      }, () => makeBackend(permissions: serveur));
+    });
+
+    testWidgets('une seule rubrique accordée : sa carte seule, sans les autres sections', (tester) async {
+      await http.runWithClient(() async {
+        await open(tester, size: const Size(360, 800), role: 'Gérant');
+
+        expect(find.text('Espèces'), findsOneWidget);
+        expect(find.text('48 250 F'), findsOneWidget);
+        expect(find.text('Mobile Money'), findsNothing);
+        expect(find.text("Total ventes aujourd'hui"), findsNothing);
+        expect(find.text('RECETTES DU JOUR'), findsNothing);
+        expect(find.text('DÉTAIL PAR MODE DE PAIEMENT'), findsNothing);
+        expect(find.text("Commandes aujourd'hui"), findsNothing);
+        // La navigation reste intacte.
+        expect(find.byType(BottomNavigationBar), findsOneWidget);
+        expect(tester.takeException(), isNull);
+      }, () => makeBackend(permissions: ['home.cash']));
+    });
+
+    testWidgets('Commandes et Alertes stock suivent leurs propres rubriques', (tester) async {
+      await http.runWithClient(() async {
+        await open(tester, size: const Size(360, 800));
+
+        expect(find.text("Commandes aujourd'hui"), findsNothing);
+        expect(find.text('Alertes stock'), findsOneWidget);
+        expect(find.text('8'), findsOneWidget);
+      }, () => makeBackend(permissions: ['home.stock_alerts']));
+    });
+
+    testWidgets('aucune rubrique accordée : aucune carte, mais le bandeau et les modules restent', (tester) async {
+      await http.runWithClient(() async {
+        await open(tester, size: const Size(360, 800));
+
+        expect(find.text('Espèces'), findsNothing);
+        expect(find.text('RECETTES DU JOUR'), findsNothing);
+        expect(find.text('Bonjour, Super Administrateur'), findsOneWidget);
+        expect(find.text('ACTIONS RAPIDES'), findsOneWidget);
+        expect(find.text('OPÉRATIONS'), findsOneWidget);
+        expect(tester.takeException(), isNull);
+      }, () => makeBackend(permissions: const []));
+    });
+
+    testWidgets('droits illisibles (hors ligne) : repli sur les défauts historiques par rôle', (tester) async {
+      await http.runWithClient(() async {
+        await open(tester, size: const Size(360, 800), role: 'Serveur');
+        expect(find.text('Espèces'), findsNothing);
+        expect(find.textContaining('Recettes plats'), findsNothing);
+        expect(find.textContaining('Recettes Gbêlê'), findsOneWidget);
+      }, () => makeBackend(permissionsFail: true));
+
+      await http.runWithClient(() async {
+        await open(tester, size: const Size(360, 800), role: 'Gérant');
+        expect(find.text('Espèces'), findsOneWidget);
+        expect(find.textContaining('Recettes plats'), findsOneWidget);
+      }, () => makeBackend(permissionsFail: true));
+    });
   });
 }

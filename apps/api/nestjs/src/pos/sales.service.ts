@@ -1,4 +1,4 @@
-import { BadRequestException, ConflictException, Injectable, NotFoundException } from '@nestjs/common';
+import { BadRequestException, ConflictException, Injectable, NotFoundException, Optional } from '@nestjs/common';
 import type { Prisma } from '@prisma/client';
 import { PrismaService } from '../prisma/prisma.service.js';
 import { ActivityNotifierService } from '../notifications/activity-notifier.service.js';
@@ -6,6 +6,8 @@ import { applyCreditSale } from './credit-math.js';
 import type { CreateSaleDto } from './dto/create-sale.dto.js';
 import { computeCartTotals, validatePayments, type CartLine } from './pos-math.js';
 import { resolveReferencePriceLine } from './reference-price.js';
+import { saleStockUnits } from './sale-stock-units.js';
+import { SellGroupsService } from './sell-groups.service.js';
 
 type Tx = Prisma.TransactionClient;
 
@@ -17,6 +19,7 @@ export class SalesService {
   constructor(
     private readonly prisma: PrismaService,
     private readonly activityNotifier: ActivityNotifierService,
+    @Optional() private readonly sellGroups?: SellGroupsService,
   ) {}
 
   async create(establishmentId: string, userId: string, dto: CreateSaleDto) {
@@ -42,11 +45,19 @@ export class SalesService {
     }
 
     const productIds = [...new Set(dto.items.map((i) => i.productId))];
-    const products = await this.prisma.product.findMany({ where: { id: { in: productIds }, establishmentId } });
+    const products = await this.prisma.product.findMany({
+      where: { id: { in: productIds }, establishmentId },
+      include: { category: { select: { hasCasePricing: true, hasVariablePricing: true, isBeverage: true } } },
+    });
     if (products.length !== productIds.length) {
       throw new BadRequestException("Un ou plusieurs produits n'appartiennent pas à cet établissement");
     }
     const productById = new Map(products.map((p) => [p.id, p]));
+
+    // Saisie de recettes par groupe (boissons hors Gbêlê / Gbêlê / plats) :
+    // refusée (403) si le rôle n'a pas la permission `pos.sell_*` du groupe —
+    // avant tout calcul, y compris pour une vente rejouée hors ligne.
+    await this.sellGroups?.assertCanSell(userId, establishmentId, products.map((p) => ({ category: p.category ?? null })));
 
     // Résout quantité et prix unitaire ligne par ligne, AVANT toute
     // agrégation — trois cas, par ordre de priorité :
@@ -63,17 +74,17 @@ export class SalesService {
     const resolvedItems = dto.items.map((item) => {
       const product = productById.get(item.productId)!;
       if (product.salePrice != null) {
-        const unitPrice =
-          item.sellAsUnit && product.unitSalePrice != null ? product.unitSalePrice.toNumber() : product.salePrice.toNumber();
+        const soldAsUnit = !!item.sellAsUnit && product.unitSalePrice != null;
+        const unitPrice = soldAsUnit ? product.unitSalePrice!.toNumber() : product.salePrice.toNumber();
         if (item.quantity == null) {
           throw new BadRequestException(`Quantité requise pour ${product.name}`);
         }
-        return { productId: item.productId, quantity: item.quantity, unitPrice };
+        return { productId: item.productId, quantity: item.quantity, unitPrice, sellAsUnit: soldAsUnit };
       }
       if (product.referenceSalePrice != null) {
         if (item.amountPaid != null) {
           const resolved = resolveReferencePriceLine(product.referenceSalePrice.toNumber(), item.amountPaid, product.name);
-          return { productId: item.productId, quantity: resolved.quantity, unitPrice: resolved.unitPrice };
+          return { productId: item.productId, quantity: resolved.quantity, unitPrice: resolved.unitPrice, sellAsUnit: false };
         }
         // Encaissement d'une addition (`dto.orderId`) : quantité et prix déjà
         // résolus par `OrdersService.addItem` au moment de l'ajout, simplement
@@ -83,13 +94,20 @@ export class SalesService {
         if (item.unitPrice == null || item.quantity == null) {
           throw new BadRequestException(`Montant payé requis pour ${product.name} (prix de référence variable)`);
         }
-        return { productId: item.productId, quantity: item.quantity, unitPrice: item.unitPrice };
+        return { productId: item.productId, quantity: item.quantity, unitPrice: item.unitPrice, sellAsUnit: false };
       }
       if (item.unitPrice == null || item.quantity == null) {
         throw new BadRequestException(`Prix de vente et quantité requis pour ${product.name} (catégorie à prix variable)`);
       }
-      return { productId: item.productId, quantity: item.quantity, unitPrice: item.unitPrice };
+      return { productId: item.productId, quantity: item.quantity, unitPrice: item.unitPrice, sellAsUnit: false };
     });
+
+    // Unités de STOCK de chaque ligne : une ligne « Lot (3) » de quantité 2 retire
+    // 6 bouteilles, pas 2 (voir `sale-stock-units.ts`). Toute la suite — contrôle
+    // du stock, décrémentation, mouvement `sale` — raisonne en unités de stock,
+    // seul le prix et le reçu restent exprimés en lots/unités vendus.
+    const stockUnitsOf = (item: { productId: string; quantity: number; sellAsUnit: boolean }) =>
+      saleStockUnits(productById.get(item.productId), item.quantity, item.sellAsUnit);
 
     // Agrégé par produit, pas par ligne : un produit à prix variable (Poulets/
     // Poissons/Plats africains) peut légitimement apparaître sur plusieurs
@@ -99,7 +117,7 @@ export class SalesService {
     // même si chaque ligne prise seule semble tenir dans le stock.
     const quantityByProductId = new Map<string, number>();
     for (const item of resolvedItems) {
-      quantityByProductId.set(item.productId, (quantityByProductId.get(item.productId) ?? 0) + item.quantity);
+      quantityByProductId.set(item.productId, (quantityByProductId.get(item.productId) ?? 0) + stockUnitsOf(item));
     }
     // Contrôle rapide, avant d'ouvrir la transaction — message d'erreur clair
     // pour le cas courant. Ne suffit pas seul contre deux ventes concurrentes
@@ -186,7 +204,7 @@ export class SalesService {
           // antidatée dont le mouvement de stock resterait horodaté "now"
           // consommerait les lots FIFO dans un ordre chronologiquement
           // incohérent avec sa date réelle (même raison que `LossesService`).
-          data: { productId: item.productId, type: 'sale', quantity: item.quantity, createdBy: userId, createdAt },
+          data: { productId: item.productId, type: 'sale', quantity: stockUnitsOf(item), createdBy: userId, createdAt },
         });
       }
 
@@ -211,6 +229,7 @@ export class SalesService {
               name: productById.get(item.productId)!.name,
               quantity: item.quantity,
               unitPrice: item.unitPrice,
+              sellAsUnit: item.sellAsUnit,
             })),
           },
           payments: { create: dto.payments.map((p) => ({ method: p.method, amount: p.amount })) },
@@ -322,7 +341,7 @@ export class SalesService {
   async refund(establishmentId: string, userId: string, saleId: string) {
     const sale = await this.prisma.sale.findFirst({
       where: { id: saleId, establishmentId },
-      include: { items: true, credits: true },
+      include: { items: { include: { product: { select: { unit: true, unitSalePrice: true } } } }, credits: true },
     });
     if (!sale) {
       throw new NotFoundException('Vente introuvable pour cet établissement');
@@ -333,7 +352,8 @@ export class SalesService {
 
     return this.prisma.$transaction(async (tx) => {
       for (const item of sale.items) {
-        const quantity = item.quantity.toNumber();
+        // Unités de stock (lot de 3 → 3 par lot), symétrique de la vente.
+        const quantity = saleStockUnits(item.product, item.quantity.toNumber(), item.sellAsUnit);
         await tx.product.update({ where: { id: item.productId }, data: { stockQuantity: { increment: quantity } } });
         await tx.stockMovement.create({
           data: {
@@ -406,7 +426,7 @@ export class SalesService {
   async updateItemQuantity(establishmentId: string, userId: string, saleId: string, itemId: string, quantity: number) {
     const sale = await this.prisma.sale.findFirst({
       where: { id: saleId, establishmentId },
-      include: { items: true },
+      include: { items: { include: { product: { select: { unit: true, unitSalePrice: true } } } } },
     });
     if (!sale) {
       throw new NotFoundException('Vente introuvable pour cet établissement');
@@ -424,7 +444,8 @@ export class SalesService {
     const totalDelta = delta * item.unitPrice.toNumber();
 
     return this.prisma.$transaction(async (tx) => {
-      await this.applyStockDelta(tx, saleId, userId, item.productId, delta);
+      // Le delta de stock est en unités de stock (lot de 3 → ×3), le delta de total en lots/unités vendus.
+      await this.applyStockDelta(tx, saleId, userId, item.productId, saleStockUnits(item.product, delta, item.sellAsUnit));
       await tx.saleItem.update({ where: { id: itemId }, data: { quantity } });
       return tx.sale.update({
         where: { id: saleId },

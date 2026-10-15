@@ -9,6 +9,7 @@ import { CorrectSaleItemPriceDto } from './dto/correct-sale-item-price.dto.js';
 import { CreateSaleDto } from './dto/create-sale.dto.js';
 import { UpdateSaleItemDto } from './dto/update-sale-item.dto.js';
 import { UpdateSalePaymentDto } from './dto/update-sale-payment.dto.js';
+import { sellGroupPermissionsOf } from './sell-groups.js';
 import { SalesService } from './sales.service.js';
 
 @Controller('establishments/:establishmentId/sales')
@@ -33,6 +34,14 @@ export class SalesController {
       }
     }
     return this.sales.create(establishmentId, request.user!.sub, dto);
+  }
+
+  /** Groupes de recettes que l'appelant a le droit de saisir (`pos.sell_*`) — Caisse et Tables masquent les autres (voir sell-groups.ts). */
+  @Get('permissions')
+  @RequirePermissions('pos.sell')
+  async myPermissions(@Req() request: Request, @Param('establishmentId') establishmentId: string) {
+    const granted = await this.authorization.getPermissionCodes(request.user!.sub, establishmentId);
+    return { permissions: sellGroupPermissionsOf(granted) };
   }
 
   @Get('last-order-number')

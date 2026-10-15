@@ -210,6 +210,7 @@ export class SyncService {
             amountPaid: optionalNumber(payload, 'amountPaid'),
             sellAsUnit: payload.sellAsUnit === true,
           },
+          userId,
         );
       }
       case 'order_item_set': {

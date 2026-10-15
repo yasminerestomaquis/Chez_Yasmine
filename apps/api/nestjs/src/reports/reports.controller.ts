@@ -13,6 +13,7 @@ import {
   REPORTS_PLATS_SOLD_PERMISSION,
   reportsPermissionsOf,
 } from './report-permissions.js';
+import { canViewHome, homePermissionsOf, maskBreakdown } from './home-permissions.js';
 import { ReportsService } from './reports.service.js';
 
 @Controller('establishments/:establishmentId/reports')
@@ -40,14 +41,58 @@ export class ReportsController {
     return { permissions: reportsPermissionsOf(granted) };
   }
 
+  /**
+   * Droit de voir l'Accueil : `reports.view` OU au moins une rubrique `home.*`
+   * (un rôle peut se voir accorder une seule carte sans accès au module
+   * Rapports). `@RequirePermissions()` vide sur les routes concernées
+   * neutralise la permission de classe ; ce contrôle la remplace — un non-membre
+   * n'a aucun code, donc est refusé.
+   */
+  private async homeGrants(request: Request, establishmentId: string): Promise<Set<string>> {
+    const userId = request.user?.sub;
+    const granted = userId ? await this.authorization.getPermissionCodes(userId, establishmentId) : new Set<string>();
+    if (!granted.has('reports.view') && !canViewHome(granted)) {
+      throw new ForbiddenException('Permission(s) manquante(s) : reports.view ou une rubrique home.*');
+    }
+    return granted;
+  }
+
+  /** Rubriques de l'Accueil que l'appelant a le droit de voir (voir home-permissions.ts). */
+  @Get('home-permissions')
+  @RequirePermissions()
+  async myHomePermissions(@Req() request: Request, @Param('establishmentId') establishmentId: string) {
+    const userId = request.user?.sub;
+    const granted = userId ? await this.authorization.getPermissionCodes(userId, establishmentId) : new Set<string>();
+    return { permissions: homePermissionsOf(granted) };
+  }
+
+  /** Cartes « Commandes » et « Alertes stock » de l'Accueil — uniquement les chiffres accordés (home.orders / home.stock_alerts). */
+  @Get('home-summary')
+  @RequirePermissions()
+  async homeSummary(@Req() request: Request, @Param('establishmentId') establishmentId: string, @Query() query: ReportQueryDto) {
+    const granted = await this.homeGrants(request, establishmentId);
+    const summary = await this.reports.summary(establishmentId, query);
+    return {
+      salesCount: granted.has('home.orders') ? summary.salesCount : 0,
+      lowStockCount: granted.has('home.stock_alerts') ? summary.lowStockCount : 0,
+    };
+  }
+
   @Get('summary')
   summary(@Param('establishmentId') establishmentId: string, @Query() query: ReportQueryDto) {
     return this.reports.summary(establishmentId, query);
   }
 
+  /** Recettes de l'Accueil : chaque chiffre n'est renvoyé que si sa rubrique `home.*` est accordée (sinon 0), voir `maskBreakdown`. */
   @Get('payment-category-breakdown')
-  paymentCategoryBreakdown(@Param('establishmentId') establishmentId: string, @Query() query: ReportQueryDto) {
-    return this.reports.paymentCategoryBreakdown(establishmentId, query);
+  @RequirePermissions()
+  async paymentCategoryBreakdown(
+    @Req() request: Request,
+    @Param('establishmentId') establishmentId: string,
+    @Query() query: ReportQueryDto,
+  ) {
+    const granted = await this.homeGrants(request, establishmentId);
+    return maskBreakdown(await this.reports.paymentCategoryBreakdown(establishmentId, query), granted);
   }
 
   @Get('summary.csv')

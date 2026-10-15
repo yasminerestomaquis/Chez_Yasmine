@@ -40,6 +40,14 @@ class PosRepository {
     return SaleResult.fromJson(json);
   }
 
+  /// Groupes de recettes (`pos.sell_beverages|gbele|plats`) que l'appelant a le
+  /// droit de saisir — voir `lib/pos/sell_groups.dart`.
+  Future<Set<String>> getMySellPermissions() async {
+    final json = await _api.get('/establishments/$establishmentId/sales/permissions')
+        as Map<String, dynamic>;
+    return (json['permissions'] as List<dynamic>).cast<String>().toSet();
+  }
+
   /// Suggestion éditable pour la caisse — jamais imposée côté serveur.
   Future<int?> lastOrderNumber() async {
     final json = await _api.get(

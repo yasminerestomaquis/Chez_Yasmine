@@ -1,6 +1,7 @@
 import { Injectable, NotFoundException } from '@nestjs/common';
 import PDFDocument from 'pdfkit';
 import { effectiveUnitCost } from '../catalog/product-cost.util.js';
+import { saleStockUnits } from '../pos/sale-stock-units.js';
 import { drawPdfTable, formatFcfa } from '../common/pdf-table.util.js';
 import { PrismaService } from '../prisma/prisma.service.js';
 import { computeFifoLots, type StockLot, type StockLotMovementType } from '../stock/stock-lots.js';
@@ -122,11 +123,14 @@ export class ChartsService {
       select: {
         quantity: true,
         unitPrice: true,
+        sellAsUnit: true,
         productId: true,
         name: true,
         sale: { select: { createdAt: true } },
         product: {
           select: {
+            unit: true,
+            unitSalePrice: true,
             purchasePrice: true,
             bottlesPerCase: true,
             purchasePricePerCase: true,
@@ -142,7 +146,8 @@ export class ChartsService {
       return {
         createdAt: item.sale.createdAt,
         revenue: quantity * unitPrice,
-        cost: quantity * effectiveUnitCost(item.product),
+        // Coût en unités de STOCK (un lot de 3 = 3 bouteilles au prix d'achat par bouteille).
+        cost: saleStockUnits(item.product, quantity, item.sellAsUnit) * effectiveUnitCost(item.product),
         productId: item.productId,
         productName: item.name,
         categoryId: item.product.categoryId,
