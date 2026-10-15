@@ -212,7 +212,7 @@ class _PosPageState extends State<PosPage> {
       .fold(0, (sum, l) => sum + l.quantity);
 
   Future<void> _checkout() async {
-    if (_cart.isEmpty) return;
+    if (_cart.isEmpty || _isCharging) return;
     final total = _subtotal;
     // Bières/Vins/Sucreries -> N° de la commande ; Poulets/Poissons/Plats
     // africains -> N° de marché (voir docs/api/pos.md) — un seul champ de

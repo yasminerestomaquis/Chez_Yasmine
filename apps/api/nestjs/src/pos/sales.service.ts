@@ -14,6 +14,19 @@ type Tx = Prisma.TransactionClient;
 /** Tolérance sur une date de vente saisie (fuseaux horaires) : au plus 24h dans le futur — même constante que `LossesService`. */
 const MAX_FUTURE_MS = 24 * 60 * 60 * 1000;
 
+/** Fenêtre dans laquelle une vente strictement identique est refusée comme double saisie (voir `assertNotRecentDuplicate`). */
+const DUPLICATE_WINDOW_MS = 60_000;
+
+export interface CreateSaleOptions {
+  /**
+   * Ne pas appliquer le refus des ventes identiques rapprochées : réservé au
+   * rejeu de la file hors ligne (`SyncService`), où deux ventes identiques
+   * mises en file à quelques secondes d'écart sont légitimes (chacune porte son
+   * propre identifiant, déjà rendu idempotent) et partent toutes ensemble.
+   */
+  skipDuplicateGuard?: boolean;
+}
+
 @Injectable()
 export class SalesService {
   constructor(
@@ -22,7 +35,7 @@ export class SalesService {
     @Optional() private readonly sellGroups?: SellGroupsService,
   ) {}
 
-  async create(establishmentId: string, userId: string, dto: CreateSaleDto) {
+  async create(establishmentId: string, userId: string, dto: CreateSaleDto, options: CreateSaleOptions = {}) {
     // Idempotent replay: a client-supplied id lets the same offline sale be
     // resubmitted safely (network retry, sync queue) without double-charging
     // stock or creating a duplicate transaction.
@@ -178,6 +191,10 @@ export class SalesService {
       orderToClose = { id: order.id, tableId: order.tableId };
     }
 
+    if (!options.skipDuplicateGuard) {
+      await this.assertNotRecentDuplicate(establishmentId, userId, dto, resolvedItems, totals, createdAt);
+    }
+
     const sale = await this.prisma.$transaction(async (tx) => {
       // Décrémentation atomique et conditionnelle (une seule requête SQL par
       // produit, quantité déjà agrégée ci-dessus) : `updateMany` avec
@@ -270,6 +287,90 @@ export class SalesService {
       `${productNames.join(', ')} — ${totals.total.toLocaleString('fr-FR')} FCFA`,
     );
     return sale;
+  }
+
+  /**
+   * Refuse (409) une vente STRICTEMENT identique à une vente enregistrée par le
+   * même utilisateur il y a moins d'une minute : même source, table/addition,
+   * client, N° de commande/marché, remise, total, lignes (produit, quantité,
+   * prix, lot/unité) et paiements. C'est la signature d'un double clic sur
+   * « Valider le paiement » — l'API met plusieurs secondes à répondre, et les
+   * deux requêtes portent deux identifiants différents, donc rien d'autre ne les
+   * relie : le stock aurait été décompté deux fois (même incident que les
+   * commandes d'achat en double, 2026-10-13). Demande utilisateur du 2026-10-15.
+   *
+   * Refus plutôt que renvoi silencieux de la vente existante : une vente
+   * réellement distincte mais identique (deux clients, la même bouteille, à une
+   * minute d'écart) ne doit pas disparaître sans bruit — le caissier voit le
+   * message et peut la ressaisir une minute plus tard. Une vente antidatée
+   * (`createdAt` choisi) n'est comparée qu'aux ventes de cette même date.
+   */
+  private async assertNotRecentDuplicate(
+    establishmentId: string,
+    userId: string,
+    dto: CreateSaleDto,
+    resolvedItems: { productId: string; quantity: number; unitPrice: number; sellAsUnit: boolean }[],
+    totals: { subtotal: number; discount: number; total: number },
+    createdAt: Date | undefined,
+  ) {
+    const now = Date.now();
+    const recent =
+      (await this.prisma.sale.findMany({
+        where: {
+          establishmentId,
+          createdBy: userId,
+          voidedAt: null,
+          createdAt: createdAt ? createdAt : { gte: new Date(now - DUPLICATE_WINDOW_MS) },
+        },
+        include: { items: true, payments: true },
+        orderBy: { createdAt: 'desc' },
+        take: 10,
+      })) ?? [];
+    if (recent.length === 0) return;
+
+    const num = (value: number) => value.toFixed(2);
+    const linesSignature = (lines: { productId: string; quantity: number; unitPrice: number; sellAsUnit: boolean }[]) =>
+      lines
+        .map((l) => `${l.productId}:${num(l.quantity)}:${num(l.unitPrice)}:${l.sellAsUnit ? 'u' : 'l'}`)
+        .sort()
+        .join('|');
+    const paymentsSignature = (payments: { method: string; amount: number }[]) =>
+      payments
+        .map((p) => `${p.method}:${num(p.amount)}`)
+        .sort()
+        .join('|');
+
+    const wantedLines = linesSignature(resolvedItems);
+    const wantedPayments = paymentsSignature(dto.payments);
+    const wantedSource = dto.source ?? 'pos';
+
+    for (const sale of recent) {
+      const same =
+        sale.source === wantedSource &&
+        (sale.tableId ?? null) === (dto.tableId ?? null) &&
+        (sale.orderId ?? null) === (dto.orderId ?? null) &&
+        (sale.customerId ?? null) === (dto.customerId ?? null) &&
+        (sale.orderNumber ?? null) === (dto.orderNumber ?? null) &&
+        (sale.marketNumber ?? null) === (dto.marketNumber ?? null) &&
+        num(sale.total.toNumber()) === num(totals.total) &&
+        num(sale.discount.toNumber()) === num(totals.discount) &&
+        linesSignature(
+          sale.items.map((i) => ({
+            productId: i.productId,
+            quantity: i.quantity.toNumber(),
+            unitPrice: i.unitPrice.toNumber(),
+            sellAsUnit: i.sellAsUnit,
+          })),
+        ) === wantedLines &&
+        paymentsSignature(sale.payments.map((p) => ({ method: p.method, amount: p.amount.toNumber() }))) === wantedPayments;
+      if (same) {
+        const seconds = Math.max(0, Math.round((now - sale.createdAt.getTime()) / 1000));
+        throw new ConflictException(
+          `Cette vente a déjà été enregistrée il y a ${seconds} s (saisie identique refusée pour éviter un double décompte du stock). ` +
+            "S'il s'agit d'une nouvelle vente, réessayez dans une minute.",
+        );
+      }
+    }
   }
 
   /**

@@ -2,6 +2,12 @@
 
 ## [Unreleased]
 
+### Corrigé (2026-10-15) — Ventes en double : « Valider le paiement » bloqué dès le clic, vente identique refusée
+- **Application** : le bouton « Valider le paiement » est désactivé dès le clic qui valide le paiement complet (et un second appel est ignoré) ; il reste actif tant qu'un paiement fractionné attend sa ligne suivante. La Caisse ignore aussi un nouvel encaissement pendant qu'un autre est en cours.
+- **Serveur** : `SalesService.create` refuse (**409**, message explicite) une vente STRICTEMENT identique — même utilisateur, source, table/addition, client, N° de commande/marché, remise, total, lignes (produit, quantité, prix, lot/unité) et paiements — reçue moins d'une minute après une vente non annulée. Refus plutôt que renvoi silencieux : deux ventes réellement distinctes mais identiques (deux clients, la même bouteille) ne doivent pas disparaître sans bruit ; le caissier réessaie une minute plus tard. Une vente antidatée n'est comparée qu'aux ventes de cette date. **Le rejeu de la file hors ligne n'est pas concerné** (`skipDuplicateGuard`) : deux ventes identiques mises en file à quelques secondes d'écart sont légitimes et déjà rendues idempotentes par leur identifiant.
+- Données : commande d'achat n°3 d'Eau Bassam en double (13/10) supprimée en production, stock 122 → 62.
+- Tests : 10 NestJS, 2 Flutter.
+
 ### Corrigé (2026-10-15) — Décompte du stock : lots et commandes d'achat en double
 Écarts constatés le 14/10 entre le stock réel (comptage) et celui de l'application (Bassam 54 réels / 122 affichés, Coca Cola 30, Malta, Cody's Energy…). Analyse faite sur la base de production : le stock de chaque produit est **cohérent avec son historique de mouvements** (aucune dérive de calcul), mais deux défauts de l'algorithme faussaient les mouvements eux-mêmes :
 - **Commande d'achat enregistrée deux fois** : un double appui sur « Créer la commande » (l'API met plusieurs secondes à répondre) envoyait deux requêtes avec deux identifiants différents → deux commandes identiques et le stock entré deux fois. Constaté sur Eau Bassam : commande n°1 (24/09, corrigée à la main par un ajustement) et **commande n°3 (13/10, +60 bouteilles en trop, toujours en base)**. Correctif : bouton désactivé pendant l'envoi + garde-fou serveur (commande strictement identique — même fournisseur, N°, lignes et total — créée depuis moins d'une minute = renvoyée sans nouvelle entrée de stock).

@@ -259,11 +259,19 @@ export class SyncService {
       ? await this.authorization.hasAllPermissions(userId, establishmentId, ['pos.set_date'])
       : false;
     const createdAt = maySetDate ? chosen : capturedAt?.toISOString();
-    return this.sales.create(establishmentId, userId, {
-      ...rest,
-      ...(createdAt ? { createdAt } : {}),
-      id: operation.id,
-    } as any);
+    // Rejeu hors ligne : chaque vente porte son identifiant (idempotence) et deux
+    // ventes identiques mises en file à quelques secondes d'écart sont légitimes —
+    // le refus des doubles saisies rapprochées ne s'applique pas ici.
+    return this.sales.create(
+      establishmentId,
+      userId,
+      {
+        ...rest,
+        ...(createdAt ? { createdAt } : {}),
+        id: operation.id,
+      } as any,
+      { skipDuplicateGuard: true },
+    );
   }
 
   /** La date saisie d'une perte (antidatage) n'est conservée que si l'auteur porte `losses.edit`, comme sur la route HTTP ; sinon elle est ignorée (horodatage serveur). */

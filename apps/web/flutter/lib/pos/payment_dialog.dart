@@ -112,6 +112,13 @@ class _PaymentDialogState extends State<_PaymentDialog> {
   final _marketNumberController = TextEditingController();
   DateTime _date = DateTime.now();
 
+  /// Vrai dès que le paiement complet est validé : le bouton « Valider le
+  /// paiement » est alors bloqué (et un second appel ignoré) — l'API met parfois
+  /// plusieurs secondes à répondre et un double clic enregistrait la vente deux
+  /// fois, donc décomptait le stock deux fois (demande du 2026-10-15). Reste faux
+  /// tant qu'un paiement fractionné attend sa ligne suivante.
+  bool _submitted = false;
+
   double get _paid => _lines.fold(0, (sum, l) => sum + l.amount);
   double get _remaining => widget.total - _paid;
 
@@ -186,6 +193,7 @@ class _PaymentDialogState extends State<_PaymentDialog> {
   /// qu'avant, simplement plus un bouton distinct à identifier avant de
   /// pouvoir agir.
   void _confirm() {
+    if (_submitted) return;
     if (_remaining > 0.009) {
       final amount = double.tryParse(
         _amountController.text.trim().replaceAll(',', '.'),
@@ -197,6 +205,8 @@ class _PaymentDialogState extends State<_PaymentDialog> {
         return;
       }
     }
+    // Bloqué immédiatement, avant même la fermeture du dialogue.
+    setState(() => _submitted = true);
     Navigator.of(context).pop(
       PaymentOutcome(
         _lines,
@@ -304,7 +314,7 @@ class _PaymentDialogState extends State<_PaymentDialog> {
           child: const Text('Annuler'),
         ),
         FilledButton(
-          onPressed: _confirm,
+          onPressed: _submitted ? null : _confirm,
           child: const Text('Valider le paiement'),
         ),
       ],

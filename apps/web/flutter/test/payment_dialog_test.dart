@@ -41,6 +41,52 @@ void main() {
   }
 
   testWidgets(
+    'un double clic sur Valider le paiement ne valide qu’une fois : le bouton est bloqué dès le premier clic (2026-10-15)',
+    (tester) async {
+      var outcomes = 0;
+      await tester.pumpWidget(
+        MaterialApp(
+          home: Builder(
+            builder: (context) => ElevatedButton(
+              onPressed: () async {
+                final outcome = await showPaymentDialog(context, total: 1200);
+                if (outcome != null) outcomes++;
+              },
+              child: const Text('open'),
+            ),
+          ),
+        ),
+      );
+      await tester.tap(find.text('open'));
+      await tester.pumpAndSettle();
+
+      final button = find.widgetWithText(FilledButton, 'Valider le paiement');
+      await tester.tap(button);
+      // Une seule image après le clic : le dialogue est encore à l'écran (animation
+      // de fermeture) mais son bouton est déjà bloqué.
+      await tester.pump();
+      expect(tester.widget<FilledButton>(button).onPressed, isNull);
+      await tester.pumpAndSettle();
+
+      expect(outcomes, 1);
+      expect(find.text('open'), findsOneWidget, reason: 'la page appelante ne doit pas avoir été fermée');
+    },
+  );
+
+  testWidgets(
+    'un paiement fractionné garde le bouton actif tant qu’il reste un solde (2026-10-15)',
+    (tester) async {
+      await openAndCapture(tester, total: 5000);
+      await tester.enterText(find.byType(TextField).first, '2000');
+      await tester.tap(find.widgetWithText(FilledButton, 'Valider le paiement'));
+      await tester.pumpAndSettle();
+
+      final button = tester.widget<FilledButton>(find.widgetWithText(FilledButton, 'Valider le paiement'));
+      expect(button.onPressed, isNotNull);
+    },
+  );
+
+  testWidgets(
     'the submit button is always enabled, even before any payment line is added '
     '(2026-09-13: no separate "Ajouter la ligne de paiement" step anymore)',
     (tester) async {

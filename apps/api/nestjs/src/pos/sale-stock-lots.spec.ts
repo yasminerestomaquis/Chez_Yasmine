@@ -18,7 +18,7 @@ function makePrisma() {
   const prisma: Record<string, any> = {
     product: { findMany: vi.fn(), update: vi.fn(), updateMany: vi.fn().mockResolvedValue({ count: 1 }) },
     stockMovement: { create: vi.fn() },
-    sale: { create: vi.fn(), findFirst: vi.fn(), update: vi.fn() },
+    sale: { create: vi.fn(), findFirst: vi.fn(), findMany: vi.fn(), update: vi.fn() },
     saleItem: { update: vi.fn() },
     customer: { findFirst: vi.fn() },
     order: { findFirst: vi.fn() },

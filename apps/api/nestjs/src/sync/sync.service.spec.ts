@@ -101,6 +101,7 @@ describe('SyncService.processBatch', () => {
       'est-1',
       'user-1',
       expect.objectContaining({ id: 'op-1', items: [{ productId: 'p1', quantity: 1 }] }),
+      { skipDuplicateGuard: true },
     );
     expect(result.status).toBe('SYNCED');
     expect(prisma.syncOperation.update).toHaveBeenCalledWith({ where: { id: 'op-1' }, data: { status: 'SYNCED' } });
@@ -375,7 +376,9 @@ describe('SyncService.processBatch', () => {
         { id: 'op-1', entityType: 'sale', deviceId: 'd', payload: { items: [], payments: [] }, capturedAt },
       ]);
 
-      expect(sales.create).toHaveBeenCalledWith('est-1', 'user-1', expect.objectContaining({ id: 'op-1', createdAt: capturedAt }));
+      expect(sales.create).toHaveBeenCalledWith('est-1', 'user-1', expect.objectContaining({ id: 'op-1', createdAt: capturedAt }), {
+        skipDuplicateGuard: true,
+      });
     });
 
     it('une vente sans heure de saisie ne reçoit aucun createdAt (horodatage serveur)', async () => {
@@ -403,7 +406,9 @@ describe('SyncService.processBatch', () => {
       ]);
 
       expect(authorization.hasAllPermissions).toHaveBeenCalledWith('user-1', 'est-1', ['pos.set_date']);
-      expect(sales.create).toHaveBeenCalledWith('est-1', 'user-1', expect.objectContaining({ createdAt: chosen }));
+      expect(sales.create).toHaveBeenCalledWith('est-1', 'user-1', expect.objectContaining({ createdAt: chosen }), {
+        skipDuplicateGuard: true,
+      });
     });
 
     it("sans pos.set_date, la date choisie est ignorée au profit de l'heure de saisie réelle", async () => {
@@ -421,7 +426,9 @@ describe('SyncService.processBatch', () => {
         },
       ]);
 
-      expect(sales.create).toHaveBeenCalledWith('est-1', 'user-1', expect.objectContaining({ createdAt: capturedAt }));
+      expect(sales.create).toHaveBeenCalledWith('est-1', 'user-1', expect.objectContaining({ createdAt: capturedAt }), {
+        skipDuplicateGuard: true,
+      });
     });
 
     it("un mouvement de stock reçoit l'heure de saisie (ordre FIFO des lots)", async () => {
